@@ -69,10 +69,12 @@ enum {
 
 /*
  * Every bit is DV_FALSE or DV_TRUE. In received data you may also mark a bit
- * DV_ERASURE to say "this one was lost"; that value lives in decode.h.
+ * DV_ERASURE to say "this one was lost"; the decoder then treats it as unknown
+ * instead of guessing 0 or 1 (see decode.h).
  */
 #define DV_FALSE ((uint8_t)0u)
 #define DV_TRUE ((uint8_t)1u)
+#define DV_ERASURE ((uint8_t)0xFFu)
 
 /* This library's version, e.g. "0.1.0". */
 const char *drift_viterbi_version(void);

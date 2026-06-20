@@ -61,9 +61,8 @@ extern "C" {
 /*
  * In received data you may mark a bit DV_ERASURE to say "this one was lost"; the
  * decoder then treats it as unknown instead of guessing 0 or 1. Ordinary bits
- * are DV_FALSE or DV_TRUE (see encode.h).
+ * are DV_FALSE or DV_TRUE. All three bit values are defined in encode.h.
  */
-#define DV_ERASURE ((uint8_t)0xFFu)
 
 /* ------------------------------------------------------------------------- */
 /* Decoder                                                                   */

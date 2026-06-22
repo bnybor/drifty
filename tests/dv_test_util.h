@@ -201,6 +201,32 @@ static inline size_t delete_channel(const uint8_t *in, size_t len, double p_del,
   return o;
 }
 
+/* Flip each bit with probability p_sub, in place. Run before erase_channel so a
+ * flip never lands on a DV_ERASURE marker. */
+static inline void flip_channel(uint8_t *buf, size_t len, double p_sub,
+                                uint64_t *rng) {
+  for (size_t i = 0; i < len; ++i) {
+    if (rng_unit(rng) < p_sub) {
+      buf[i] ^= 1u;
+    }
+  }
+}
+
+/* Insert a spurious random bit before each input bit with probability p_ins;
+ * cumulative drift grows with position. Returns the received length. out[] must
+ * hold up to 2*len bits (worst case, an insertion before every bit). */
+static inline size_t insert_channel(const uint8_t *in, size_t len, double p_ins,
+                                    uint64_t *rng, uint8_t *out) {
+  size_t o = 0;
+  for (size_t i = 0; i < len; ++i) {
+    if (rng_unit(rng) < p_ins) {
+      out[o++] = (uint8_t)(rng_next(rng) & 1u);
+    }
+    out[o++] = in[i];
+  }
+  return o;
+}
+
 /* Mark each bit DV_ERASURE with probability p_erase, in place. */
 static inline void erase_channel(uint8_t *buf, size_t len, double p_erase,
                                  uint64_t *rng) {

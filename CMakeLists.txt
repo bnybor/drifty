@@ -16,7 +16,8 @@ target_include_directories(drift_viterbi_interface INTERFACE include)
 add_library(drift_viterbi_bare STATIC
     src/encode.c
     src/decode.c
-    src/compare.c)
+    src/compare.c
+    src/multi.c)
 
 target_include_directories(drift_viterbi_bare PUBLIC include)
 target_compile_features(drift_viterbi_bare PUBLIC c_std_11)

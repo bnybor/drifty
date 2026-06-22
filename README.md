@@ -79,6 +79,40 @@ assumes an inserted/dropped bit versus a plain flipped one:
 
 When unsure, tune on representative data rather than chasing exact numbers.
 
+## Decoding against several codes at once
+
+When you don't know which of a few candidate codes produced a stream — they share
+a rate but differ in their generator polynomials — decode against all of them at
+once. For each output bit the multi-decoder keeps the bit from whichever code is
+most confidently locked, and marks the bit `DV_ERASURE` when none clearly wins.
+
+```c
+const dv_code *codes[] = { code_a, code_b, code_c };   /* same rate */
+
+dv_multi_decoder *m = dv_multi_create(&(dv_multi_params){
+    .codes = codes, .codes_len = 3,
+    .stream = { .decision_depth = 40, .max_drift = 4,
+                .p_sub = 0.01, .p_ins = 0.01, .p_del = 0.01 },
+});
+
+uint8_t decoded[OUT];
+int which[OUT];                                /* winning code per bit, -1 = erased */
+int n = dv_multi_decode(m, in, n_in, decoded, which, OUT);  /* feed + collect bits */
+/* ... repeat as more bits arrive ... */
+while (dv_multi_decode_flush(m, decoded, OUT) > 0)        /* drain at the end */
+    /* use the decoded bits */ ;
+
+dv_multi_destroy(m);   /* frees the decoders it built; you still own the codes */
+```
+
+`dv_multi_decoder` is an opaque handle. It builds one stream decoder per code from
+the shared `stream` settings, so the codes must share a rate (`dv_code_n`) and
+must outlive the multi-decoder. The optional `locked_decoder` array (here `which`)
+reports, per output bit, the index of the winning code or `-1` where the bit was
+erased. `lock_floor` / `lock_margin` set how confident a code must be — in
+absolute lock probability and in lead over the next-best code — to win a bit
+rather than abstain (defaults 0.6 and 0.2).
+
 ## Build
 
 ```sh

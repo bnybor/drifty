@@ -224,141 +224,102 @@ static void recover_trial(uint64_t seed, int true_idx, double p_sub,
   destroy_codes(codes);
 }
 
-/* Clean streams, cycling the true code across the family so index reporting is
- * exercised too. */
-static void test_multi_clean(uint64_t seed) {
-  printf("test_multi_clean\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    clean_trial(seed + (uint64_t)t, t % N_DEC);
-  }
-}
-
-/* Substitution noise only (no drift). */
-static void test_multi_flips(uint64_t seed) {
-  printf("test_multi_flips\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    recover_trial(seed + 100 + (uint64_t)t, t % N_DEC, 0.02, 0.0, 0.0, 0.0, 0.6,
-                  0, "flips");
-  }
-}
-
-/* Erasures only: received bits marked DV_ERASURE. */
-static void test_multi_erasures(uint64_t seed) {
-  printf("test_multi_erasures\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    recover_trial(seed + 200 + (uint64_t)t, t % N_DEC, 0.0, 0.0, 0.0, 0.08, 0.6,
-                  0, "erasures");
-  }
-}
-
-/* Insertions only: spurious bits, cumulative positive drift past max_drift, so
- * re-anchoring carries the lock. A couple of tail bits may slip. */
-static void test_multi_insertions(uint64_t seed) {
-  printf("test_multi_insertions\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    recover_trial(seed + 300 + (uint64_t)t, t % N_DEC, 0.0, 0.01, 0.0, 0.0, 0.4,
-                  0, "insertions");
-  }
-}
-
-/* Deletions only: dropped bits, cumulative negative drift. */
-static void test_multi_deletions(uint64_t seed) {
-  printf("test_multi_deletions\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    recover_trial(seed + 400 + (uint64_t)t, t % N_DEC, 0.0, 0.0, 0.01, 0.0, 0.4,
-                  0, "deletions");
-  }
-}
-
-/* Everything at once: flips + insertions + deletions + erasures. Rates are kept
- * modest (each below what the decoder models) so the true code stays trackable;
- * the point is that the impairments compose, not to find the decoder's cliff. */
-static void test_multi_combined(uint64_t seed) {
-  printf("test_multi_combined\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    recover_trial(seed + 500 + (uint64_t)t, t % N_DEC, 0.008, 0.003, 0.003, 0.02,
-                  0.25, 0, "combined");
-  }
-}
+/* One unit of work for the suite's data-driven tests. All such trials are
+ * independent (own PRNG, own buffers), so they are gathered into a single flat
+ * list and run in one wide parallel region rather than many narrow ones. */
+typedef enum { TK_CLEAN, TK_RECOVER, TK_NOISE, TK_MARGIN } trial_kind;
+typedef struct {
+  trial_kind kind;
+  uint64_t seed;
+  int true_idx;
+  double p_sub, p_ins, p_del, p_erase, min_frac;
+  int max_errs;
+  const char *label;
+} trial_desc;
 
 /* Random data fits no code, so the multi-decoder should abstain: almost every
  * bit erased, none confidently attributed to a decoder. */
-static void test_multi_noise_erases(uint64_t seed) {
-  printf("test_multi_noise_erases\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    uint64_t rng = seed + 600 + (uint64_t)t;
-    dv_code *codes[N_DEC];
-    dv_multi_decoder *md = build_multi(codes, &(dv_multi_params){0});
-    assert(md != NULL);
+static void noise_trial(uint64_t seed) {
+  uint64_t rng = seed;
+  dv_code *codes[N_DEC];
+  dv_multi_decoder *md = build_multi(codes, &(dv_multi_params){0});
+  assert(md != NULL);
 
-    const int rl = 1800;
-    uint8_t *rx = malloc((size_t)rl);
-    rand_bits(rx, rl, &rng);
+  const int rl = 1800;
+  uint8_t *rx = malloc((size_t)rl);
+  rand_bits(rx, rl, &rng);
 
-    int cap = rl + 64;
-    uint8_t *out = malloc((size_t)cap);
-    int *locked = malloc((size_t)cap * sizeof(int));
-    int got = multi_decode_all(md, rx, rl, out, locked, cap);
+  int cap = rl + 64;
+  uint8_t *out = malloc((size_t)cap);
+  int *locked = malloc((size_t)cap * sizeof(int));
+  int got = multi_decode_all(md, rx, rl, out, locked, cap);
 
-    int decoded = 0;
-    for (int i = 0; i < got; ++i) {
-      if (out[i] != DV_ERASURE) ++decoded;
-    }
-    /* A spurious lock here and there is tolerable; a confident decode is not. */
-    check_lt("random data mostly erased", (double)decoded, (double)got * 0.1);
-
-    free(locked);
-    free(out);
-    free(rx);
-    dv_multi_destroy(md);
-    destroy_codes(codes);
+  int decoded = 0;
+  for (int i = 0; i < got; ++i) {
+    if (out[i] != DV_ERASURE) ++decoded;
   }
+  /* A spurious lock here and there is tolerable; a confident decode is not. */
+  check_lt("random data mostly erased", (double)decoded, (double)got * 0.1);
+
+  free(locked);
+  free(out);
+  free(rx);
+  dv_multi_destroy(md);
+  destroy_codes(codes);
 }
 
 /* dv_multi_params takes effect: an unsatisfiable lock_margin (no two lock
  * probabilities in [0,1] can differ by more than 1) makes the selector abstain
  * on every bit, so a stream the defaults decode in full is now fully erased. */
-static void test_multi_params_margin(uint64_t seed) {
-  printf("test_multi_params_margin\n");
-#pragma omp parallel for schedule(dynamic)
-  for (int t = 0; t < TRIALS; ++t) {
-    uint64_t rng = seed + 700 + (uint64_t)t;
-    dv_multi_params params = {.lock_margin = 1.5};
-    dv_code *codes[N_DEC];
-    dv_multi_decoder *md = build_multi(codes, &params);
-    assert(md != NULL);
+static void margin_trial(uint64_t seed) {
+  uint64_t rng = seed;
+  dv_multi_params params = {.lock_margin = 1.5};
+  dv_code *codes[N_DEC];
+  dv_multi_decoder *md = build_multi(codes, &params);
+  assert(md != NULL);
 
-    uint8_t *msg = malloc((size_t)N_INFO);
-    rand_bits(msg, N_INFO, &rng);
-    int clen = N_INFO * dv_code_n(codes[0]);
-    uint8_t *coded = malloc((size_t)clen);
-    int st = 0;
-    dv_code_encode(codes[0], msg, N_INFO, &st, coded);
+  uint8_t *msg = malloc((size_t)N_INFO);
+  rand_bits(msg, N_INFO, &rng);
+  int clen = N_INFO * dv_code_n(codes[0]);
+  uint8_t *coded = malloc((size_t)clen);
+  int st = 0;
+  dv_code_encode(codes[0], msg, N_INFO, &st, coded);
 
-    int cap = N_INFO + 64;
-    uint8_t *out = malloc((size_t)cap);
-    int *locked = malloc((size_t)cap * sizeof(int));
-    int got = multi_decode_all(md, coded, clen, out, locked, cap);
+  int cap = N_INFO + 64;
+  uint8_t *out = malloc((size_t)cap);
+  int *locked = malloc((size_t)cap * sizeof(int));
+  int got = multi_decode_all(md, coded, clen, out, locked, cap);
 
-    int decoded = 0;
-    for (int i = 0; i < got; ++i) {
-      if (out[i] != DV_ERASURE) ++decoded;
-    }
-    check("unsatisfiable lock_margin erases every bit", decoded == 0);
+  int decoded = 0;
+  for (int i = 0; i < got; ++i) {
+    if (out[i] != DV_ERASURE) ++decoded;
+  }
+  check("unsatisfiable lock_margin erases every bit", decoded == 0);
 
-    free(locked);
-    free(out);
-    free(coded);
-    free(msg);
-    dv_multi_destroy(md);
-    destroy_codes(codes);
+  free(locked);
+  free(out);
+  free(coded);
+  free(msg);
+  dv_multi_destroy(md);
+  destroy_codes(codes);
+}
+
+/* Dispatch one descriptor to the matching trial helper. */
+static void run_trial(const trial_desc *d) {
+  switch (d->kind) {
+    case TK_CLEAN:
+      clean_trial(d->seed, d->true_idx);
+      break;
+    case TK_RECOVER:
+      recover_trial(d->seed, d->true_idx, d->p_sub, d->p_ins, d->p_del,
+                    d->p_erase, d->min_frac, d->max_errs, d->label);
+      break;
+    case TK_NOISE:
+      noise_trial(d->seed);
+      break;
+    case TK_MARGIN:
+      margin_trial(d->seed);
+      break;
   }
 }
 
@@ -387,14 +348,71 @@ static void test_multi_args(void) {
 
 int main(void) {
   const uint64_t seed = 0xD1F7C0DEULL;
-  test_multi_clean(seed);
-  test_multi_flips(seed);
-  test_multi_erasures(seed);
-  test_multi_insertions(seed);
-  test_multi_deletions(seed);
-  test_multi_combined(seed);
-  test_multi_noise_erases(seed);
-  test_multi_params_margin(seed);
-  test_multi_args();
+
+  /* Gather every data-driven trial into one flat list so a single wide parallel
+   * region keeps all cores busy, instead of eight narrow regions (TRIALS wide
+   * each) with a barrier between them. Seeds and parameters are exactly as when
+   * these were separate per-impairment tests, so results are unchanged. */
+  trial_desc trials[8 * TRIALS];
+  int n = 0;
+  /* Heaviest trials (the drift-tracking recover kinds, max_drift wide) first, so
+   * schedule(dynamic) packs them early and the tail is the light clean/noise/
+   * margin trials - a longest-processing-time ordering that shortens makespan. */
+  for (int t = 0; t < TRIALS; ++t) {
+    /* flips: substitution noise only (no drift) */
+    trials[n++] = (trial_desc){.kind = TK_RECOVER,
+                               .seed = seed + 100 + (uint64_t)t,
+                               .true_idx = t % N_DEC,
+                               .p_sub = 0.02,
+                               .min_frac = 0.6,
+                               .label = "flips"};
+    /* erasures only */
+    trials[n++] = (trial_desc){.kind = TK_RECOVER,
+                               .seed = seed + 200 + (uint64_t)t,
+                               .true_idx = t % N_DEC,
+                               .p_erase = 0.08,
+                               .min_frac = 0.6,
+                               .label = "erasures"};
+    /* insertions only: cumulative positive drift past max_drift */
+    trials[n++] = (trial_desc){.kind = TK_RECOVER,
+                               .seed = seed + 300 + (uint64_t)t,
+                               .true_idx = t % N_DEC,
+                               .p_ins = 0.01,
+                               .min_frac = 0.4,
+                               .label = "insertions"};
+    /* deletions only: cumulative negative drift */
+    trials[n++] = (trial_desc){.kind = TK_RECOVER,
+                               .seed = seed + 400 + (uint64_t)t,
+                               .true_idx = t % N_DEC,
+                               .p_del = 0.01,
+                               .min_frac = 0.4,
+                               .label = "deletions"};
+    /* combined: all impairments at modest, trackable rates */
+    trials[n++] = (trial_desc){.kind = TK_RECOVER,
+                               .seed = seed + 500 + (uint64_t)t,
+                               .true_idx = t % N_DEC,
+                               .p_sub = 0.008,
+                               .p_ins = 0.003,
+                               .p_del = 0.003,
+                               .p_erase = 0.02,
+                               .min_frac = 0.25,
+                               .label = "combined"};
+  }
+  /* Light trials (no drift tracking) last. */
+  for (int t = 0; t < TRIALS; ++t) {
+    /* clean: cycle the true code across the family to exercise index reporting */
+    trials[n++] = (trial_desc){
+        .kind = TK_CLEAN, .seed = seed + (uint64_t)t, .true_idx = t % N_DEC};
+    trials[n++] = (trial_desc){.kind = TK_NOISE, .seed = seed + 600 + (uint64_t)t};
+    trials[n++] =
+        (trial_desc){.kind = TK_MARGIN, .seed = seed + 700 + (uint64_t)t};
+  }
+
+#pragma omp parallel for schedule(dynamic)
+  for (int i = 0; i < n; ++i) {
+    run_trial(&trials[i]);
+  }
+
+  test_multi_args(); /* serial: uses REQUIRE, must not run inside a trial */
   return test_summary("multi");
 }

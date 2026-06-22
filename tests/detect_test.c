@@ -35,54 +35,59 @@
 
 #define CODED_CAP MAX_CODED(4000)
 
+/* One code's detect checks: clean data detects strongly, and a deletion channel
+ * (cumulative drift) and a few percent erasures both stay above threshold. Own
+ * buffers + PRNG so trials run independently in parallel. */
+static void detect_one(uint64_t seed, dv_standard_code code, const char *name) {
+  const int info_bits = 1500;
+  uint8_t *msg = malloc((size_t)info_bits);
+  uint8_t *coded = malloc(CODED_CAP);
+  uint8_t *chan = malloc(CODED_CAP);
+
+  uint64_t rng = seed;
+  int n, k;
+  rand_bits(msg, info_bits, &rng);
+  size_t clen = encode(code, msg, info_bits, coded, &n, &k);
+
+  char label[48];
+  snprintf(label, sizeof label, "%s clean", name);
+  check_gt(label, dv_detect(n, k, coded, clen), 0.8);
+
+  size_t dlen = delete_channel(coded, clen, 0.01, &rng, chan);
+  snprintf(label, sizeof label, "%s indel", name);
+  check_gt(label, dv_detect(n, k, chan, dlen), 0.7);
+
+  memcpy(chan, coded, clen);
+  erase_channel(chan, clen, 0.04, &rng);
+  snprintf(label, sizeof label, "%s erased", name);
+  check_gt(label, dv_detect(n, k, chan, clen), 0.7);
+
+  free(msg);
+  free(coded);
+  free(chan);
+}
+
 static void test_detect(uint64_t seed) {
   printf("test_detect\n");
   const dv_standard_code codes[] = {DV_CODE_K3_RATE_1_2, DV_CODE_K7_RATE_1_2,
                                     DV_CODE_K7_RATE_1_3, DV_CODE_K5_RATE_1_5};
   const char *names[] = {"K3_R1_2", "K7_R1_2", "K7_R1_3", "K5_R1_5"};
-  const int info_bits = 1500;
 
-  uint8_t *msg = malloc((size_t)info_bits);
-  uint8_t *coded = malloc(CODED_CAP);
-  uint8_t *chan = malloc(CODED_CAP);
-
+#pragma omp parallel for schedule(dynamic)
   for (int c = 0; c < 4; ++c) {
-    uint64_t rng = seed + 700 + (uint64_t)c;
-    int n, k;
-    rand_bits(msg, info_bits, &rng);
-    size_t clen = encode(codes[c], msg, info_bits, coded, &n, &k);
-
-    /* Clean coded data detects strongly; a deletion channel (cumulative drift)
-     * and a few percent erasures both stay above threshold. */
-    char label[48];
-    snprintf(label, sizeof label, "%s clean", names[c]);
-    check_gt(label, dv_detect(n, k, coded, clen), 0.8);
-
-    size_t dlen = delete_channel(coded, clen, 0.01, &rng, chan);
-    snprintf(label, sizeof label, "%s indel", names[c]);
-    check_gt(label, dv_detect(n, k, chan, dlen), 0.7);
-
-    memcpy(chan, coded, clen);
-    erase_channel(chan, clen, 0.04, &rng);
-    snprintf(label, sizeof label, "%s erased", names[c]);
-    check_gt(label, dv_detect(n, k, chan, clen), 0.7);
+    detect_one(seed + 700 + (uint64_t)c, codes[c], names[c]);
   }
 
-  /* Random (non-coded) buffer -> low. */
-  {
-    uint64_t rng = seed + 800;
-    rand_bits(coded, 3000, &rng);
-    check_lt("random not detected", dv_detect(2, 7, coded, 3000), 0.3);
-  }
-
-  /* Too short, out-of-range, and null -> undetermined (negative). */
+  /* Random (non-coded) buffer -> low; too-short / out-of-range / null -> negative
+   * (undetermined). */
+  uint8_t *coded = malloc(CODED_CAP);
+  uint64_t rng = seed + 800;
+  rand_bits(coded, 3000, &rng);
+  check_lt("random not detected", dv_detect(2, 7, coded, 3000), 0.3);
   check_undetermined("too-short", dv_detect(2, 7, coded, 8));
   check_undetermined("window>32", dv_detect(5, 9, coded, 3000));
   check_undetermined("null buffer", dv_detect(2, 7, NULL, 3000));
-
-  free(msg);
   free(coded);
-  free(chan);
 }
 
 /* Blind acquisition: detection must survive a capture that does not begin at a
@@ -106,13 +111,20 @@ static void test_blind_acquisition_detect(uint64_t seed) {
   const size_t splice = 137;
   check_gt("splice", dv_detect(n, k, coded + splice, clen - splice), 0.7);
 
-  /* Leading garbage / partial-codeword prefixes of growing length. */
+  /* Leading garbage / partial-codeword prefixes of growing length. Independent
+   * per-iteration buffer + PRNG so they run in parallel; the coded body is what
+   * detection locks onto, so the exact garbage bits don't matter. */
   const size_t prefixes[] = {1, 3, 5, 17, 64, 256, 1024};
-  for (size_t i = 0; i < sizeof prefixes / sizeof *prefixes; ++i) {
-    size_t blen = prepend_prefix(prefixes[i], coded, clen, &rng, buf);
+  const size_t n_prefixes = sizeof prefixes / sizeof *prefixes;
+#pragma omp parallel for schedule(dynamic)
+  for (size_t i = 0; i < n_prefixes; ++i) {
+    uint8_t *pbuf = malloc(CODED_CAP + 4096);
+    uint64_t prng = seed + 950 + (uint64_t)i;
+    size_t blen = prepend_prefix(prefixes[i], coded, clen, &prng, pbuf);
     char label[48];
     snprintf(label, sizeof label, "garbage-prefix-%zu", prefixes[i]);
-    check_gt(label, dv_detect(n, k, buf, blen), 0.7);
+    check_gt(label, dv_detect(n, k, pbuf, blen), 0.7);
+    free(pbuf);
   }
 
   /* A garbage prefix on otherwise-random data is still not a code. */

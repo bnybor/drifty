@@ -158,16 +158,22 @@ measure.
 
 `dv_detect`'s blind confidence that the received buffer still carries *any*
 rate-1/n, constraint-length-k code, knowing neither the generators nor the sent
-bits. It is the opposite story from lock: it falls off a cliff very early — far
-sooner than decoding with a known code fails — so it is an early warning, not a
-correctness measure. On the indel axes the collapse is ordered by each code's
-relation window `n*(k+1)` (the span of bits its parity checks couple): the wider
-the window, the more of the drifting stream it spans, so the more fragile blind
-recovery is — the reverse of the decoder's redundancy ranking. Erasures blank
-symbols out, so detection collapses below ~10%; the **high-erasure rebound** at
-70–90% for the short-window rate-1/2 codes is spurious — when most symbols are
-blank the recovered parity-check space degenerates and trivially self-satisfies,
-so read that tail as a detector artifact, not a stream becoming detectable again.
+bits. It is the opposite story from lock: it falls well before decoding with a
+known code fails, so it is an early warning, not a correctness measure. How early
+is ordered by each code's relation window `n*(k+1)` (the span of bits its parity
+checks couple): the wider the window, the more of the impaired stream it spans,
+so the more fragile blind recovery is — the reverse of the decoder's redundancy
+ranking. The short-window codes (`K3_R1_2` most of all) therefore stay detectable
+far longer, which is why the flip/insert/delete axes run out past 20% to follow
+their descent while the wide-window codes have long since collapsed.
+
+Erasures are a special shape. The wide-window codes collapse below ~6% as usual,
+but the short-window rate-1/2 codes (`K3_R1_2`, `K7_R1_2`) instead **dip to a
+minimum near 25% erasure and then recover all the way back to full detection by
+~45–50%**, holding it to the end. With most symbols blanked the surviving ones
+still pin down the narrow parity-check relations those codes rely on, so blind
+recovery comes back rather than failing — a genuine recovery, not the spurious
+self-satisfaction a degenerate check space would give.
 
 ![detection probability vs flip rate](plots/detect_vs_flip.png)
 ![detection probability vs insert rate](plots/detect_vs_insert.png)

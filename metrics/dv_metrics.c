@@ -342,29 +342,35 @@ static const double LOCK_ERASE_RATES[] = {
     0.21, 0.22, 0.2333, 0.2467, 0.26, 0.2733, 0.2867, 0.3, 0.32, 0.34,
     0.36, 0.4067, 0.4533, 0.5, 0.6667, 0.8333, 1};
 
-/* DETECT: blind detection collapses from 1 to 0 extremely sharply, then is flat
- * zero. The bends sit at the very bottom of the rate range, so points pack into
- * the collapse (its width grows flip -> delete) and only a couple mark the flat
- * tail. Erasures hide the whole collapse below ~0.1 (sampled densely there) and
- * then spuriously rebound near 0.6-0.9, a second bend that gets its own cluster. */
+/* DETECT: blind detection falls from 1 to 0, but how far that reaches depends on
+ * the code's relation window n*(k+1) - the short-window codes (K3_R1_2 most of
+ * all) stay detectable far longer, so the flip/insert/delete grids run well past
+ * the long-window collapse to follow the short-window descent (to ~0.25-0.30).
+ * Points pack into the early collapse and along that descent. Erasures are their
+ * own shape: the long-window codes collapse below ~0.06, while the short-window
+ * codes dip to a minimum near 0.28 and then recover all the way back to 1.0 by
+ * ~0.55 and hold it - so that grid samples the early collapse, the dip, and the
+ * recovery densely, with a sparse flat tail. */
 static const double DETECT_FLIP_RATES[] = {
-    0, 0.0008, 0.0017, 0.0025, 0.0033, 0.0042, 0.005, 0.0058, 0.0067,
-    0.0075, 0.0083, 0.0092, 0.01, 0.0117, 0.0133, 0.015, 0.0167, 0.0183,
-    0.02, 0.0233, 0.0267, 0.03, 0.0367, 0.0433, 0.05, 0.06, 0.07, 0.08};
-static const double DETECT_INSERT_RATES[] = {
     0, 0.0017, 0.0033, 0.005, 0.0067, 0.0083, 0.01, 0.0117, 0.0133, 0.015,
     0.0167, 0.0183, 0.02, 0.0233, 0.0267, 0.03, 0.0333, 0.0367, 0.04,
-    0.0467, 0.0533, 0.06, 0.0667, 0.0733, 0.08, 0.0933, 0.1067, 0.12};
+    0.0467, 0.0533, 0.06, 0.07, 0.08, 0.09, 0.1033, 0.1167, 0.13, 0.1467,
+    0.1633, 0.18, 0.2033, 0.2267, 0.25};
+static const double DETECT_INSERT_RATES[] = {
+    0, 0.0017, 0.0033, 0.005, 0.0067, 0.0083, 0.01, 0.0133, 0.0167, 0.02,
+    0.0233, 0.0267, 0.03, 0.035, 0.04, 0.045, 0.05, 0.055, 0.06, 0.0667,
+    0.0733, 0.08, 0.09, 0.1, 0.11, 0.1267, 0.1433, 0.16, 0.18, 0.2, 0.22,
+    0.2467, 0.2733, 0.3};
 static const double DETECT_DELETE_RATES[] = {
     0, 0.0017, 0.0033, 0.005, 0.0067, 0.0083, 0.01, 0.0133, 0.0167, 0.02,
-    0.0233, 0.0267, 0.03, 0.0333, 0.0367, 0.04, 0.0467, 0.0533, 0.06,
-    0.0667, 0.0733, 0.08, 0.0867, 0.0933, 0.1, 0.1133, 0.1267, 0.14,
-    0.1533, 0.1667, 0.18};
+    0.0233, 0.0267, 0.03, 0.0367, 0.0433, 0.05, 0.0567, 0.0633, 0.07, 0.08,
+    0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.1733, 0.1867, 0.2,
+    0.2167, 0.2333, 0.25};
 static const double DETECT_ERASE_RATES[] = {
-    0, 0.0017, 0.0033, 0.005, 0.0067, 0.0083, 0.01, 0.0133, 0.0167, 0.02,
-    0.0267, 0.0333, 0.04, 0.0467, 0.0533, 0.06, 0.07, 0.08, 0.09, 0.11,
-    0.13, 0.15, 0.2833, 0.4167, 0.55, 0.5833, 0.6167, 0.65, 0.6833, 0.7167,
-    0.75, 0.7833, 0.8167, 0.85, 0.8733, 0.8967, 0.92};
+    0, 0.0033, 0.0067, 0.01, 0.0133, 0.0167, 0.02, 0.0267, 0.0333, 0.04,
+    0.0467, 0.0533, 0.06, 0.0733, 0.0867, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2,
+    0.22, 0.24, 0.26, 0.28, 0.3067, 0.3333, 0.36, 0.39, 0.42, 0.45, 0.4833,
+    0.5167, 0.55, 0.6167, 0.6833, 0.75, 0.8067, 0.8633, 0.92};
 
 /* Look up the rate grid for a (metric, impairment) pair, with its length via
  * *count. Indexed [metric][axis]; GRID() pairs each array with its own length. */

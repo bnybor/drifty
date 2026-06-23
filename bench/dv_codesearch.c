@@ -69,7 +69,7 @@
 #define MAX_N 5       /* widest rate this tool handles (1/5)          */
 #define MAX_PRESETS 5 /* most presets a family ships (default + 4 alt) */
 
-/* -- deterministic PRNG (splitmix64), matching bench/dv_metrics.c ---------- */
+/* -- deterministic PRNG (splitmix64), matching metrics/dv_metrics.c -------- */
 
 static uint64_t rng_next(uint64_t *state) {
   uint64_t value = (*state += 0x9E3779B97F4A7C15ULL);

@@ -3,24 +3,28 @@
 """Plot decoding-mistake metrics vs channel rate.
 
 Reads the CSV produced by the dv_metrics harness and renders, for each channel
-axis (flip / insert / delete), one curve per code. Two metrics are available:
+axis (flip / insert / delete), one curve per code. Three metrics are available:
 
   edit       - normalized edit (Levenshtein) distance: mistakes per bit.
   runlength  - mean run length between edits (1 / edit rate): the average number
                of bits that get through between mistakes - a sense of how long a
                transmission you can expect to push through cleanly.
+  lock       - mean lock probability: the decoder's own confidence (0..1) that
+               it is tracking a valid coded stream, averaged over the kept bits.
 
-and two units: per info bit (payload delivered) or per coded bit (bits on the
-wire). The channel rate (x-axis) is per coded bit; a rate-1/n code spends n
-coded bits per info bit, so the per-coded-bit view compares codes fairly.
+The edit and runlength metrics come in two units: per info bit (payload
+delivered) or per coded bit (bits on the wire). The channel rate (x-axis) is per
+coded bit; a rate-1/n code spends n coded bits per info bit, so the
+per-coded-bit view compares codes fairly. Lock probability is unitless, so it is
+rendered once per axis regardless of the --unit setting.
 
 Run length is undefined where no edits were observed (a clean decode over the
 whole measurement); those points are dropped and reported, since the true value
 there is only a lower bound (> the bits measured), not infinity.
 
 Usage:
-    build/bench/dv_metrics > metrics.csv
-    python3 bench/plot_metrics.py metrics.csv -o plots/
+    build/metrics/dv_metrics > metrics/metrics.csv
+    python3 metrics/plot_metrics.py metrics/metrics.csv -o metrics/plots/
 """
 import argparse
 import csv
@@ -52,15 +56,38 @@ def code_n(row):
     return int(row["code"].rsplit("_", 1)[1])
 
 
+def _opt_float(row, col):
+    """Parse an optional float column, or None if absent (older CSVs predating
+    the metric)."""
+    return float(row[col]) if row.get(col) else None
+
+
 def load(path):
-    # series[axis][code] -> (rates, info_rates, n), preserving encounter order.
-    series = defaultdict(lambda: defaultdict(lambda: ([], [], [None])))
+    # series[axis][code] -> {"edit": [(rate, edit_rate)...],
+    #                        "lock": [(rate, mean_lock)...],
+    #                        "detect": [(rate, mean_detect)...], "n": code_n}
+    # Each metric carries its own (rate, value) points, since the harness sweeps
+    # a separate rate grid per metric (the "metric" column tags each row). Older
+    # CSVs without that column carry every metric on one grid, so a blank metric
+    # is treated as contributing to all three (guarded by the per-column value
+    # being present).
+    def entry():
+        return {"edit": [], "lock": [], "detect": [], "n": None}
+
+    series = defaultdict(lambda: defaultdict(entry))
+    columns = {"edit": "edit_rate", "lock": "mean_lock", "detect": "mean_detect"}
     with open(path, newline="") as f:
         for row in csv.DictReader(f):
-            rates, info_rates, n = series[row["axis"]][row["code"]]
-            rates.append(float(row["rate"]))
-            info_rates.append(float(row["edit_rate"]))
-            n[0] = code_n(row)
+            e = series[row["axis"]][row["code"]]
+            e["n"] = code_n(row)
+            tag = (row.get("metric") or "").strip()
+            rate = float(row["rate"])
+            for metric, column in columns.items():
+                if tag and tag != metric:
+                    continue
+                value = _opt_float(row, column)
+                if value is not None:
+                    e[metric].append((rate, value))
     return series
 
 
@@ -89,10 +116,10 @@ def plot_axis(axis, by_code, outdir, metric, unit, logy, ymax):
     fig, ax = plt.subplots(figsize=(7, 5))
     dropped = 0
     all_ys = []
-    for code, (rates, info_rates, n) in by_code.items():
+    for code, entry in by_code.items():
         pts = []
-        for r, ir in sorted(zip(rates, info_rates)):
-            y = y_value(metric, per_coded, ir, n[0])
+        for r, ir in sorted(entry["edit"]):
+            y = y_value(metric, per_coded, ir, entry["n"])
             if y is None:
                 dropped += 1
             else:
@@ -137,13 +164,56 @@ def plot_axis(axis, by_code, outdir, metric, unit, logy, ymax):
     print(f"wrote {out}{note}")
 
 
+# Unitless probability metrics, each a single curve-per-code plot per axis. The
+# key also names the per-metric point list in a series entry (entry[metric]).
+PROB_METRICS = {
+    "lock": {"ylabel": "mean P(decoder locked)",
+             "title": "Lock probability", "missing": "mean_lock"},
+    "detect": {"ylabel": "mean P(code detected)",
+               "title": "Detection probability", "missing": "mean_detect"},
+}
+
+
+def plot_prob_axis(axis, by_code, outdir, metric):
+    """Render a unitless probability metric (lock or detect) vs channel rate, one
+    curve per code. Both live in [0, 1], so there is a single plot per axis."""
+    spec = PROB_METRICS[metric]
+    fig, ax = plt.subplots(figsize=(7, 5))
+    plotted = False
+    for code, entry in by_code.items():
+        pts = sorted(entry[metric])
+        if pts:
+            ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o",
+                    label=code)
+            plotted = True
+    if not plotted:
+        plt.close(fig)
+        print(f"skipped {metric}_vs_{axis}: no {spec['missing']} column in CSV")
+        return
+    ax.set_xlabel(f"channel {axis} rate per coded bit")
+    ax.set_ylabel(spec["ylabel"])
+    ax.set_title(f"{spec['title']} vs {axis} rate")
+    ax.set_ylim(-0.02, 1.02)
+    if metric == "lock":
+        ax.set_xlim(left=0.0, right=1.0)  # show the full rate range to capacity
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    out = os.path.join(outdir, f"{metric}_vs_{axis}.png")
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
+    print(f"wrote {out}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("csv", help="CSV from dv_metrics")
     ap.add_argument("-o", "--outdir", default=".", help="output directory")
-    ap.add_argument("--metric", choices=["edit", "runlength", "both"],
-                    default="both", help="edit distance, mean run length between "
-                    "edits, or both (default)")
+    ap.add_argument("--metric",
+                    choices=["edit", "runlength", "lock", "detect", "all"],
+                    default="all", help="edit distance, mean run length between "
+                    "edits, mean lock probability, mean detect probability, or "
+                    "all (default)")
     ap.add_argument("--unit", choices=["info", "coded", "both"], default="both",
                     help="normalize per info bit, per coded bit, or both "
                     "(default)")
@@ -160,10 +230,14 @@ def main():
     series = load(args.csv)
     if not series:
         raise SystemExit("no rows found in CSV")
-    metrics = ["edit", "runlength"] if args.metric == "both" else [args.metric]
+    metrics = (["edit", "runlength", "lock", "detect"] if args.metric == "all"
+               else [args.metric])
     units = ["info", "coded"] if args.unit == "both" else [args.unit]
     for axis, by_code in series.items():
         for metric in metrics:
+            if metric in PROB_METRICS:
+                plot_prob_axis(axis, by_code, args.outdir, metric)
+                continue
             for unit in units:
                 plot_axis(axis, by_code, args.outdir, metric, unit, args.logy,
                           args.ymax)

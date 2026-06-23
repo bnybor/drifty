@@ -6,7 +6,7 @@ project(drift_viterbi
     LANGUAGES C)
 
 option(DRIFT_VITERBI_BUILD_TESTS "Build the drift_viterbi tests" ${PROJECT_IS_TOP_LEVEL})
-option(DRIFT_VITERBI_BUILD_BENCH "Build the drift_viterbi metrics harness" OFF)
+option(DRIFT_VITERBI_BUILD_BENCH "Build the drift_viterbi metrics and code-search harnesses" OFF)
 
 add_subdirectory(stdlib)
 
@@ -38,6 +38,7 @@ if(DRIFT_VITERBI_BUILD_TESTS)
 endif()
 
 if(DRIFT_VITERBI_BUILD_BENCH)
+    add_subdirectory(metrics)
     add_subdirectory(bench)
 endif()
 

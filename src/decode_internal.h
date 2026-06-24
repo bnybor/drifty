@@ -105,32 +105,38 @@ typedef struct {
    * read_base is the buffer index of the current step's zero-drift read base. */
   uint8_t *received;
   int received_capacity, received_length, read_base;
+
+  /* Shared per-step scratch for the fused forward pass. An edge's alignment DP
+   * depends only on its n-bit output pattern and source drift, not on the code
+   * (fused codes share n / K / trellis geometry), so the per-(pattern, drift)
+   * final rows are computed once per step here and every trellis's scatter
+   * indexes them by pattern. Decoding N codes thus recomputes the alignment once
+   * per step, not N times - the multi-decoder's chief redundancy. patterns are
+   * the union of the codes' distinct output rows (group_of maps edges to them). */
+  uint8_t *pattern_bits;   /* [n_patterns * n] distinct output rows (union)     */
+  int n_patterns;          /* distinct output patterns across all fused codes   */
+  int pattern_cap;         /* allocated capacity of pattern_bits, in patterns   */
+  double *alignment;       /* [(n+1)*(max_consume+1)] alignment DP scratch      */
+  double *align_shared;    /* [n_patterns*drift_width*(max_consume+1)] final rows */
+  /* Per-step received-window match costs (shared), indexed by position-match_lo:
+   * cost of aligning an expected 0/1 bit there, with in_range gating the ends. */
+  double *match_cost0;     /* [n+4*max_drift] expected-bit-0 costs              */
+  double *match_cost1;     /* [n+4*max_drift] expected-bit-1 costs              */
+  signed char *in_range;   /* [n+4*max_drift] 1 if position buffered            */
+  int match_lo;            /* absolute received index of match table position 0 */
 } dv_decode_ctx;
 
-/* One code's trellis working state. */
+/* One code's trellis working state. The alignment scratch lives in the shared
+ * ctx now (it is computed once per step for all codes); a trellis carries only
+ * its own metric/backpointers and the map from each edge to its output pattern's
+ * index in ctx->pattern_bits / ctx->align_shared. */
 typedef struct {
   const dv_code *code;          /* borrowed                                  */
   double *metric;               /* [num_states*drift_width] node costs       */
   double *next_metric;          /* [num_states*drift_width] scratch          */
   dv_backpointer *backpointers; /* [decision_depth*num_states*drift_width]   */
-  double *alignment;            /* [(n+1)*(n+2*max_drift+1)] DP scratch      */
   double smoothed_cost;         /* EWMA of best-path per-step cost           */
-
-  /* Per-code constants and per-step scratch for the grouped forward pass.
-   * An edge's alignment DP depends only on its n-bit output group (<= 2^n
-   * distinct) and source drift, not on the state - so each step computes one
-   * final row per (group, source drift) and the scatter just looks it up,
-   * instead of re-running the DP for every (state, drift, bit). */
-  int n_groups;                   /* distinct n-bit output groups in `code`  */
-  int *group_of;                  /* [2*num_states] (state*2+bit)->group     */
-  const uint8_t **group_expected; /* [n_groups] one output row per group     */
-  double *align_final;            /* [n_groups*drift_width*(max_consume+1)]  */
-  /* Per-step received-window match costs, indexed by position - match_lo:
-   * cost of aligning an expected 0/1 bit there, with in_range gating the ends. */
-  double *match_cost0;            /* [n+4*max_drift] expected-bit-0 costs     */
-  double *match_cost1;            /* [n+4*max_drift] expected-bit-1 costs     */
-  signed char *in_range;          /* [n+4*max_drift] 1 if position buffered   */
-  int match_lo;                   /* absolute received index of position 0    */
+  int *group_of;                /* [2*num_states] (state*2+bit)->pattern idx */
 } dv_trellis;
 
 /* Validate `params`, take dimensions from `code`, allocate the shared buffers,
@@ -140,11 +146,16 @@ int dv_decode_ctx_init(dv_decode_ctx *ctx, const dv_stream_params *params,
                        const dv_code *code);
 void dv_decode_ctx_free(dv_decode_ctx *ctx);
 
-/* Allocate one trellis's per-code arrays (sized from `ctx`) and initialise its
- * metric and smoothed cost for blind acquisition. Returns DV_OK or negative; a
- * failed/zeroed trellis is safe to dv_trellis_free. */
-int dv_trellis_init(dv_trellis *tr, const dv_decode_ctx *ctx,
-                    const dv_code *code);
+/* Allocate the shared per-step alignment table now that every trellis sharing
+ * this ctx has been initialised (so the union of output patterns is known). Call
+ * once after the last dv_trellis_init. Returns DV_OK or negative. */
+int dv_decode_ctx_finalize(dv_decode_ctx *ctx);
+
+/* Allocate one trellis's per-code arrays (sized from `ctx`), initialise its
+ * metric and smoothed cost for blind acquisition, and register its output
+ * patterns into the shared `ctx` (so `ctx` is mutated). Returns DV_OK or
+ * negative; a failed/zeroed trellis is safe to dv_trellis_free. */
+int dv_trellis_init(dv_trellis *tr, dv_decode_ctx *ctx, const dv_code *code);
 void dv_trellis_free(dv_trellis *tr);
 
 /* Append `n_in` received bits to the shared buffer. Returns DV_OK or negative. */

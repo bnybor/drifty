@@ -157,29 +157,31 @@ static int pick_shift(const dv_decode_ctx *ctx, const dv_trellis *tr) {
  * per-bit "not an indel" cost), so the model is fully bit-level rather than
  * per-group. */
 /* clang-format on */
-static void align_fill(const dv_decode_ctx *ctx, dv_trellis *tr,
-                       const uint8_t *expected, int base) {
+static void align_fill_into(const dv_decode_ctx *ctx, const uint8_t *expected,
+                            int base, double *final_out) {
   const int n = ctx->n, max_consume = ctx->n + 2 * ctx->max_drift,
             stride = max_consume + 1;
   /* The per-bit match cost and in-range gate for each received position are
-   * precomputed once per step (fill_match_costs) and shared by every align_fill;
-   * `off` maps this edge's read base into that table. The arithmetic below is
-   * identical to deriving them per cell. */
-  const int off = base - tr->match_lo;
-  const signed char *in_range = tr->in_range;
-  const double *match_cost0 = tr->match_cost0, *match_cost1 = tr->match_cost1;
+   * precomputed once per step (fill_match_costs) and shared by every alignment;
+   * `off` maps this edge's read base into that table. The arithmetic is identical
+   * to deriving them per cell. Rows 0..n-1 use ctx->alignment as scratch; the
+   * final row (row n - the branch cost by total consumption) is written straight
+   * into final_out, which the fused decoder shares across codes by pattern. */
+  const int off = base - ctx->match_lo;
+  const signed char *in_range = ctx->in_range;
+  const double *match_cost0 = ctx->match_cost0, *match_cost1 = ctx->match_cost1;
   const double cost_ins = ctx->cost_ins, cost_del = ctx->cost_del;
-  double *cost_table = tr->alignment;
+  double *scratch = ctx->alignment;
 
-  cost_table[0] = 0.0;
+  scratch[0] = 0.0;
   for (int consumed = 1; consumed <= max_consume; ++consumed) {
-    cost_table[consumed] = in_range[off + consumed - 1]
-                               ? cost_table[consumed - 1] + cost_ins
-                               : INFINITY;
+    scratch[consumed] = in_range[off + consumed - 1]
+                            ? scratch[consumed - 1] + cost_ins
+                            : INFINITY;
   }
   for (int j = 1; j <= n; ++j) {
-    double *cost_row = cost_table + (size_t)j * stride;
-    const double *prev_row = cost_table + (size_t)(j - 1) * stride;
+    double *cost_row = (j == n) ? final_out : scratch + (size_t)j * stride;
+    const double *prev_row = scratch + (size_t)(j - 1) * stride;
     const double *match_cost = expected[j - 1] ? match_cost1 : match_cost0;
     cost_row[0] =
         prev_row[0] + cost_del; /* delete expected[j-1], consume nothing */
@@ -206,25 +208,25 @@ static void align_fill(const dv_decode_ctx *ctx, dv_trellis *tr,
  * bit costs cost_erase either way), and in_range[p] gates positions off the ends
  * of the buffer (where only deletion is available - see align_fill). The window
  * spans every (source drift, consumed) an edge can touch: n + 4*max_drift wide. */
-static void fill_match_costs(dv_decode_ctx *ctx, dv_trellis *tr) {
+static void fill_match_costs(dv_decode_ctx *ctx) {
   const int window = ctx->n + 4 * ctx->max_drift;
   const double keep = ctx->cost_keep, match = ctx->cost_match,
                miss = ctx->cost_miss, erase = ctx->cost_erase;
-  tr->match_lo = ctx->read_base - ctx->max_drift;
+  ctx->match_lo = ctx->read_base - ctx->max_drift;
   for (int p = 0; p < window; ++p) {
-    const int absolute = tr->match_lo + p;
+    const int absolute = ctx->match_lo + p;
     if (absolute >= 0 && absolute < ctx->received_length) {
       const uint8_t received_bit = ctx->received[absolute];
       if (received_bit == DV_ERASURE) {
-        tr->match_cost0[p] = keep + erase;
-        tr->match_cost1[p] = keep + erase;
+        ctx->match_cost0[p] = keep + erase;
+        ctx->match_cost1[p] = keep + erase;
       } else {
-        tr->match_cost0[p] = keep + (received_bit == 0 ? match : miss);
-        tr->match_cost1[p] = keep + (received_bit == 1 ? match : miss);
+        ctx->match_cost0[p] = keep + (received_bit == 0 ? match : miss);
+        ctx->match_cost1[p] = keep + (received_bit == 1 ? match : miss);
       }
-      tr->in_range[p] = 1;
+      ctx->in_range[p] = 1;
     } else {
-      tr->in_range[p] = 0;
+      ctx->in_range[p] = 0;
     }
   }
 }
@@ -283,14 +285,54 @@ static void reanchor_metric(const dv_decode_ctx *ctx, dv_trellis *tr,
  * layer), normalise, update the smoothed cost, and swap. Reads ctx->read_base
  * (already re-anchored for this step) and the shared received buffer. Branches
  * that would read outside the buffered window are skipped. */
-static void forward_pass(dv_decode_ctx *ctx, dv_trellis *tr) {
-  const dv_code *code = tr->code;
+/* Compute, once per fused step, the per-(pattern, source drift) alignment rows
+ * that every trellis's scatter then reads. Alignment depends only on the output
+ * pattern and drift - not the code - so the fused decoder computes it once over
+ * the union of the codes' patterns instead of once per code. A drift is computed
+ * only when some fused trellis has a live node there (union liveness); dead-drift
+ * rows are never read by the scatter (it skips dead nodes). */
+static void align_precompute(dv_decode_ctx *ctx, const dv_trellis *trs,
+                             size_t n_tr) {
   const int n = ctx->n, max_drift = ctx->max_drift, num_states = ctx->num_states,
             drift_width = ctx->drift_width;
+  const int stride = ctx->n + 2 * ctx->max_drift + 1;
+
+  fill_match_costs(ctx);
+
+  for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
+    int live = 0;
+    for (size_t t = 0; t < n_tr && !live; ++t) {
+      const double *metric = trs[t].metric;
+      for (int state = 0; state < num_states; ++state) {
+        if (metric[(size_t)state * drift_width + drift_index] != INFINITY) {
+          live = 1;
+          break;
+        }
+      }
+    }
+    if (!live) {
+      continue;
+    }
+    const int base = ctx->read_base + (drift_index - max_drift);
+    for (int p = 0; p < ctx->n_patterns; ++p) {
+      align_fill_into(
+          ctx, &ctx->pattern_bits[(size_t)p * n], base,
+          ctx->align_shared + ((size_t)p * drift_width + drift_index) * stride);
+    }
+  }
+}
+
+/* One trellis's forward pass: scatter the shared alignment rows (align_precompute,
+ * already run this step) from tr->metric into tr->next_metric, recording this
+ * step's backpointers, then normalise, update the smoothed cost, and swap. The
+ * node/edge order (state, drift, bit, ending drift) matches the per-edge form, so
+ * the `<` tie-break - and the decoded bits - are identical. */
+static void forward_pass(dv_decode_ctx *ctx, dv_trellis *tr) {
+  const dv_code *code = tr->code;
+  const int n = ctx->n, num_states = ctx->num_states,
+            drift_width = ctx->drift_width;
   const size_t count = (size_t)num_states * drift_width;
-  const int max_consume =
-      ctx->n + 2 * ctx->max_drift; /* most received bits a branch can consume */
-  const int stride = max_consume + 1;
+  const int stride = ctx->n + 2 * ctx->max_drift + 1;
 
   for (size_t i = 0; i < count; ++i) {
     tr->next_metric[i] = INFINITY;
@@ -298,35 +340,6 @@ static void forward_pass(dv_decode_ctx *ctx, dv_trellis *tr) {
   dv_backpointer *layer =
       tr->backpointers + (size_t)(ctx->steps % ctx->decision_depth) * count;
 
-  /* An edge's alignment DP depends only on its output group and source drift, so
-   * compute the final row once per (group, source drift) - at most 2^n groups
-   * instead of 2*num_states (state, bit) pairs - and let the scatter look it up.
-   * Source drifts with no live node are skipped: the scatter never reads their
-   * rows (it skips dead nodes), so this is exact and also cuts acquisition. */
-  fill_match_costs(ctx, tr);
-  for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
-    int live = 0;
-    for (int state = 0; state < num_states; ++state) {
-      if (tr->metric[(size_t)state * drift_width + drift_index] != INFINITY) {
-        live = 1;
-        break;
-      }
-    }
-    if (!live) {
-      continue;
-    }
-    const int base = ctx->read_base + (drift_index - max_drift);
-    for (int g = 0; g < tr->n_groups; ++g) {
-      align_fill(ctx, tr, tr->group_expected[g], base);
-      dv_memcpy(
-          tr->align_final + ((size_t)g * drift_width + drift_index) * stride,
-          tr->alignment + (size_t)n * stride, (size_t)stride * sizeof(double));
-    }
-  }
-
-  /* Scatter. The node/edge iteration order (state, drift, bit, ending drift) is
-   * the same as the per-edge form, so the `<` tie-break keeps the same first
-   * equal-cost edge and the decoded bits are identical. */
   for (int state = 0; state < num_states; ++state) {
     const size_t source_row = (size_t)state * drift_width;
     for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
@@ -346,12 +359,13 @@ static void forward_pass(dv_decode_ctx *ctx, dv_trellis *tr) {
         const int edge = state * 2 + bit;
         const int next_state = code->next_state[edge];
         const double *final_row =
-            tr->align_final +
+            ctx->align_shared +
             ((size_t)tr->group_of[edge] * drift_width + drift_index) * stride;
         const size_t dest_row = (size_t)next_state * drift_width;
         for (int next_drift_index = first; next_drift_index < drift_width;
              ++next_drift_index) {
-          const double branch_cost = final_row[n + (next_drift_index - drift_index)];
+          const double branch_cost =
+              final_row[n + (next_drift_index - drift_index)];
           if (branch_cost == INFINITY) {
             continue;
           }
@@ -458,13 +472,18 @@ void dv_decode_step(dv_decode_ctx *ctx, dv_trellis *trs, size_t n) {
   ctx->shift[ctx->steps % ctx->decision_depth] = sigma;
 
   /* With no drift window and indels disabled the alignment is forced diagonal;
-   * a dedicated butterfly skips the DP entirely (identical result). */
+   * a dedicated butterfly skips the DP entirely (identical result). Otherwise the
+   * per-(pattern, drift) alignment rows are computed once for all fused trellises,
+   * then each scatters them - so decoding N codes runs the DP once, not N times. */
   const int nodrift = ctx->max_drift == 0 && ctx->cost_ins == INFINITY &&
                       ctx->cost_del == INFINITY;
-  for (size_t j = 0; j < n; ++j) {
-    if (nodrift) {
+  if (nodrift) {
+    for (size_t j = 0; j < n; ++j) {
       forward_pass_nodrift(ctx, &trs[j]);
-    } else {
+    }
+  } else {
+    align_precompute(ctx, trs, n);
+    for (size_t j = 0; j < n; ++j) {
       forward_pass(ctx, &trs[j]);
     }
   }
@@ -649,13 +668,44 @@ int dv_decode_ctx_init(dv_decode_ctx *ctx, const dv_stream_params *params,
   ctx->received_capacity =
       (ctx->decision_depth + 2) * ctx->n + 8 * ctx->max_drift + 64;
 
+  /* Shared per-step alignment scratch. align_shared is sized later, once every
+   * fused trellis has registered its output patterns (dv_decode_ctx_finalize),
+   * so the union of patterns is known; the pattern list starts empty and grows
+   * as trellises register (one code's edge count is a fine initial capacity). */
+  const int max_consume = ctx->n + 2 * ctx->max_drift;
+  const int window = ctx->n + 4 * ctx->max_drift;
+  ctx->n_patterns = 0;
+  ctx->pattern_cap = ctx->num_states * 2;
+  ctx->align_shared = NULL;
+
   ctx->shift = dv_malloc((size_t)ctx->decision_depth * sizeof(int));
   ctx->received = dv_malloc((size_t)ctx->received_capacity);
-  if (!ctx->shift || !ctx->received) {
+  ctx->pattern_bits = dv_malloc((size_t)ctx->pattern_cap * ctx->n);
+  ctx->alignment =
+      dv_malloc((size_t)(ctx->n + 1) * (max_consume + 1) * sizeof(double));
+  ctx->match_cost0 = dv_malloc((size_t)window * sizeof(double));
+  ctx->match_cost1 = dv_malloc((size_t)window * sizeof(double));
+  ctx->in_range = dv_malloc((size_t)window * sizeof(signed char));
+  if (!ctx->shift || !ctx->received || !ctx->pattern_bits || !ctx->alignment ||
+      !ctx->match_cost0 || !ctx->match_cost1 || !ctx->in_range) {
     dv_decode_ctx_free(ctx);
     return DV_ERR_ALLOC;
   }
   return DV_OK;
+}
+
+/* Allocate the shared alignment table now that the union of every fused trellis's
+ * output patterns is known. Call once after the last dv_trellis_init. */
+int dv_decode_ctx_finalize(dv_decode_ctx *ctx) {
+  if (!ctx) {
+    return DV_ERR_ARG;
+  }
+  const int stride = ctx->n + 2 * ctx->max_drift + 1;
+  const int patterns = ctx->n_patterns > 0 ? ctx->n_patterns : 1;
+  dv_free(ctx->align_shared);
+  ctx->align_shared = dv_malloc((size_t)patterns * ctx->drift_width *
+                                (size_t)stride * sizeof(double));
+  return ctx->align_shared ? DV_OK : DV_ERR_ALLOC;
 }
 
 void dv_decode_ctx_free(dv_decode_ctx *ctx) {
@@ -664,12 +714,66 @@ void dv_decode_ctx_free(dv_decode_ctx *ctx) {
   }
   dv_free(ctx->shift);
   dv_free(ctx->received);
+  dv_free(ctx->pattern_bits);
+  dv_free(ctx->alignment);
+  dv_free(ctx->align_shared);
+  dv_free(ctx->match_cost0);
+  dv_free(ctx->match_cost1);
+  dv_free(ctx->in_range);
   ctx->shift = NULL;
   ctx->received = NULL;
+  ctx->pattern_bits = NULL;
+  ctx->alignment = NULL;
+  ctx->align_shared = NULL;
+  ctx->match_cost0 = NULL;
+  ctx->match_cost1 = NULL;
+  ctx->in_range = NULL;
 }
 
-int dv_trellis_init(dv_trellis *tr, const dv_decode_ctx *ctx,
-                    const dv_code *code) {
+/* Register a code's output patterns into the shared ctx (deduping against those
+ * already there) and fill group_of[edge] with each edge's pattern index. The
+ * fused decoder thus builds one union pattern list across all its codes, so the
+ * per-step alignment is computed once per distinct pattern, not once per code. */
+static int register_patterns(dv_decode_ctx *ctx, const dv_code *code,
+                             int *group_of) {
+  const int n = ctx->n, edges = ctx->num_states * 2;
+  for (int edge = 0; edge < edges; ++edge) {
+    const uint8_t *row = &code->output[(size_t)edge * n];
+    int idx = -1;
+    for (int p = 0; p < ctx->n_patterns; ++p) {
+      int same = 1;
+      for (int j = 0; j < n; ++j) {
+        if (ctx->pattern_bits[(size_t)p * n + j] != row[j]) {
+          same = 0;
+          break;
+        }
+      }
+      if (same) {
+        idx = p;
+        break;
+      }
+    }
+    if (idx < 0) {
+      if (ctx->n_patterns == ctx->pattern_cap) {
+        const int newcap = ctx->pattern_cap * 2;
+        uint8_t *grown = dv_realloc(ctx->pattern_bits, (size_t)newcap * n);
+        if (!grown) {
+          return DV_ERR_ALLOC;
+        }
+        ctx->pattern_bits = grown;
+        ctx->pattern_cap = newcap;
+      }
+      idx = ctx->n_patterns++;
+      for (int j = 0; j < n; ++j) {
+        ctx->pattern_bits[(size_t)idx * n + j] = row[j];
+      }
+    }
+    group_of[edge] = idx;
+  }
+  return DV_OK;
+}
+
+int dv_trellis_init(dv_trellis *tr, dv_decode_ctx *ctx, const dv_code *code) {
   if (!tr || !ctx || !code) {
     return DV_ERR_ARG;
   }
@@ -686,56 +790,17 @@ int dv_trellis_init(dv_trellis *tr, const dv_decode_ctx *ctx,
       ctx->expected_unlock; /* assume unlocked until the stream proves it */
 
   const size_t count = (size_t)ctx->num_states * ctx->drift_width;
-  const int max_consume = ctx->n + 2 * ctx->max_drift;
-  const int window = ctx->n + 4 * ctx->max_drift; /* match-cost table width */
   const int edges = ctx->num_states * 2;
   tr->metric = dv_malloc(count * sizeof(double));
   tr->next_metric = dv_malloc(count * sizeof(double));
   tr->backpointers =
       dv_malloc((size_t)ctx->decision_depth * count * sizeof(dv_backpointer));
-  tr->alignment =
-      dv_malloc((size_t)(ctx->n + 1) * (max_consume + 1) * sizeof(double));
   tr->group_of = dv_malloc((size_t)edges * sizeof(int));
-  tr->group_expected = dv_malloc((size_t)edges * sizeof(const uint8_t *));
-  tr->match_cost0 = dv_malloc((size_t)window * sizeof(double));
-  tr->match_cost1 = dv_malloc((size_t)window * sizeof(double));
-  tr->in_range = dv_malloc((size_t)window * sizeof(signed char));
-  if (!tr->metric || !tr->next_metric || !tr->backpointers || !tr->alignment ||
-      !tr->group_of || !tr->group_expected || !tr->match_cost0 ||
-      !tr->match_cost1 || !tr->in_range) {
+  if (!tr->metric || !tr->next_metric || !tr->backpointers || !tr->group_of) {
     dv_trellis_free(tr);
     return DV_ERR_ALLOC;
   }
-
-  /* Map each (state, bit) edge to its distinct n-bit output group, keeping one
-   * representative output row per group for the per-step alignment precompute. */
-  tr->n_groups = 0;
-  for (int edge = 0; edge < edges; ++edge) {
-    const uint8_t *row = &code->output[(size_t)edge * ctx->n];
-    int found = -1;
-    for (int g = 0; g < tr->n_groups; ++g) {
-      int same = 1;
-      for (int j = 0; j < ctx->n; ++j) {
-        if (tr->group_expected[g][j] != row[j]) {
-          same = 0;
-          break;
-        }
-      }
-      if (same) {
-        found = g;
-        break;
-      }
-    }
-    if (found < 0) {
-      found = tr->n_groups;
-      tr->group_expected[tr->n_groups++] = row;
-    }
-    tr->group_of[edge] = found;
-  }
-
-  tr->align_final = dv_malloc((size_t)tr->n_groups * ctx->drift_width *
-                              (max_consume + 1) * sizeof(double));
-  if (!tr->align_final) {
+  if (register_patterns(ctx, code, tr->group_of) < 0) {
     dv_trellis_free(tr);
     return DV_ERR_ALLOC;
   }
@@ -751,23 +816,11 @@ void dv_trellis_free(dv_trellis *tr) {
   dv_free(tr->metric);
   dv_free(tr->next_metric);
   dv_free(tr->backpointers);
-  dv_free(tr->alignment);
   dv_free(tr->group_of);
-  dv_free(tr->group_expected);
-  dv_free(tr->align_final);
-  dv_free(tr->match_cost0);
-  dv_free(tr->match_cost1);
-  dv_free(tr->in_range);
   tr->metric = NULL;
   tr->next_metric = NULL;
   tr->backpointers = NULL;
-  tr->alignment = NULL;
   tr->group_of = NULL;
-  tr->group_expected = NULL;
-  tr->align_final = NULL;
-  tr->match_cost0 = NULL;
-  tr->match_cost1 = NULL;
-  tr->in_range = NULL;
 }
 
 int dv_decode_feed(dv_decode_ctx *ctx, const uint8_t *in, int n_in) {
@@ -803,6 +856,12 @@ dv_stream_decoder *dv_stream_decoder_create(const dv_code *code,
     return NULL;
   }
   if (dv_trellis_init(&sd->trellis, &sd->ctx, code) < 0) {
+    dv_decode_ctx_free(&sd->ctx);
+    dv_free(sd);
+    return NULL;
+  }
+  if (dv_decode_ctx_finalize(&sd->ctx) < 0) {
+    dv_trellis_free(&sd->trellis);
     dv_decode_ctx_free(&sd->ctx);
     dv_free(sd);
     return NULL;

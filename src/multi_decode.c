@@ -108,6 +108,12 @@ dv_multi_decoder *dv_multi_create(const dv_multi_params *params) {
         return NULL;
       }
     }
+    /* Every trellis has registered its output patterns into the shared ctx, so
+     * the union is known - size the shared per-step alignment table. */
+    if (dv_decode_ctx_finalize(&m->ctx) < 0) {
+      dv_multi_destroy(m);
+      return NULL;
+    }
   }
   return m;
 }

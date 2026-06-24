@@ -242,9 +242,9 @@ def main():
                     default="all", help="edit distance, mean run length between "
                     "edits, mean lock probability, mean detect probability, or "
                     "all (default)")
-    ap.add_argument("--unit", choices=["info", "coded", "both"], default="both",
-                    help="normalize per info bit, per coded bit, or both "
-                    "(default)")
+    ap.add_argument("--unit", choices=["info", "coded", "both"], default="info",
+                    help="normalize per info bit (default), per coded bit, or "
+                    "both")
     ap.add_argument("--logy", action="store_true",
                     help="log y-axis (recommended for run length, which spans "
                     "several orders of magnitude); default linear")

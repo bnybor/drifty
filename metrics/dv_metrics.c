@@ -288,15 +288,19 @@ typedef enum { METRIC_EDIT, METRIC_LOCK, METRIC_DETECT } metric;
 static const char *METRIC_NAME[] = {"edit", "lock", "detect"};
 #define N_METRICS ((int)(sizeof(METRIC_NAME) / sizeof(METRIC_NAME[0])))
 
-/* What a run measures, selected by the command-line argument. The two decoding
+/* What a run measures, selected by the command-line argument. The three decoding
  * variations measure edit and lock with a decoder whose channel model is either
  * pegged (every probability fixed at 1%, the channel met cold - the decoder
  * cannot anticipate it) or matched (the active impairment's probability set to
- * the swept rate - the decoder anticipates the channel); they use different rate
- * grids, tuned to their differently-shaped curves. The detect variation measures
- * blind detection, which uses no decoder model and so is computed once, shared by
- * both. */
-typedef enum { VAR_PEGGED, VAR_MATCHED, VAR_DETECT } variation;
+ * the swept rate - the decoder anticipates the channel). overmatched reuses the
+ * matched model but runs it against a CLEAN channel, so its swept rate is what the
+ * decoder *expects* rather than what the channel does: it measures the penalty of
+ * an over-pessimistic decoder when nothing is actually wrong. The decoding
+ * variations use rate grids tuned to their curves; overmatched's run almost to 1,
+ * since the decoder copes on clean data until its expected rate gets extreme. The
+ * detect variation measures blind detection, which uses no decoder model and so
+ * is computed once, shared by all. */
+typedef enum { VAR_PEGGED, VAR_MATCHED, VAR_DETECT, VAR_OVERMATCHED } variation;
 
 /* Channel rate grids, one per (metric, impairment) pair. Each is sampled only
  * over the range where the metric carries information on that axis, and within
@@ -428,6 +432,30 @@ static const double LOCK_ERASE_RATES_M[] = {
     0, 0.02, 0.04, 0.06, 0.09, 0.12, 0.15, 0.1933, 0.2367, 0.28, 0.3367,
     0.3933, 0.45, 0.5167, 0.5833, 0.65, 0.7167, 0.7833, 0.85, 0.9, 0.95, 1};
 
+/* The overmatched variation runs a clean channel against the matched decoder
+ * model, so the swept rate is what the decoder *expects*, not what it meets. On
+ * clean data the decoder copes until its expectation gets extreme, so the
+ * breakdown sits far above the matched knees and these grids run almost to 1.
+ * The shapes (read off a coarse sweep): flip/delete edit hold at 0 until the
+ * model inverts at expected rate 0.5 - where match/miss (or keep/indel) costs
+ * cross - then jump to a confidently-wrong plateau; flip lock dips to 0 only at
+ * that 0.5 singularity (plus a gradual decline near 1 for the high-redundancy
+ * codes); erase lock holds at 1 then collapses across ~0.55-0.70; and insert
+ * (both metrics), delete lock, and erase edit are flat - expecting absent
+ * impairments costs nothing on a clean stream. Grids are dense at the 0.5 step
+ * and the erase collapse, sparse on the flat axes. */
+static const double OM_EDIT_STEP[] = { /* flip & delete edit: step at 0.5 */
+    0, 0.1, 0.2, 0.3, 0.4, 0.45, 0.47, 0.48, 0.49, 0.5, 0.51, 0.52, 0.53,
+    0.55, 0.58, 0.62, 0.67, 0.72, 0.78, 0.85, 0.92, 0.97};
+static const double OM_FLAT[] = { /* no effect on a clean channel */
+    0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.97};
+static const double OM_LOCK_FLIP[] = { /* dip at 0.5, high-redundancy tail */
+    0, 0.1, 0.2, 0.3, 0.4, 0.47, 0.49, 0.5, 0.51, 0.53, 0.6, 0.7, 0.78,
+    0.82, 0.85, 0.88, 0.9, 0.92, 0.94, 0.95, 0.96, 0.97};
+static const double OM_LOCK_ERASE[] = { /* confidence collapse ~0.55-0.70 */
+    0, 0.1, 0.2, 0.3, 0.4, 0.45, 0.5, 0.5333, 0.5667, 0.6, 0.6333, 0.6667,
+    0.7, 0.7333, 0.7667, 0.8, 0.85, 0.9, 0.97};
+
 /* Look up the rate grid for a (variation, metric, impairment), with its length
  * via *count. Detect grids are shared, so both decoding tables carry the same
  * detect entry; the variation picks the pegged or matched table for edit/lock.
@@ -465,12 +493,30 @@ static const rate_grid GRIDS_MATCHED[N_METRICS][N_AXES] = {
                        [AXIS_DELETE] = GRID(DETECT_DELETE_RATES),
                        [AXIS_ERASE] = GRID(DETECT_ERASE_RATES)},
 };
+/* overmatched's edit/lock grids run near to 1, sampled per axis for the shapes
+ * described above; detect is never run for this variation, so its entry just
+ * mirrors the shared grids. */
+static const rate_grid GRIDS_OVERMATCHED[N_METRICS][N_AXES] = {
+    [METRIC_EDIT] = {[AXIS_FLIP] = GRID(OM_EDIT_STEP),
+                     [AXIS_INSERT] = GRID(OM_FLAT),
+                     [AXIS_DELETE] = GRID(OM_EDIT_STEP),
+                     [AXIS_ERASE] = GRID(OM_FLAT)},
+    [METRIC_LOCK] = {[AXIS_FLIP] = GRID(OM_LOCK_FLIP),
+                     [AXIS_INSERT] = GRID(OM_FLAT),
+                     [AXIS_DELETE] = GRID(OM_FLAT),
+                     [AXIS_ERASE] = GRID(OM_LOCK_ERASE)},
+    [METRIC_DETECT] = {[AXIS_FLIP] = GRID(DETECT_FLIP_RATES),
+                       [AXIS_INSERT] = GRID(DETECT_INSERT_RATES),
+                       [AXIS_DELETE] = GRID(DETECT_DELETE_RATES),
+                       [AXIS_ERASE] = GRID(DETECT_ERASE_RATES)},
+};
 #undef GRID
 
 static const double *metric_axis_rates(variation var, metric which_metric,
                                        axis channel_axis, int *count) {
-  const rate_grid (*table)[N_AXES] =
-      var == VAR_MATCHED ? GRIDS_MATCHED : GRIDS_PEGGED;
+  const rate_grid (*table)[N_AXES] = var == VAR_OVERMATCHED ? GRIDS_OVERMATCHED
+                                     : var == VAR_MATCHED    ? GRIDS_MATCHED
+                                                             : GRIDS_PEGGED;
   const rate_grid *g = &table[which_metric][channel_axis];
   *count = g->count;
   return g->rates;
@@ -503,7 +549,7 @@ static point_model make_model(const dv_code *code, axis channel_axis,
   m.constraint_len = dv_code_k(code);
   m.decision_depth = 8 * m.constraint_len;
 
-  if (var != VAR_MATCHED) {
+  if (var != VAR_MATCHED && var != VAR_OVERMATCHED) {
     /* Channel-agnostic model: every impairment pegged at a flat 1%, regardless
      * of which axis is swept or how high its rate runs, with drift tracking
      * always on. The decoder is never told what the channel is doing, so at low
@@ -525,7 +571,8 @@ static point_model make_model(const dv_code *code, axis channel_axis,
      * that impairment is an indel. The inactive probabilities sit at a small
      * floor; the decoder needs every rate strictly inside (0, 1) and
      * p_ins + p_del < 1, so the active rate is clamped just shy of those bounds
-     * at the high end. This variation shows the decoder's best case. */
+     * at the high end. matched shows the decoder's best case; overmatched reuses
+     * this exact model but run_one_trial feeds it a clean channel instead. */
     const double min_prob = 1e-3;
     const double max_prob = 1.0 - min_prob;
     const double drift_max = 1.0 - 2.0 * min_prob;
@@ -583,11 +630,15 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
   uint64_t *rng = &rng_state;
   const point_model m = make_model(code, channel_axis, rate, var);
 
-  /* Channel rates: only the active axis is nonzero. */
-  const double channel_sub = channel_axis == AXIS_FLIP ? rate : 0.0;
-  const double channel_ins = channel_axis == AXIS_INSERT ? rate : 0.0;
-  const double channel_del = channel_axis == AXIS_DELETE ? rate : 0.0;
-  const double channel_erase = channel_axis == AXIS_ERASE ? rate : 0.0;
+  /* Channel rates: only the active axis is nonzero - except overmatched, which
+   * runs a clean channel (the swept rate drives the decoder's model, not the
+   * channel), so every channel rate stays zero. */
+  const int clean = var == VAR_OVERMATCHED;
+  const double channel_sub = (!clean && channel_axis == AXIS_FLIP) ? rate : 0.0;
+  const double channel_ins = (!clean && channel_axis == AXIS_INSERT) ? rate : 0.0;
+  const double channel_del = (!clean && channel_axis == AXIS_DELETE) ? rate : 0.0;
+  const double channel_erase =
+      (!clean && channel_axis == AXIS_ERASE) ? rate : 0.0;
 
   uint8_t *message = xmalloc((size_t)info_bits);
   uint8_t *coded = xmalloc((size_t)((info_bits + m.constraint_len) * m.code_n));
@@ -724,14 +775,14 @@ int main(int argc, char **argv) {
   if (trials < 1 || info_bits < 1) {
     fprintf(stderr,
             "usage: %s [trials>=1] [info_bits>=1] [seed] "
-            "[variation=pegged|matched|detect]\n",
+            "[variation=pegged|matched|overmatched|detect]\n",
             argv[0]);
     return 2;
   }
 
-  /* What to measure. The decoding variations (pegged, matched) measure edit and
-   * lock; detect measures blind detection alone. pegged/matched accept the
-   * untuned/tuned aliases. */
+  /* What to measure. The decoding variations (pegged, matched, overmatched)
+   * measure edit and lock; detect measures blind detection alone. pegged/matched
+   * accept the untuned/tuned aliases. */
   variation var = VAR_PEGGED;
   if (argc > 4) {
     if (strcmp(argv[4], "matched") == 0 || strcmp(argv[4], "tuned") == 0) {
@@ -739,11 +790,14 @@ int main(int argc, char **argv) {
     } else if (strcmp(argv[4], "pegged") == 0 ||
                strcmp(argv[4], "untuned") == 0) {
       var = VAR_PEGGED;
+    } else if (strcmp(argv[4], "overmatched") == 0) {
+      var = VAR_OVERMATCHED;
     } else if (strcmp(argv[4], "detect") == 0) {
       var = VAR_DETECT;
     } else {
       fprintf(stderr,
-              "dv_metrics: unknown variation '%s' (use pegged|matched|detect)\n",
+              "dv_metrics: unknown variation '%s' "
+              "(use pegged|matched|overmatched|detect)\n",
               argv[4]);
       return 2;
     }
@@ -806,8 +860,9 @@ int main(int argc, char **argv) {
     }
   }
 
-  const char *var_name = var == VAR_MATCHED  ? "matched"
-                         : var == VAR_DETECT ? "detect"
+  const char *var_name = var == VAR_MATCHED       ? "matched"
+                         : var == VAR_OVERMATCHED ? "overmatched"
+                         : var == VAR_DETECT      ? "detect"
                                              : "pegged";
 #ifdef _OPENMP
   fprintf(stderr, "running %d points x %d trials (%s) on %d threads ...\n",

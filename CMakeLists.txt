@@ -26,21 +26,67 @@ target_compile_features(drift_viterbi_bare_obj PUBLIC c_std_11)
 target_compile_options(drift_viterbi_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
 target_link_libraries(drift_viterbi_bare_obj PUBLIC drift_viterbi_interface PRIVATE drift_viterbi_stdlib_interface)
 
+# Only the public API - the symbols declared in the installed include/ headers -
+# should be exported from the archives. The decoder shares internal helpers across
+# translation units (dv_decode_step, dv_trellis_*, dv_decode_ctx_*), and the full
+# library also bundles the stdlib shims (dv_malloc, dv_memcpy, dv_log, ...); both
+# are internal plumbing that would otherwise land in the archive's symbol table.
+# Because they are referenced across object boundaries, hiding them needs a partial
+# link: combine an archive's objects into one relocatable object, then localize
+# every *defined* symbol except the public API. Undefined references are left
+# alone, so the bare archive still asks the consumer to supply the shims and the
+# full archive still resolves libc at the consumer's final link.
+set(_dv_public_symbols
+    drift_viterbi_version
+    dv_code_create dv_code_create_standard dv_code_destroy
+    dv_code_encode dv_code_encode_flush dv_code_k dv_code_n
+    dv_compare dv_compare_max_len dv_compare_min_len
+    dv_detect dv_detect_max_len dv_detect_min_len dv_detect_sequential
+    dv_multi_create dv_multi_decode dv_multi_decode_flush dv_multi_destroy
+    dv_multi_encode dv_multi_encode_create dv_multi_encode_destroy
+    dv_multi_encode_flush
+    dv_stream_decode dv_stream_decode_flush
+    dv_stream_decoder_create dv_stream_decoder_destroy)
+string(REPLACE ";" "\n" _dv_public_symbols_text "${_dv_public_symbols}")
+set(_dv_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dv_public_symbols.txt)
+file(WRITE ${_dv_keep_file} "${_dv_public_symbols_text}\n")
+
+# Build STATIC library `name` from the given OBJECT-library targets, exporting only
+# the public API (see above). Falls back to a plain multi-object archive where the
+# binutils ld -r / objcopy are unavailable - that still works, it just leaves the
+# internals exported.
+function(dv_add_archive name)
+    set(_obj_exprs "")
+    foreach(_lib IN LISTS ARGN)
+        list(APPEND _obj_exprs $<TARGET_OBJECTS:${_lib}>)
+    endforeach()
+    if(CMAKE_LINKER AND CMAKE_OBJCOPY)
+        set(_merged ${CMAKE_CURRENT_BINARY_DIR}/${name}_merged.o)
+        add_custom_command(
+            OUTPUT ${_merged}
+            COMMAND ${CMAKE_LINKER} -r -o ${_merged} ${_obj_exprs}
+            COMMAND ${CMAKE_OBJCOPY} --keep-global-symbols=${_dv_keep_file} ${_merged}
+            DEPENDS ${ARGN} ${_dv_keep_file} ${_obj_exprs}
+            COMMENT "Linking and localizing internal symbols for lib${name}.a"
+            COMMAND_EXPAND_LISTS VERBATIM)
+        set_source_files_properties(${_merged} PROPERTIES
+            EXTERNAL_OBJECT TRUE GENERATED TRUE)
+        add_library(${name} STATIC ${_merged})
+        set_target_properties(${name} PROPERTIES LINKER_LANGUAGE C)
+    else()
+        add_library(${name} STATIC ${_obj_exprs})
+    endif()
+endfunction()
+
 # The freestanding core on its own, as libdrift_viterbi_bare.a (no stdlib shims -
-# the consumer supplies those). $<TARGET_OBJECTS> copies the compiled objects into
-# the archive rather than creating a link dependency on the object library.
-add_library(drift_viterbi_bare STATIC $<TARGET_OBJECTS:drift_viterbi_bare_obj>)
+# the consumer supplies those, so they stay undefined here).
+dv_add_archive(drift_viterbi_bare drift_viterbi_bare_obj)
 target_link_libraries(drift_viterbi_bare PUBLIC drift_viterbi_interface)
 target_compile_features(drift_viterbi_bare PUBLIC c_std_11)
 
 # The public library: the core and the stdlib shims archived together into one
-# self-contained libdrift_viterbi.a. Both sets of objects are copied straight in
-# via $<TARGET_OBJECTS>, so there is no link dependency on the object libraries
-# and every object is kept. libm is carried through for the stdlib shims' math
-# symbols.
-add_library(drift_viterbi STATIC
-    $<TARGET_OBJECTS:drift_viterbi_bare_obj>
-    $<TARGET_OBJECTS:drift_viterbi_stdlib>)
+# self-contained libdrift_viterbi.a. libm is carried through for the shims' math.
+dv_add_archive(drift_viterbi drift_viterbi_bare_obj drift_viterbi_stdlib)
 target_link_libraries(drift_viterbi PUBLIC drift_viterbi_interface PRIVATE m)
 target_compile_features(drift_viterbi PUBLIC c_std_11)
 add_library(drift_viterbi::drift_viterbi ALIAS drift_viterbi)

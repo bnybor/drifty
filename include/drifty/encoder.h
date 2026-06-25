@@ -28,12 +28,41 @@
 #define DRIFTY_ENCODER_H
 
 #include <drifty/bit.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ... declarations go here ... */
+/*
+ * An encoder for DT_ bit positions.
+ *
+ * `src` may contain only:
+ * - DT_TRUE
+ * - DT_FALSE
+ * - DT_ERASURE
+ * - DT_INVALID
+ *
+ * `dst` will be written to contain only:
+ * - DT_TRUE
+ * - DT_FALSE
+ * - DT_ERASURE
+ * - DT_INVALID
+ */
+typedef struct dt_encoder_t dt_encoder;
+struct dt_encoder_t {
+  // Initialize the encoder, and write any preamble
+  int (*begin)(dt_encoder *enc, dt_t *dst, size_t dst_len);
+  // Encode bits
+  int (*encode)(dt_encoder *enc, dt_t *dst, size_t dst_len, const dt_t *src,
+                size_t src_len);
+  // Finish encoding any in-progress bits and write any trailer.
+  int (*finalize)(dt_encoder *enc, dt_t *dst, size_t dst_len);
+
+  // implementation-specific state
+  void *data;
+};
 
 #ifdef __cplusplus
 }

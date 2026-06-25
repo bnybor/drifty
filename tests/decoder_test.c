@@ -487,18 +487,19 @@ static void test_lock_probability(void) {
 
   int cap = n_info + 32;
   uint8_t *out = malloc((size_t)cap);
-  double *lock = malloc((size_t)cap * sizeof(double));
+  dv_decode_details *details = malloc((size_t)cap * sizeof(dv_decode_details));
 
   /* Clean coded stream: feed it all at once, capturing per-bit lock prob. */
   dv_stream_decoder *sd = make_decoder(code, 48, 4, 0.01, 0.01, 0.01, 0.0);
   REQUIRE("decoder created", sd != NULL);
-  int got = dv_stream_decode(sd, coded, clen, out, lock, cap);
+  int got = dv_stream_decode(sd, coded, clen, out, details, cap);
   REQUIRE("clean decode produced output", got > 0);
   double clean_sum = 0.0;
   int prob_in_range = 1;
   for (int i = 0; i < got; ++i) {
-    if (!(lock[i] > 0.0 && lock[i] <= 1.0 + 1e-9)) prob_in_range = 0;
-    if (i >= got / 2) clean_sum += lock[i];
+    const double lk = details[i].c_lock;
+    if (!(lk > 0.0 && lk <= 1.0 + 1e-9)) prob_in_range = 0;
+    if (i >= got / 2) clean_sum += lk;
   }
   check("lock values are probabilities", prob_in_range);
   double clean_mean = clean_sum / (got - got / 2);
@@ -514,10 +515,10 @@ static void test_lock_probability(void) {
   }
   sd = make_decoder(code, 48, 4, 0.01, 0.01, 0.01, 0.0);
   REQUIRE("decoder created", sd != NULL);
-  int got2 = dv_stream_decode(sd, rnd, clen, out, lock, cap);
+  int got2 = dv_stream_decode(sd, rnd, clen, out, details, cap);
   REQUIRE("random decode produced output", got2 > 0);
   double rnd_sum = 0.0;
-  for (int i = got2 / 2; i < got2; ++i) rnd_sum += lock[i];
+  for (int i = got2 / 2; i < got2; ++i) rnd_sum += details[i].c_lock;
   double rnd_mean = rnd_sum / (got2 - got2 / 2);
   dv_stream_decoder_destroy(sd);
 
@@ -526,14 +527,14 @@ static void test_lock_probability(void) {
   check_lt("never locks on noise", rnd_mean, 0.6);
   check_gt("clean vs random margin", clean_mean - rnd_mean, 0.3);
 
-  /* A NULL lock pointer must be accepted and decode normally. */
+  /* A NULL details pointer must be accepted and decode normally. */
   sd = make_decoder(code, 48, 4, 0.01, 0.01, 0.01, 0.0);
   REQUIRE("decoder created", sd != NULL);
-  check("NULL lock pointer accepted",
+  check("NULL details pointer accepted",
         dv_stream_decode(sd, coded, clen, out, NULL, cap) > 0);
   dv_stream_decoder_destroy(sd);
 
-  free(lock);
+  free(details);
   free(out);
   free(rnd);
   free(coded);
@@ -709,7 +710,7 @@ static void test_error_paths(void) {
   check("decode rejects null input",
         dv_stream_decode(sd, NULL, 1, &out8, NULL, 1) == DV_ERR_ARG);
   check("flush rejects null decoder",
-        dv_stream_decode_flush(NULL, &out8, 1) == DV_ERR_ARG);
+        dv_stream_decode_flush(NULL, &out8, NULL, 1) == DV_ERR_ARG);
 
   dv_stream_decoder_destroy(sd);
   dv_code_destroy(code);

@@ -59,9 +59,9 @@ extern "C" {
 /* clang-format on */
 
 /*
- * In received data you may mark a bit DV_ERASURE to say "this one was lost"; the
- * decoder then treats it as unknown instead of guessing 0 or 1. Ordinary bits
- * are DV_FALSE or DV_TRUE. All three bit values are defined in encode.h.
+ * In received data you may mark a bit DV_ERASURE to say "this one was lost";
+ * the decoder then treats it as unknown instead of guessing 0 or 1. Ordinary
+ * bits are DV_FALSE or DV_TRUE. All three bit values are defined in encode.h.
  */
 
 /* ------------------------------------------------------------------------- */
@@ -112,6 +112,28 @@ typedef struct {
 } dv_stream_params;
 
 /*
+ * Details about how an info-bit position was decoded.
+ */
+typedef struct {
+  /*
+   * All fields are consistencies, not probabilities, ranging 0...1.
+   *
+   * In the presence of information loss, c_true and c_false may sum
+   * to more than 1.  Information loss includes erasures, deletions,
+   * and stuck bits.
+   */
+
+  // Consistency of the proposition that the encoded bit was true
+  double c_true;
+  // Consistency of the proposition that the encoded bit was false
+  double c_false;
+  // Consistency of the proposition that the encoded bit is unrecoverable
+  double c_lost;
+  // Consistency of the proposition that the `dv_code` is correct.
+  double c_lock;
+} dv_decode_details;
+
+/*
  * Make a decoder for `code` (which must stay alive until the decoder is freed)
  * using `params`. Returns NULL on invalid settings or out of memory; free it
  * with dv_stream_decoder_destroy().
@@ -131,19 +153,24 @@ void dv_stream_decoder_destroy(dv_stream_decoder *d);
  * fills up (return value == max_out), call again to collect more before feeding
  * more input.
  *
- * `lock_probability`, which may be NULL, stores the probability at each bit
- * position that the decoder is locked onto a valid coded bit stream.  Same size
- * as `out`.
+ * `out` and `details` may both be NULL.  If supplied, they must be arrays
+ * of length max_out.
+ *
+ * Elements of `out` are one of DV_TRUE, DV_FALSE, or DV_ERASURE, whichever is
+ * most consistent.
+ *
+ * `details` returns the inner state of the decoder at each decoded position.
  */
 int dv_stream_decode(dv_stream_decoder *d, const uint8_t *in, int n_in,
-                     uint8_t *out, double *lock_probability, int max_out);
+                     uint8_t *out, dv_decode_details *details, int max_out);
 
 /*
  * Call at the end of the stream to get the last decoded bits still in flight.
  * Returns how many bits were written (0..max_out); call it repeatedly until it
  * returns 0, after which every bit has been decoded.
  */
-int dv_stream_decode_flush(dv_stream_decoder *d, uint8_t *out, int max_out);
+int dv_stream_decode_flush(dv_stream_decoder *d, uint8_t *out,
+                           dv_decode_details *details, int max_out);
 
 #ifdef __cplusplus
 }

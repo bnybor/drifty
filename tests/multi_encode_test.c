@@ -208,23 +208,39 @@ static void test_round_trip(uint64_t seed, int true_idx) {
   const int cap = N_INFO + 64;
   uint8_t out[N_INFO + 64];
   int locked[N_INFO + 64];
+  dv_decode_details *details =
+      malloc((size_t)cap * N_FAM * sizeof(dv_decode_details));
   for (int i = 0; i < cap; ++i) {
     locked[i] = -1;
   }
   int got = 0;
   for (int pos = 0; pos < w;) {
     int chunk = (w - pos < 41) ? (w - pos) : 41;
-    int x = dv_multi_decode(md, coded + pos, chunk, out + got, locked + got,
-                            cap - got);
+    int x = dv_multi_decode(md, coded + pos, chunk, out + got,
+                            details + (size_t)got * N_FAM, cap - got);
     assert(x >= 0);
     got += x;
     pos += chunk;
   }
+  int n_stream = got; /* the flush tail (below) has no details */
   for (;;) {
-    int x = dv_multi_decode_flush(md, out + got, cap - got);
+    int x = dv_multi_decode_flush(md, out + got, NULL, cap - got);
     assert(x >= 0);
     if (x == 0) break;
     got += x;
+  }
+  /* The winning code at a committed position is the one with the highest lock
+   * consistency; the flush tail carries no details, so it reports no winner. */
+  for (int i = 0; i < n_stream; ++i) {
+    if (out[i] == DV_ERASURE) continue;
+    int best = 0;
+    for (int j = 1; j < N_FAM; ++j) {
+      if (details[(size_t)i * N_FAM + j].c_lock >
+          details[(size_t)i * N_FAM + best].c_lock) {
+        best = j;
+      }
+    }
+    locked[i] = best;
   }
 
   int errors = 0, wrong = 0, tail_set = 0;
@@ -244,6 +260,7 @@ static void test_round_trip(uint64_t seed, int true_idx) {
   check("rt: flush tail is zero", tail_set == 0);
   check("rt: attributed to true code", wrong == 0);
 
+  free(details);
   dv_multi_destroy(md);
   dv_multi_encode_destroy(e);
   destroy_codes(codes);

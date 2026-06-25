@@ -76,15 +76,16 @@ typedef struct {
 } dv_multi_params;
 
 /*
- * Allocate a multi-decoder from `params` (must be non-NULL), building one stream
- * decoder per code in params->codes using params->stream. The codes must outlive
- * the multi-decoder; it owns the decoders it builds and frees them in
- * dv_multi_destroy(). Returns NULL on a NULL params, invalid settings, or out of
- * memory.
+ * Allocate a multi-decoder from `params` (must be non-NULL), building one
+ * stream decoder per code in params->codes using params->stream. The codes must
+ * outlive the multi-decoder; it owns the decoders it builds and frees them in
+ * dv_multi_destroy(). Returns NULL on a NULL params, invalid settings, or out
+ * of memory.
  */
 dv_multi_decoder *dv_multi_create(const dv_multi_params *params);
 
-/* Free a multi-decoder and every stream decoder it owns. Passing NULL is fine. */
+/* Free a multi-decoder and every stream decoder it owns. Passing NULL is fine.
+ */
 void dv_multi_destroy(dv_multi_decoder *m);
 
 /*
@@ -96,22 +97,25 @@ void dv_multi_destroy(dv_multi_decoder *m);
  * lock_floor) or the weighted vote is too close, that bit is DV_ERASURE.
  *
  * `in`/`n_in`, `out`/`max_out`, and the return value follow dv_stream_decode.
- * `locked_decoder`, which may be NULL, is written alongside `out` (same length):
- * each entry is the index of the likeliest code (lowest-cost) at that position,
- * or -1 where the bit was erased.
+ *
+ * `details`, if supplied, is an array of length `codes_len * max_out`.
+ * For each position i and decoder index j, the details of that decoder
+ * are found at
+ *
+ * details[codes_len * i + j]
+ *
+ * `out` and `details` may be NULL.
  */
 int dv_multi_decode(dv_multi_decoder *d, const uint8_t *in, int n_in,
-                    uint8_t *out, int *locked_decoder, int max_out);
+                    uint8_t *out, dv_decode_details *details, int max_out);
 
 /*
  * Flush a multi-decoder at end of stream, draining the last bits still in
  * flight in every wrapped decoder. Like dv_stream_decode_flush: call repeatedly
- * until it returns 0, after which every bit has been decoded. These tail bits
- * carry no lock probability to choose a decoder by, so they are decoded by the
- * decoder that was most recently locked during dv_multi_decode - or emitted as
- * DV_ERASURE if no decoder ever locked.
+ * until it returns 0, after which every bit has been decoded.
  */
-int dv_multi_decode_flush(dv_multi_decoder *d, uint8_t *out, int max_out);
+int dv_multi_decode_flush(dv_multi_decoder *d, uint8_t *out,
+                          dv_decode_details *details, int max_out);
 
 #ifdef __cplusplus
 }

@@ -138,7 +138,7 @@ static void test_structured_vs_random(uint64_t seed) {
   }
 }
 
-/* 5. The decoder's lock_probability and dv_compare are two routes to the same
+/* 5. The decoder's c_lock and dv_compare are two routes to the same
  *    yes/no question - "do these bits belong to this code?" - so they should
  * agree. For each ordered pair within a family we decode code A's stream with
  * code B's decoder (lock) and run dv_compare on independent A and B streams,

@@ -48,8 +48,8 @@
  *
  * Alongside the edit rate we report two confidence metrics, both in [0, 1]:
  *
- *   mean_lock   - the decoder's own running estimate (see dv_stream_decode's
- *                 lock_probability) that it is tracking a valid coded stream,
+ *   mean_lock   - the decoder's own running estimate (see dv_decode_details'
+ *                 c_lock) that it is tracking a valid coded stream,
  *                 averaged across the kept bits. It shows how confidently the
  *                 decoder stays synced as each impairment ramps up.
  *   mean_detect - the blind detector's confidence (dv_detect) that the stream
@@ -119,18 +119,19 @@ static double clamp_double(double value, double lo, double hi) {
 
 /* Push a received buffer through the streaming decoder in small chunks, then
  * drain. Returns the number of decoded bits collected (<= decoded_cap). When
- * `lock` is non-NULL it receives the per-bit lock probability for the bits
- * emitted by streaming; the trailing flush bits carry no lock value, so
- * *n_stream (if non-NULL) reports how many leading bits `lock` was filled for. */
+ * `details` is non-NULL it receives the per-bit soft output for the bits emitted
+ * by streaming; the trailing flush bits carry no lock value, so *n_stream (if
+ * non-NULL) reports how many leading bits `details` was filled for. */
 static int decode_all(dv_stream_decoder *decoder, const uint8_t *received,
-                      int received_len, uint8_t *decoded, double *lock,
-                      int decoded_cap, int *n_stream) {
+                      int received_len, uint8_t *decoded,
+                      dv_decode_details *details, int decoded_cap,
+                      int *n_stream) {
   int n_decoded = 0, read_pos = 0;
   while (read_pos < received_len && n_decoded < decoded_cap) {
     int chunk = received_len - read_pos < 64 ? received_len - read_pos : 64;
     int written = dv_stream_decode(decoder, received + read_pos, chunk,
                                    decoded + n_decoded,
-                                   lock ? lock + n_decoded : NULL,
+                                   details ? details + n_decoded : NULL,
                                    decoded_cap - n_decoded);
     if (written < 0) {
       return written;
@@ -145,7 +146,7 @@ static int decode_all(dv_stream_decoder *decoder, const uint8_t *received,
     if (n_decoded >= decoded_cap) {
       break;
     }
-    int written = dv_stream_decode_flush(decoder, decoded + n_decoded,
+    int written = dv_stream_decode_flush(decoder, decoded + n_decoded, NULL,
                                          decoded_cap - n_decoded);
     if (written < 0) {
       return written;
@@ -567,9 +568,10 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
    * this metric uses. */
   const int decoded_cap = info_bits + 256;
   uint8_t *decoded = xmalloc((size_t)decoded_cap);
-  double *lock = which_metric == METRIC_LOCK
-                     ? xmalloc((size_t)decoded_cap * sizeof(double))
-                     : NULL;
+  dv_decode_details *details =
+      which_metric == METRIC_LOCK
+          ? xmalloc((size_t)decoded_cap * sizeof(dv_decode_details))
+          : NULL;
 
   dv_stream_decoder *decoder = dv_stream_decoder_create(code, &m.params);
   if (!decoder) {
@@ -577,7 +579,7 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
     exit(1);
   }
   int n_stream = 0;
-  int n_decoded = decode_all(decoder, received, received_len, decoded, lock,
+  int n_decoded = decode_all(decoder, received, received_len, decoded, details,
                              decoded_cap, &n_stream);
   dv_stream_decoder_destroy(decoder);
   free(received);
@@ -608,7 +610,7 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
      * already trimmed from the edit window, has none). */
     int lock_end = decoded_end < n_stream ? decoded_end : n_stream;
     for (int i = m.warmup; i < lock_end; ++i) {
-      r.lock_sum += lock[i];
+      r.lock_sum += details[i].c_lock;
       ++r.lock_bits;
     }
   }
@@ -616,7 +618,7 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
   free(message);
   free(coded);
   free(decoded);
-  free(lock);
+  free(details);
   return r;
 }
 

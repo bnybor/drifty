@@ -263,15 +263,15 @@ static double lock_mean(const dv_code *enc, const dv_code *dec,
   }
   const int cap = info_bits + 64;
   uint8_t *out = xmalloc((size_t)cap);
-  double *lock = xmalloc((size_t)cap * sizeof(double));
-  int got = dv_stream_decode(sd, coded, clen, out, lock, cap);
+  dv_decode_details *details = xmalloc((size_t)cap * sizeof(dv_decode_details));
+  int got = dv_stream_decode(sd, coded, clen, out, details, cap);
 
   double result = 1.0;
   if (got > 0) {
     double sum = 0.0;
     int count = 0;
     for (int i = got / 2; i < got; ++i) {
-      sum += lock[i];
+      sum += details[i].c_lock;
       ++count;
     }
     result = count ? sum / count : 1.0;
@@ -279,7 +279,7 @@ static double lock_mean(const dv_code *enc, const dv_code *dec,
   dv_stream_decoder_destroy(sd);
   free(coded);
   free(out);
-  free(lock);
+  free(details);
   return result;
 }
 

@@ -280,7 +280,7 @@ static inline int stream_decode_all(dv_stream_decoder *sd, const uint8_t *rx,
     pos += chunk;
   }
   for (;;) {
-    int w = dv_stream_decode_flush(sd, out + got, cap - got);
+    int w = dv_stream_decode_flush(sd, out + got, NULL, cap - got);
     assert(w >= 0);
     if (w == 0) break;
     got += w;
@@ -304,21 +304,21 @@ static inline double decoder_lock_mean(const dv_code *enc, const dv_code *dec,
   assert(sd != NULL);
   int cap = info_bits + 64;
   uint8_t *out = malloc((size_t)cap);
-  double *lock = malloc((size_t)cap * sizeof(double));
-  int got = dv_stream_decode(sd, coded, clen, out, lock, cap);
+  dv_decode_details *details = malloc((size_t)cap * sizeof(dv_decode_details));
+  int got = dv_stream_decode(sd, coded, clen, out, details, cap);
   assert(got > 0);
 
   double sum = 0.0;
   int count = 0;
   for (int i = got / 2; i < got; ++i) {
-    sum += lock[i];
+    sum += details[i].c_lock;
     ++count;
   }
 
   dv_stream_decoder_destroy(sd);
   free(coded);
   free(out);
-  free(lock);
+  free(details);
   return count ? sum / count : 0.0;
 }
 

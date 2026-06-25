@@ -91,7 +91,7 @@ typedef struct dv_code dv_code;
  * more bandwidth; when unsure, pick DV_CODE_K7_RATE_1_2. Each rate/K family is a
  * default plus a few alternates, all picked to be mutually distinguishable: a
  * decoder (or dv_compare) for one will not lock onto another's stream (see
- * dv_stream_decode's lock_probability). How many alternates a family has depends
+ * dv_decode_details' c_lock). How many alternates a family has depends
  * on how many distinguishable codes its generator space actually holds - the
  * rate-1/2 families support three apiece, the rate-1/3 and rate-1/5 families
  * five. The alternates trade a little free distance for that separation. The

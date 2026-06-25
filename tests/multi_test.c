@@ -72,26 +72,48 @@ static void destroy_codes(dv_code *codes[N_DEC]) {
 
 /* Push a received buffer through the multi-decoder in small chunks, recording
  * the chosen decoder per bit, then drain. Returns the decoded-bit count. */
+/* Decode the whole buffer, recovering the per-bit winning decoder index in
+ * `locked`. The new API reports per-decoder details rather than a winner index;
+ * the winner at a committed position is the locked-onto code - the one with the
+ * highest c_lock (lowest cost). The flush tail carries no details, so those
+ * positions report no winner (-1). */
 static int multi_decode_all(dv_multi_decoder *md, const uint8_t *rx, int rl,
                             uint8_t *out, int *locked, int cap) {
+  dv_decode_details *details =
+      malloc((size_t)cap * N_DEC * sizeof(dv_decode_details));
   for (int i = 0; i < cap; ++i) {
     locked[i] = -1; /* flush region reports no winner; default to none */
   }
   int got = 0;
   for (int pos = 0; pos < rl;) {
     int chunk = (rl - pos < 41) ? (rl - pos) : 41;
-    int w = dv_multi_decode(md, rx + pos, chunk, out + got, locked + got,
-                            cap - got);
+    int w = dv_multi_decode(md, rx + pos, chunk, out + got,
+                            details + (size_t)got * N_DEC, cap - got);
     assert(w >= 0);
     got += w;
     pos += chunk;
   }
+  int n_stream = got; /* the flush tail (below) has no details */
   for (;;) {
-    int w = dv_multi_decode_flush(md, out + got, cap - got);
+    int w = dv_multi_decode_flush(md, out + got, NULL, cap - got);
     assert(w >= 0);
     if (w == 0) break;
     got += w;
   }
+  for (int i = 0; i < n_stream; ++i) {
+    if (out[i] == DV_ERASURE) {
+      continue;
+    }
+    int best = 0;
+    for (int j = 1; j < N_DEC; ++j) {
+      if (details[(size_t)i * N_DEC + j].c_lock >
+          details[(size_t)i * N_DEC + best].c_lock) {
+        best = j;
+      }
+    }
+    locked[i] = best;
+  }
+  free(details);
   return got;
 }
 
@@ -136,7 +158,7 @@ static void clean_trial(uint64_t seed, int true_idx) {
     if (out[i] == DV_ERASURE) continue;
     ++decoded;
     if (i < N_INFO && out[i] != msg[i]) ++bit_errors;
-    /* The flush tail reports no index (flush has no locked_decoder out-param),
+    /* The flush tail reports no index (decoded without per-position details),
      * so check attribution only where one is set. */
     if (locked[i] >= 0 && locked[i] != true_idx) ++wrong_idx;
   }
@@ -330,7 +352,7 @@ static void test_multi_args(void) {
   check("null decoder rejected",
         dv_multi_decode(NULL, in, 8, out, NULL, 8) == DV_ERR_ARG);
   check("null flush decoder rejected",
-        dv_multi_decode_flush(NULL, out, 8) == DV_ERR_ARG);
+        dv_multi_decode_flush(NULL, out, NULL, 8) == DV_ERR_ARG);
 
   check("null params rejected", dv_multi_create(NULL) == NULL);
 
@@ -342,7 +364,7 @@ static void test_multi_args(void) {
   check("empty decoder yields no output",
         dv_multi_decode(empty, in, 8, out, NULL, 8) == 0);
   check("empty decoder flush yields no output",
-        dv_multi_decode_flush(empty, out, 8) == 0);
+        dv_multi_decode_flush(empty, out, NULL, 8) == 0);
   dv_multi_destroy(empty);
 }
 

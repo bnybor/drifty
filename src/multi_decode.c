@@ -133,74 +133,102 @@ void dv_multi_destroy(dv_multi_decoder *m) {
 }
 
 /* Common argument check for the two public entry points; mirrors
- * dv_stream_decode's contract. */
+ * dv_stream_decode's contract (out may be NULL - the caller may want only
+ * details, or to drain). */
 static int multi_args_ok(const dv_multi_decoder *d, const uint8_t *in, int n_in,
-                         const uint8_t *out, int max_out) {
-  return d && !(n_in > 0 && !in) && n_in >= 0 && !(max_out > 0 && !out) &&
-         max_out >= 0 && !(d->n > 0 && !d->trellises);
+                         int max_out) {
+  return d && !(n_in > 0 && !in) && n_in >= 0 && max_out >= 0 &&
+         !(d->n > 0 && !d->trellises);
 }
 
-/* Step the fused trellises over the buffered input, emitting one merged bit per
- * decided step: the likelihood-weighted soft combination of the codes' traced
- * bits (see the loop body), or DV_ERASURE when nothing is locked or the combined
- * vote is too close to call. `draining` relaxes the look-ahead for end-of-stream.
- * Shared by decode and flush. */
-static int multi_run(dv_multi_decoder *d, uint8_t *out, int *locked_decoder,
-                     int max_out, int draining) {
+/* Step the fused trellises over the buffered input, emitting merged bits in
+ * batches (like the single-stream decoder): step forward until ring_len bits
+ * past the last decision are buffered, then decide the whole batch at once.
+ *
+ * Per-decoder soft output (details) comes from one BCJR backward sweep per
+ * decoder (dv_trellis_soft_batch), interleaved into the details block with
+ * stride d->n. The merged out bit is the likelihood-weighted vote of the
+ * decoders' traced bits: each decoder's weight w_j = exp(-(cost_j - min_cost))
+ * and its lock come from its smoothed cost at the bit's OWN decision time
+ * (smoothed_ring[t+decision_depth]), so the merge matches the per-bit decoder; a
+ * code that does not fit gets vanishing weight automatically. The heavier value
+ * wins when it leads by >= lock_margin of the total weight, else the bit is
+ * ambiguous and erased. One code is still gated absolutely: unless the best
+ * decoder clears lock_floor nothing is locked and the bit is erased. `draining`
+ * emits the reduced-depth tail. out and details may both be NULL. */
+static int multi_run(dv_multi_decoder *d, uint8_t *out,
+                     dv_decode_details *details, int max_out, int draining) {
   dv_decode_ctx *ctx = &d->ctx;
+  const int dd = ctx->decision_depth, rl = ctx->ring_len;
+  const long long cap_window = 2 * (long long)dd;
+  const size_t ncodes = d->n;
   int output_count = 0;
   int last = d->locked;
   for (;;) {
-    if (!draining) {
-      if (ctx->received_length < ctx->read_base + ctx->n + ctx->max_drift + 1) {
+    /* Accumulate forward steps until a batch is buffered or we cannot step. */
+    while (ctx->steps - ctx->decided < cap_window) {
+      if (!draining) {
+        if (ctx->received_length <
+            ctx->read_base + ctx->n + ctx->max_drift + 1) {
+          break;
+        }
+      } else if (ctx->received_length - ctx->read_base < ctx->n) {
         break;
       }
-    } else {
-      if (ctx->received_length - ctx->read_base < ctx->n) {
-        break;
+      dv_decode_step(ctx, d->trellises, ncodes);
+    }
+    const long long horizon = draining ? ctx->steps : (ctx->steps - dd);
+    long long avail = horizon - ctx->decided;
+    if (avail > max_out - output_count) {
+      avail = max_out - output_count;
+    }
+    if (avail <= 0) {
+      break;
+    }
+    const int n_emit = (int)avail;
+
+    /* Per-decoder soft output: one backward sweep per decoder, interleaved into
+     * the details block (stride ncodes). */
+    if (details) {
+      for (size_t j = 0; j < ncodes; ++j) {
+        dv_trellis_soft_batch(ctx, &d->trellises[j], ctx->decided, n_emit, NULL,
+                              details + (size_t)output_count * ncodes + j,
+                              (int)ncodes);
       }
     }
 
-    if (ctx->steps >= ctx->decision_depth) {
-      if (output_count >= max_out) {
-        break;
-      }
-      /* Likelihood-weighted soft combine across the codes. Each trellis's
-       * smoothed_cost is the best path's per-step negative-log-likelihood under
-       * that code, so w_j = exp(-(cost_j - min_cost)) is code j's likelihood
-       * relative to the best-fitting one: a code that does not fit (much higher
-       * cost) gets vanishing weight automatically, with no hard cutoff. Every
-       * code then casts its own traced bit and we accumulate the weight behind
-       * each bit value; the heavier value wins when it leads by >= lock_margin
-       * of the total weight, else the bit is genuinely ambiguous and erased.
-       *
-       * One code is still gated absolutely: unless the best-locked code clears
-       * lock_floor, nothing is locked (e.g. noise, or between codes) and the bit
-       * is erased regardless of how the weights split. The reported winner is
-       * the single likeliest code (lowest cost), or -1 when erased. */
-      double min_cost = d->trellises[0].smoothed_cost;
+    for (int k = 0; k < n_emit; ++k) {
+      const long long t = ctx->decided + k;
+      const int pos = output_count + k;
+      /* This bit's own decision frontier (clamped for the flush tail). */
+      long long s = t + dd;
+      if (s > ctx->steps) s = ctx->steps;
+      const size_t si = (size_t)(s % rl);
+
+      double min_cost = d->trellises[0].smoothed_ring[si];
       int best_idx = 0;
-      for (size_t j = 1; j < d->n; ++j) {
-        if (d->trellises[j].smoothed_cost < min_cost) {
-          min_cost = d->trellises[j].smoothed_cost;
+      for (size_t j = 1; j < ncodes; ++j) {
+        if (d->trellises[j].smoothed_ring[si] < min_cost) {
+          min_cost = d->trellises[j].smoothed_ring[si];
           best_idx = (int)j;
         }
       }
-      const double best_lock = dv_trellis_lock(ctx, &d->trellises[best_idx]);
+      const double best_lock = dv_lock_from_cost(ctx, min_cost);
 
       int decided_bit = -1; /* 0/1 once chosen; stays -1 to erase */
       if (best_lock >= d->lock_floor) {
         double weight_total = 0.0, weight_ones = 0.0;
-        for (size_t j = 0; j < d->n; ++j) {
-          const double w = dv_exp(min_cost - d->trellises[j].smoothed_cost);
+        for (size_t j = 0; j < ncodes; ++j) {
+          const double w =
+              dv_exp(min_cost - d->trellises[j].smoothed_ring[si]);
           weight_total += w;
-          const int frontier = dv_trellis_frontier(ctx, &d->trellises[j]);
-          if (dv_trellis_trace(ctx, &d->trellises[j], frontier, ctx->decided)) {
+          /* Trace this decoder's bit from its frontier at the bit's own decision
+           * time (step s = t+decision_depth), exactly as the per-bit decoder. */
+          const int fr = d->trellises[j].frontier_ring[si];
+          if (dv_trellis_trace(ctx, &d->trellises[j], s, fr, t)) {
             weight_ones += w;
           }
         }
-        /* margin between the two bit values, in units of total weight:
-         * (W1 - W0) / Wtot = 2*W1/Wtot - 1, range [-1, 1]. */
         const double lead = 2.0 * weight_ones / weight_total - 1.0;
         if (lead >= d->lock_margin) {
           decided_bit = 1;
@@ -210,29 +238,25 @@ static int multi_run(dv_multi_decoder *d, uint8_t *out, int *locked_decoder,
       }
 
       if (decided_bit >= 0) {
-        out[output_count] = (uint8_t)decided_bit;
         last = best_idx;
-        if (locked_decoder) {
-          locked_decoder[output_count] = best_idx;
-        }
-      } else {
-        out[output_count] = DV_ERASURE;
-        if (locked_decoder) {
-          locked_decoder[output_count] = -1;
-        }
+        if (out) out[pos] = (uint8_t)decided_bit;
+      } else if (out) {
+        out[pos] = DV_ERASURE;
       }
-      output_count++;
-      ctx->decided++;
     }
-    dv_decode_step(ctx, d->trellises, d->n);
+    output_count += n_emit;
+    ctx->decided += n_emit;
+    if (output_count >= max_out) {
+      break;
+    }
   }
   d->locked = last; /* carry the latest winner into the end-of-stream flush */
   return output_count;
 }
 
 int dv_multi_decode(dv_multi_decoder *d, const uint8_t *in, int n_in,
-                    uint8_t *out, int *locked_decoder, int max_out) {
-  if (!multi_args_ok(d, in, n_in, out, max_out)) {
+                    uint8_t *out, dv_decode_details *details, int max_out) {
+  if (!multi_args_ok(d, in, n_in, max_out)) {
     return DV_ERR_ARG;
   }
   if (d->n == 0) {
@@ -242,38 +266,18 @@ int dv_multi_decode(dv_multi_decoder *d, const uint8_t *in, int n_in,
   if (status < 0) {
     return status;
   }
-  return multi_run(d, out, locked_decoder, max_out, /*draining=*/0);
+  return multi_run(d, out, details, max_out, /*draining=*/0);
 }
 
-int dv_multi_decode_flush(dv_multi_decoder *d, uint8_t *out, int max_out) {
-  if (!multi_args_ok(d, NULL, 0, out, max_out)) {
+int dv_multi_decode_flush(dv_multi_decoder *d, uint8_t *out,
+                          dv_decode_details *details, int max_out) {
+  if (!multi_args_ok(d, NULL, 0, max_out)) {
     return DV_ERR_ARG;
   }
   if (d->n == 0 || max_out == 0) {
     return 0;
   }
-  dv_decode_ctx *ctx = &d->ctx;
-  int output_count = multi_run(d, out, /*locked_decoder=*/NULL, max_out,
-                               /*draining=*/1);
-
-  /* Drain the pipeline. The last decision_depth bits carry no lock probability,
-   * so decode them with the most recently locked code (its trellis holds the
-   * true tail); with nothing ever locked, erase them. */
-  if (ctx->decided < ctx->steps && output_count < max_out) {
-    int win = d->locked;
-    if (win < 0) {
-      while (ctx->decided < ctx->steps && output_count < max_out) {
-        out[output_count++] = DV_ERASURE;
-        ctx->decided++;
-      }
-    } else {
-      int frontier = dv_trellis_frontier(ctx, &d->trellises[win]);
-      while (ctx->decided < ctx->steps && output_count < max_out) {
-        out[output_count++] =
-            dv_trellis_trace(ctx, &d->trellises[win], frontier, ctx->decided);
-        ctx->decided++;
-      }
-    }
-  }
-  return output_count;
+  /* draining=1 emits the whole tail (horizon = steps) at reduced look-ahead;
+   * nothing is left buffered after. */
+  return multi_run(d, out, details, max_out, /*draining=*/1);
 }

@@ -91,6 +91,14 @@ static inline int dv_bp_state(dv_backpointer b) { return (int)(b >> 16); }
  * trellis dimensions - all identical across codes decoded together. */
 typedef struct {
   int n, max_drift, num_states, drift_width, decision_depth;
+  /* Snapshot-ring length for the BCJR soft output. The single-stream decoder
+   * emits in batches: it steps up to (decision_depth + batch) ahead of the last
+   * decided bit, then one backward sweep serves the whole batch (the warmup
+   * overlap is re-swept, so cost is ~2 backward steps per bit instead of one full
+   * window per bit). The alpha/branch/shift/smoothed rings must outlast that, so
+   * ring_len = 2*decision_depth + slack (the backpointer ring stays
+   * decision_depth - only the per-bit multi traceback uses it). */
+  int ring_len;
   /* Branch-metric constants, in cost (negative-log-likelihood) units. */
   double cost_match, cost_miss, cost_erase, cost_keep, cost_ins, cost_del;
   /* Lock detection reference costs (channel-derived, code-independent). */
@@ -124,6 +132,19 @@ typedef struct {
   double *match_cost1;     /* [n+4*max_drift] expected-bit-1 costs              */
   signed char *in_range;   /* [n+4*max_drift] 1 if position buffered            */
   int match_lo;            /* absolute received index of match table position 0 */
+
+  /* Per-step branch-cost snapshots for the forward-backward (BCJR) soft output:
+   * a ring of the shared per-(pattern, source drift) final rows (== align_shared,
+   * the rows forward_pass scatters), indexed by step % decision_depth. The
+   * backward beta pass (dv_trellis_details) reads these to recover the cost of
+   * the best complete path for each bit value at the target step - which plain
+   * traceback cannot, since compare-select discards the losing hypothesis. Sized
+   * [decision_depth * n_patterns * drift_width * (n+2*max_drift+1)], allocated in
+   * dv_decode_ctx_finalize once n_patterns is known. */
+  double *branch_ring;
+  /* Two [num_states*drift_width] scratch buffers for the backward beta pass
+   * (only beta[t+1] is needed to form beta[t]). */
+  double *beta_a, *beta_b;
 } dv_decode_ctx;
 
 /* One code's trellis working state. The alignment scratch lives in the shared
@@ -137,6 +158,20 @@ typedef struct {
   dv_backpointer *backpointers; /* [decision_depth*num_states*drift_width]   */
   double smoothed_cost;         /* EWMA of best-path per-step cost           */
   int *group_of;                /* [2*num_states] (state*2+bit)->pattern idx */
+  /* Per-step forward-metric (alpha) snapshots for the BCJR backward pass: the
+   * metric this trellis fed into each step's forward_pass (post re-anchor),
+   * ringed by step % ring_len. [ring_len*num_states*drift_width]. */
+  double *alpha_ring;
+  /* Per-frontier smoothed-cost snapshots [ring_len]: smoothed_ring[s % ring_len]
+   * is smoothed_cost when the frontier was at step s, so a batched decision for
+   * target t reads the lock consistency at t's own decision time (frontier
+   * t+decision_depth), not the later batch frontier. */
+  double *smoothed_ring;
+  /* Per-frontier best-node snapshots [ring_len]: frontier_ring[s % ring_len] is
+   * the lowest-cost node of the metric at frontier s, so the batched multi vote
+   * can trace each decoder's bit from its own decision-time frontier (exactly as
+   * the per-bit decoder would), not from the later batch frontier. */
+  int *frontier_ring;
 } dv_trellis;
 
 /* Validate `params`, take dimensions from `code`, allocate the shared buffers,
@@ -169,11 +204,26 @@ void dv_decode_step(dv_decode_ctx *ctx, dv_trellis *trs, size_t n);
 /* Lowest-cost node at a trellis's current frontier. */
 int dv_trellis_frontier(const dv_decode_ctx *ctx, const dv_trellis *tr);
 
-/* Input bit a trellis decided at step `target`, traced from node `frontier`. */
+/* Input bit a trellis decided at step `target`, traced back from node `frontier`
+ * at step `from_step` (from_step - target <= ring_len). Pass ctx->steps and a
+ * current frontier node for an ordinary frontier traceback; the batched multi
+ * vote passes a snapshotted earlier frontier (frontier_ring). */
 unsigned char dv_trellis_trace(const dv_decode_ctx *ctx, const dv_trellis *tr,
-                               int frontier, long long target);
+                               long long from_step, int frontier,
+                               long long target);
 
-/* Probability the trellis is locked onto this code's stream (0..1). */
-double dv_trellis_lock(const dv_decode_ctx *ctx, const dv_trellis *tr);
+/* Map one per-step path cost onto the lock scale (0..1): expected_unlock -> 0,
+ * expected_lock -> 1, clamped. The lock consistency c_lock is this applied to a
+ * trellis's smoothed cost (dv_trellis_soft_batch). */
+double dv_lock_from_cost(const dv_decode_ctx *ctx, double cost);
+
+/* Forward-backward (BCJR) soft output for the n targets [base, base+n) from one
+ * backward sweep over the retained window (frontier at ctx->steps). bits_out[k]
+ * (stride 1) and details_out[k*detail_stride] (either may be NULL) receive target
+ * base+k. The multi-decoder uses detail_stride = codes_len to interleave each
+ * decoder's details; the single-stream decoder uses 1. */
+void dv_trellis_soft_batch(const dv_decode_ctx *ctx, const dv_trellis *tr,
+                           long long base, int n, uint8_t *bits_out,
+                           dv_decode_details *details_out, int detail_stride);
 
 #endif /* DRIFT_VITERBI_DECODE_INTERNAL_H */

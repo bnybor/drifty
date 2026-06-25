@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_DECODE_H
-#define DRIFTY_DECODE_H
+#ifndef DRIFTY_HYBRID_DECODE_H
+#define DRIFTY_HYBRID_DECODE_H
 
 /* The decoder is built from a dt_code, and shares the result codes and bit
  * values defined alongside the encoder. */
@@ -194,4 +194,4 @@ int dt_stream_decode_flush(dt_stream_decoder *d, uint8_t *out,
 }
 #endif
 
-#endif /* DRIFTY_DECODE_H */
+#endif /* DRIFTY_HYBRID_DECODE_H */

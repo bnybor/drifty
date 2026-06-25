@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_COMPARE_H
-#define DRIFTY_COMPARE_H
+#ifndef DRIFTY_HYBRID_COMPARE_H
+#define DRIFTY_HYBRID_COMPARE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -125,4 +125,4 @@ long dt_compare_max_len(int n, int k);
 }
 #endif
 
-#endif /* DRIFTY_COMPARE_H */
+#endif /* DRIFTY_HYBRID_COMPARE_H */

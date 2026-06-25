@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_ENCODE_H
-#define DRIFTY_ENCODE_H
+#ifndef DRIFTY_HYBRID_ENCODE_H
+#define DRIFTY_HYBRID_ENCODE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -168,4 +168,4 @@ int dt_code_encode_flush(const dt_code *code, int *state, uint8_t *out);
 }
 #endif
 
-#endif /* DRIFTY_ENCODE_H */
+#endif /* DRIFTY_HYBRID_ENCODE_H */

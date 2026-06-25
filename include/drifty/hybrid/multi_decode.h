@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef INCLUDE_DRIFTY_MULTI_DECODE_H_
-#define INCLUDE_DRIFTY_MULTI_DECODE_H_
+#ifndef DRIFTY_HYBRID_MULTI_DECODE_H
+#define DRIFTY_HYBRID_MULTI_DECODE_H
 
 #include <drifty/hybrid/decode.h>
 #include <stddef.h>
@@ -121,4 +121,4 @@ int dt_multi_decode_flush(dt_multi_decoder *d, uint8_t *out,
 }
 #endif
 
-#endif /* INCLUDE_DRIFTY_MULTI_DECODE_H_ */
+#endif /* DRIFTY_HYBRID_MULTI_DECODE_H */

@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef INCLUDE_DRIFTY_MULTI_ENCODE_H_
-#define INCLUDE_DRIFTY_MULTI_ENCODE_H_
+#ifndef DRIFTY_HYBRID_MULTI_ENCODE_H
+#define DRIFTY_HYBRID_MULTI_ENCODE_H
 
 #include <drifty/hybrid/encode.h>
 #include <stddef.h>
@@ -102,4 +102,4 @@ int dt_multi_encode_flush(dt_multi_encoder *e, int idx, uint8_t *out, int max_ou
 }
 #endif
 
-#endif /* INCLUDE_DRIFTY_MULTI_ENCODE_H_ */
+#endif /* DRIFTY_HYBRID_MULTI_ENCODE_H */

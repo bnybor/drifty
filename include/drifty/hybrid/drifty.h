@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_DRIFTY_H
-#define DRIFTY_DRIFTY_H
+#ifndef DRIFTY_HYBRID_DRIFTY_H
+#define DRIFTY_HYBRID_DRIFTY_H
 
 /*
  * Umbrella header for the full drifty API. The library is split into the
@@ -40,4 +40,4 @@
 #include <drifty/hybrid/multi_decode.h>
 #include <drifty/hybrid/multi_encode.h>
 
-#endif /* DRIFTY_DRIFTY_H */
+#endif /* DRIFTY_HYBRID_DRIFTY_H */

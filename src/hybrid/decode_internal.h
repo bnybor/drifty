@@ -41,7 +41,7 @@
  * them all.
  */
 
-#include <drifty/decode.h> /* dt_stream_params, dt_code (opaque), uint8_t */
+#include <drifty/hybrid/decode.h> /* dt_stream_params, dt_code (opaque), uint8_t */
 
 #include <stddef.h>
 #include <stdint.h>

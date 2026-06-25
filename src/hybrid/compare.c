@@ -24,7 +24,7 @@
  */
 /* clang-format on */
 
-#include <drifty/compare.h>
+#include <drifty/hybrid/compare.h>
 
 #include <drifty/stdlib.h>
 

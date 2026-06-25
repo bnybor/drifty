@@ -37,9 +37,9 @@
  * (see multi_run).
  */
 
-#include <drifty/multi_decode.h>
+#include <drifty/hybrid/multi_decode.h>
 
-#include <drifty/encode.h>
+#include <drifty/hybrid/encode.h>
 #include <drifty/stdlib.h>
 
 #include "decode_internal.h"

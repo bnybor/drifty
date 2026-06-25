@@ -27,11 +27,11 @@ target_include_directories(drifty_interface INTERFACE include)
 # can be archived into both libraries below (the bare core, and the public core +
 # stdlib) without compiling twice.
 add_library(drifty_bare_obj OBJECT
-    src/encode.c
-    src/decode.c
-    src/compare.c
-    src/multi_decode.c
-    src/multi_encode.c)
+    src/hybrid/encode.c
+    src/hybrid/decode.c
+    src/hybrid/compare.c
+    src/hybrid/multi_decode.c
+    src/hybrid/multi_encode.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)

@@ -29,7 +29,7 @@
 
 /* The decoder is built from a dt_code, and shares the result codes and bit
  * values defined alongside the encoder. */
-#include <drifty/encode.h>
+#include <drifty/hybrid/encode.h>
 
 #ifdef __cplusplus
 extern "C" {

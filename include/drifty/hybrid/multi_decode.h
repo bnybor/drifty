@@ -27,7 +27,7 @@
 #ifndef INCLUDE_DRIFTY_MULTI_DECODE_H_
 #define INCLUDE_DRIFTY_MULTI_DECODE_H_
 
-#include <drifty/decode.h>
+#include <drifty/hybrid/decode.h>
 #include <stddef.h>
 
 #ifdef __cplusplus

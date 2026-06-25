@@ -14,7 +14,7 @@ at a fixed delay, with no message lengths or frame boundaries to manage.
 Pick a code, encode your bits, then stream-decode the received bits.
 
 ```c
-#include "drifty/drifty.h"
+#include "drifty/hybrid/drifty.h"
 
 /* 1. Pick a code (sender and receiver must use the same one). */
 dt_code *code = dt_code_create_standard(DT_CODE_K7_RATE_1_2);

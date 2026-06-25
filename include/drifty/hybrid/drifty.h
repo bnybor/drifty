@@ -34,10 +34,10 @@
  * (compare.h - do two streams share a code?). Include this to get all of them
  * at once, or include just the part you need.
  */
-#include <drifty/compare.h>
-#include <drifty/decode.h>
-#include <drifty/encode.h>
-#include <drifty/multi_decode.h>
-#include <drifty/multi_encode.h>
+#include <drifty/hybrid/compare.h>
+#include <drifty/hybrid/decode.h>
+#include <drifty/hybrid/encode.h>
+#include <drifty/hybrid/multi_decode.h>
+#include <drifty/hybrid/multi_encode.h>
 
 #endif /* DRIFTY_DRIFTY_H */

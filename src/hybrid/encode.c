@@ -24,7 +24,7 @@
  */
 /* clang-format on */
 
-#include <drifty/encode.h>
+#include <drifty/hybrid/encode.h>
 
 #include <drifty/stdlib.h>
 

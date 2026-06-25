@@ -30,7 +30,7 @@
  * decoder built for one preset must not lock onto a sibling preset's stream
  * (the property tested by test_cross_lock_within_family / test_lock_matches_
  * compare). It exists so those polynomials are reproducible rather than picked
- * by hand - re-run it to regenerate or re-verify the tables in src/encode.c.
+ * by hand - re-run it to regenerate or re-verify the tables in src/hybrid/encode.c.
  *
  * Pipeline, per family:
  *   1. Enumerate candidate generator tuples (strictly increasing masks, the
@@ -55,7 +55,7 @@
  * Usage: dt_codesearch [trials] [info_bits] [seed] [pool]
  */
 
-#include <drifty/drifty.h>
+#include <drifty/hybrid/drifty.h>
 
 #include <stdint.h>
 #include <stdio.h>

@@ -30,7 +30,7 @@ len += dt_code_encode_flush(code, &state, out + len);   /* finish the stream */
 dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_stream_params){
     .decision_depth = 40,   /* output delay; try ~6 * the code's K       */
     .max_drift      = 4,    /* set 0 to correct flips only                */
-    .p_sub = 0.01, .p_ins = 0.01, .p_del = 0.01,
+    .p_flip = 0.01, .p_ins = 0.01, .p_del = 0.01,
 });
 
 uint8_t decoded[OUT];
@@ -60,10 +60,11 @@ Set these in `dt_stream_params`; anything you leave out defaults to 0.
 | Field            | What it does |
 |------------------|--------------|
 | `decision_depth` | Output delay in bits. Larger = more reliable, more latency. Try ~6× the code's K. Required. |
-| `p_sub`          | How often a received bit is flipped (e.g. 0.01 = 1%). Required. |
+| `p_flip`         | How often a coded bit is flipped (e.g. 0.01 = 1%). Required. |
 | `max_drift`      | How far alignment may slip from inserted/dropped bits. 0 (default) corrects flips only; 4–8 also handles insertions and deletions. |
 | `p_ins`, `p_del` | How often a coded bit is inserted / dropped (per bit, at any position). Needed when `max_drift > 0`. |
 | `p_erase`        | How often a received bit is marked `DT_ERASURE` (lost). |
+| `p_ovr`          | How often a coded bit is replaced with a fixed value (`DT_TRUE`/`DT_FALSE`), regardless of what was sent. |
 
 You don't need exact probabilities — rough, order-of-magnitude values are fine;
 only their relative sizes matter. They mainly control how readily the decoder
@@ -94,7 +95,7 @@ const dt_code *codes[] = { code_a, code_b, code_c };   /* same rate */
 dt_multi_decoder *m = dt_multi_create(&(dt_multi_params){
     .codes = codes, .codes_len = 3,
     .stream = { .decision_depth = 40, .max_drift = 4,
-                .p_sub = 0.01, .p_ins = 0.01, .p_del = 0.01 },
+                .p_flip = 0.01, .p_ins = 0.01, .p_del = 0.01 },
 });
 
 uint8_t decoded[OUT];

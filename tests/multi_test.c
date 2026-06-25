@@ -59,7 +59,7 @@ static dt_multi_decoder *build_multi(dt_code *codes[N_DEC],
   params.codes = (const dt_code *const *)codes;
   params.codes_len = N_DEC;
   if (params.stream.decision_depth == 0) { /* caller left stream unset */
-    params.stream = (dt_stream_params){.decision_depth = DEPTH, .p_sub = 0.02};
+    params.stream = (dt_stream_params){.decision_depth = DEPTH, .p_flip = 0.02};
   }
   return dt_multi_create(&params);
 }
@@ -126,7 +126,7 @@ static int multi_decode_all(dt_multi_decoder *md, const uint8_t *rx, int rl,
  * cumulative insertion/deletion drift (re-anchoring past max_drift). */
 static const dt_stream_params IMPAIRED_STREAM = {.decision_depth = DEPTH,
                                                  .max_drift = MAX_DRIFT,
-                                                 .p_sub = 0.02,
+                                                 .p_flip = 0.02,
                                                  .p_ins = 0.01,
                                                  .p_del = 0.01,
                                                  .p_erase = 0.05};
@@ -183,7 +183,7 @@ static void clean_trial(uint64_t seed, int true_idx) {
  * onto true_idx (no bit attributed to a wrong code), recover the message on its
  * non-erased in-range bits (within `max_errs`), and decode at least `min_frac`
  * of the message. `label` tags the printed line. */
-static void recover_trial(uint64_t seed, int true_idx, double p_sub,
+static void recover_trial(uint64_t seed, int true_idx, double p_flip,
                           double p_ins, double p_del, double p_erase,
                           double min_frac, int max_errs, const char *label) {
   uint64_t rng = seed;
@@ -205,7 +205,7 @@ static void recover_trial(uint64_t seed, int true_idx, double p_sub,
   size_t ldel = delete_channel(coded, clen, p_del, &rng, del);
   uint8_t *rx = malloc(2 * clen + 64);
   size_t rl = insert_channel(del, ldel, p_ins, &rng, rx);
-  flip_channel(rx, rl, p_sub, &rng);
+  flip_channel(rx, rl, p_flip, &rng);
   erase_channel(rx, rl, p_erase, &rng);
 
   int cap = N_INFO + 64;
@@ -254,7 +254,7 @@ typedef struct {
   trial_kind kind;
   uint64_t seed;
   int true_idx;
-  double p_sub, p_ins, p_del, p_erase, min_frac;
+  double p_flip, p_ins, p_del, p_erase, min_frac;
   int max_errs;
   const char *label;
 } trial_desc;
@@ -333,7 +333,7 @@ static void run_trial(const trial_desc *d) {
       clean_trial(d->seed, d->true_idx);
       break;
     case TK_RECOVER:
-      recover_trial(d->seed, d->true_idx, d->p_sub, d->p_ins, d->p_del,
+      recover_trial(d->seed, d->true_idx, d->p_flip, d->p_ins, d->p_del,
                     d->p_erase, d->min_frac, d->max_errs, d->label);
       break;
     case TK_NOISE:
@@ -382,7 +382,7 @@ static void duplicate_code_trial(uint64_t seed) {
   dt_multi_decoder *md = dt_multi_create(&(dt_multi_params){
       .codes = codes,
       .codes_len = 2,
-      .stream = {.decision_depth = DEPTH, .p_sub = 0.02}});
+      .stream = {.decision_depth = DEPTH, .p_flip = 0.02}});
   assert(md != NULL);
 
   uint8_t *msg = malloc((size_t)N_INFO);
@@ -429,7 +429,7 @@ static void test_reject_incompatible(void) {
   dt_multi_decoder *md = dt_multi_create(&(dt_multi_params){
       .codes = mixed,
       .codes_len = 2,
-      .stream = {.decision_depth = DEPTH, .p_sub = 0.02}});
+      .stream = {.decision_depth = DEPTH, .p_flip = 0.02}});
   check("multi rejects mixed constraint lengths", md == NULL);
   dt_multi_destroy(md); /* NULL-safe */
   dt_code_destroy(k7);
@@ -453,7 +453,7 @@ int main(void) {
     trials[n++] = (trial_desc){.kind = TK_RECOVER,
                                .seed = seed + 100 + (uint64_t)t,
                                .true_idx = t % N_DEC,
-                               .p_sub = 0.02,
+                               .p_flip = 0.02,
                                .min_frac = 0.6,
                                .label = "flips"};
     /* erasures only */
@@ -481,7 +481,7 @@ int main(void) {
     trials[n++] = (trial_desc){.kind = TK_RECOVER,
                                .seed = seed + 500 + (uint64_t)t,
                                .true_idx = t % N_DEC,
-                               .p_sub = 0.008,
+                               .p_flip = 0.008,
                                .p_ins = 0.003,
                                .p_del = 0.003,
                                .p_erase = 0.02,

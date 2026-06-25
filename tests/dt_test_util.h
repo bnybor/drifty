@@ -201,12 +201,12 @@ static inline size_t delete_channel(const uint8_t *in, size_t len, double p_del,
   return o;
 }
 
-/* Flip each bit with probability p_sub, in place. Run before erase_channel so a
+/* Flip each bit with probability p_flip, in place. Run before erase_channel so a
  * flip never lands on a DT_ERASURE marker. */
-static inline void flip_channel(uint8_t *buf, size_t len, double p_sub,
+static inline void flip_channel(uint8_t *buf, size_t len, double p_flip,
                                 uint64_t *rng) {
   for (size_t i = 0; i < len; ++i) {
-    if (rng_unit(rng) < p_sub) {
+    if (rng_unit(rng) < p_flip) {
       buf[i] ^= 1u;
     }
   }
@@ -253,13 +253,13 @@ static inline size_t prepend_prefix(size_t plen, const uint8_t *body,
 
 /* Build a decoder from positional settings (keeps tests concise). */
 static inline dt_stream_decoder *make_decoder(const dt_code *code, int depth,
-                                              int drift, double p_sub,
+                                              int drift, double p_flip,
                                               double p_ins, double p_del,
                                               double p_erase) {
   dt_stream_params params = {
       .decision_depth = depth,
       .max_drift = drift,
-      .p_sub = p_sub,
+      .p_flip = p_flip,
       .p_ins = p_ins,
       .p_del = p_del,
       .p_erase = p_erase,

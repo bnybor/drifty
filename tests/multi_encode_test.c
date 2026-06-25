@@ -201,7 +201,7 @@ static void test_round_trip(uint64_t seed, int true_idx) {
   }
   dt_multi_params dp = {.codes = cp,
                         .codes_len = N_FAM,
-                        .stream = {.decision_depth = DEPTH, .p_sub = 0.02}};
+                        .stream = {.decision_depth = DEPTH, .p_flip = 0.02}};
   dt_multi_decoder *md = dt_multi_create(&dp);
   REQUIRE("rt: decoder created", md != NULL);
 

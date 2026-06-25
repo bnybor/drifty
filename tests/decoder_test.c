@@ -388,7 +388,7 @@ static void test_stream_flips_only(void) {
 
   dt_stream_params params = {
       .decision_depth = 40,
-      .p_sub = 0.02,
+      .p_flip = 0.02,
   };
   dt_stream_decoder *sd = dt_stream_decoder_create(code, &params);
   REQUIRE("decoder created", sd != NULL);
@@ -666,7 +666,7 @@ static void test_error_paths(void) {
   dt_stream_params ok = {
       .decision_depth = 40,
       .max_drift = 4,
-      .p_sub = 0.01,
+      .p_flip = 0.01,
       .p_ins = 0.01,
       .p_del = 0.01,
   };
@@ -684,8 +684,8 @@ static void test_error_paths(void) {
   check("decoder rejects negative drift",
         dt_stream_decoder_create(code, &p) == NULL);
   p = ok;
-  p.p_sub = 0.0;
-  check("decoder rejects p_sub 0", dt_stream_decoder_create(code, &p) == NULL);
+  p.p_flip = 0.0;
+  check("decoder rejects p_flip 0", dt_stream_decoder_create(code, &p) == NULL);
   p = ok;
   p.p_ins = p.p_del = 0.6;
   check("decoder rejects p_ins+p_del>=1",
@@ -693,6 +693,18 @@ static void test_error_paths(void) {
   p = ok;
   p.p_erase = 1.0;
   check("decoder rejects p_erase 1",
+        dt_stream_decoder_create(code, &p) == NULL);
+  /* p_ovr (override rate) is accepted in [0, 1), but p_erase + p_ovr must be
+   * < 1 so some "normal" transmission mass remains. */
+  p = ok;
+  p.p_ovr = 0.1;
+  dt_stream_decoder *ovr_sd = dt_stream_decoder_create(code, &p);
+  check("decoder accepts p_ovr in range", ovr_sd != NULL);
+  dt_stream_decoder_destroy(ovr_sd);
+  p = ok;
+  p.p_erase = 0.6;
+  p.p_ovr = 0.6;
+  check("decoder rejects p_erase+p_ovr>=1",
         dt_stream_decoder_create(code, &p) == NULL);
   /* max_drift > 0 needs insertion/deletion probabilities. */
   p = ok;

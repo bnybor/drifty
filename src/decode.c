@@ -847,15 +847,17 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
   }
   const int decision_depth = params->decision_depth;
   const int max_drift = params->max_drift;
-  const double p_sub = params->p_sub;
+  const double p_flip = params->p_flip;
   const double p_ins = params->p_ins;
   const double p_del = params->p_del;
   const double p_erase = params->p_erase;
+  const double p_ovr = params->p_ovr;
 
   if (decision_depth < 1 || max_drift < 0) {
     return DT_ERR_ARG;
   }
-  if (!(p_sub > 0.0 && p_sub < 1.0) || !(p_erase >= 0.0 && p_erase < 1.0) ||
+  if (!(p_flip > 0.0 && p_flip < 1.0) || !(p_erase >= 0.0 && p_erase < 1.0) ||
+      !(p_ovr >= 0.0 && p_ovr < 1.0) || !(p_erase + p_ovr < 1.0) ||
       !(p_ins + p_del < 1.0) || p_ins < 0.0 || p_del < 0.0) {
     return DT_ERR_ARG;
   }
@@ -875,23 +877,27 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
    * (+ slack so the oldest needed slot is never aliased by the newest). */
   ctx->ring_len = 2 * decision_depth + 2;
 
-  /* Channel model: a coded bit is erased with prob p_erase; otherwise it is
-   * received and flipped with prob p_sub. The common (1 - p_erase) factor is
-   * kept explicit so paths reading different erasure counts compare correctly
-   * (p_erase = 0 reduces these to the plain hard-decision metric). */
-  ctx->cost_match = -dt_log((1.0 - p_erase) * (1.0 - p_sub));
-  ctx->cost_miss = -dt_log((1.0 - p_erase) * p_sub);
+  /* Channel model: a coded bit is erased with prob p_erase; else overridden with
+   * prob p_ovr to a fixed value that is equally likely TRUE or FALSE (so it
+   * lands on the true bit with prob 1/2 either way); else transmitted (prob
+   * pn = 1 - p_erase - p_ovr) and flipped with prob p_flip. The override adds a
+   * p_ovr/2 floor to BOTH the match and miss likelihood. p_ovr = 0 reduces these
+   * to the plain (1 - p_erase) hard-decision metric. */
+  const double pn = 1.0 - p_erase - p_ovr;
+  ctx->cost_match = -dt_log(pn * (1.0 - p_flip) + 0.5 * p_ovr);
+  ctx->cost_miss = -dt_log(pn * p_flip + 0.5 * p_ovr);
   ctx->cost_erase = -dt_log(p_erase); /* +inf when p_erase == 0 (never read) */
   ctx->cost_keep = -dt_log(1.0 - p_ins - p_del);
   ctx->cost_ins = -dt_log(p_ins);
   ctx->cost_del = -dt_log(p_del);
 
   /* Lock anchors (per step = n coded bits). A "kept" coded bit costs cost_keep
-   * plus a match/miss term; the expected misfit fraction is p_sub when locked,
-   * and we call it "unlocked" once misfit reaches the midpoint between p_sub
-   * and 0.5 (random). Erased bits contribute cost_erase to both. */
-  const double misfit_lock = p_sub;
-  const double misfit_unlock = 0.5 * (p_sub + 0.5);
+   * plus a match/miss term; the expected misfit fraction when locked is the
+   * model's miss rate among non-erased bits (= p_flip with no overrides), and we
+   * call it "unlocked" once misfit reaches the midpoint between that and 0.5
+   * (random). Erased bits contribute cost_erase to both. */
+  const double misfit_lock = (pn * p_flip + 0.5 * p_ovr) / (1.0 - p_erase);
+  const double misfit_unlock = 0.5 * (misfit_lock + 0.5);
   const double erase_term = p_erase > 0.0 ? p_erase * ctx->cost_erase : 0.0;
   const double kept = 1.0 - p_erase;
   ctx->expected_lock = ctx->n * (ctx->cost_keep + erase_term +

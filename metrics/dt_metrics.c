@@ -161,10 +161,10 @@ static int decode_all(dt_stream_decoder *decoder, const uint8_t *received,
 
 /* Apply the channel to `coded` (coded_len bits): with probability p_ins emit a
  * random bit before each coded bit, with probability p_del drop the coded bit,
- * otherwise emit it flipped with probability p_sub and then, with probability
+ * otherwise emit it flipped with probability p_flip and then, with probability
  * p_erase, marked DT_ERASURE (received but known-lost). Returns the received
  * length and stores a freshly malloc'd buffer in *out_received. */
-static int apply_channel(const uint8_t *coded, int coded_len, double p_sub,
+static int apply_channel(const uint8_t *coded, int coded_len, double p_flip,
                          double p_ins, double p_del, double p_erase,
                          uint64_t *rng, uint8_t **out_received) {
   int capacity = coded_len + coded_len / 4 + 64;
@@ -188,7 +188,7 @@ static int apply_channel(const uint8_t *coded, int coded_len, double p_sub,
       continue;
     }
     uint8_t bit = coded[i];
-    if (p_sub > 0.0 && rng_unit(rng) < p_sub) {
+    if (p_flip > 0.0 && rng_unit(rng) < p_flip) {
       bit ^= 1u;
     }
     if (p_erase > 0.0 && rng_unit(rng) < p_erase) {
@@ -449,7 +449,7 @@ static point_model make_model(const dt_code *code, axis channel_axis,
     m.params = (dt_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
-        .p_sub = pegged,
+        .p_flip = pegged,
         .p_ins = pegged,
         .p_del = pegged,
         .p_erase = pegged,
@@ -472,7 +472,7 @@ static point_model make_model(const dt_code *code, axis channel_axis,
     m.params = (dt_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
-        .p_sub = (channel_axis == AXIS_FLIP)
+        .p_flip = (channel_axis == AXIS_FLIP)
                      ? clamp_double(rate, min_prob, max_prob)
                      : 0.005,
         .p_ins = (m.max_drift > 0)
@@ -633,7 +633,7 @@ static void format_row(char *out, size_t cap, const char *code_name,
   char head[192];
   snprintf(head, sizeof(head), "%s,%s,%s,%.6g,%.6g,%.6g,%.6g,%.6g,%d,%d,%d",
            code_name, METRIC_NAME[which_metric], AXIS_NAME[channel_axis], rate,
-           m->params.p_sub, m->params.p_ins, m->params.p_del, m->params.p_erase,
+           m->params.p_flip, m->params.p_ins, m->params.p_del, m->params.p_erase,
            m->decision_depth, m->max_drift, trials);
   if (which_metric == METRIC_EDIT) {
     double edit_rate =
@@ -769,7 +769,7 @@ int main(int argc, char **argv) {
 #endif
 
   printf(
-      "code,metric,axis,rate,dec_p_sub,dec_p_ins,dec_p_del,dec_p_erase,"
+      "code,metric,axis,rate,dec_p_flip,dec_p_ins,dec_p_del,dec_p_erase,"
       "decision_depth,max_drift,trials,ref_bits,edit_distance,edit_rate,"
       "lock_bits,mean_lock,detect_samples,mean_detect\n");
   fflush(stdout);

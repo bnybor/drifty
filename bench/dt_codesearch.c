@@ -252,7 +252,7 @@ static double lock_mean(const dt_code *enc, const dt_code *dec,
 
   dt_stream_params params = {.decision_depth = depth,
                              .max_drift = 4,
-                             .p_sub = 0.01,
+                             .p_flip = 0.01,
                              .p_ins = 0.01,
                              .p_del = 0.01,
                              .p_erase = 0.0};

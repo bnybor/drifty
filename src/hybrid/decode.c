@@ -222,9 +222,10 @@ static void fill_match_costs(dt_decode_ctx *ctx) {
         ctx->match_cost1[p] = keep + erase;
         ctx->ins_cost[p] = ctx->cost_ins_e;
       } else {
-        ctx->match_cost0[p] = keep + ctx->cost_bit[0][received_bit];
-        ctx->match_cost1[p] = keep + ctx->cost_bit[1][received_bit];
-        ctx->ins_cost[p] = received_bit ? ctx->cost_ins_t : ctx->cost_ins_f;
+        const int rv = DT_BIT(received_bit);
+        ctx->match_cost0[p] = keep + ctx->cost_bit[0][rv];
+        ctx->match_cost1[p] = keep + ctx->cost_bit[1][rv];
+        ctx->ins_cost[p] = rv ? ctx->cost_ins_t : ctx->cost_ins_f;
       }
       ctx->in_range[p] = 1;
     } else {
@@ -427,7 +428,7 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
           const uint8_t received_bit = ctx->received[base + j];
           branch_cost += received_bit == DT_ERASURE
                              ? ctx->cost_erase
-                             : ctx->cost_bit[expected[j]][received_bit];
+                             : ctx->cost_bit[expected[j]][DT_BIT(received_bit)];
         }
       }
       if (branch_cost == INFINITY) {
@@ -485,7 +486,7 @@ static void snapshot_step(dt_decode_ctx *ctx, dt_trellis *trs, size_t n,
         for (int jj = 0; jj < nn; ++jj) {
           const uint8_t rb = ctx->received[base + jj];
           branch += rb == DT_ERASURE ? ctx->cost_erase
-                                     : ctx->cost_bit[pat[jj]][rb];
+                                     : ctx->cost_bit[pat[jj]][DT_BIT(rb)];
         }
       }
       bslot[(size_t)p * stride + nn] = branch;

@@ -61,7 +61,7 @@ extern "C" {
 /*
  * In received data you may mark a bit DT_ERASURE to say "this one was lost";
  * the decoder then treats it as unknown instead of guessing 0 or 1. Ordinary
- * bits are DT_FALSE or DT_TRUE. All three bit values are defined in encode.h.
+ * bits are DT_FALSE or DT_TRUE. All three bit values are defined in bit.h.
  */
 
 /* ------------------------------------------------------------------------- */

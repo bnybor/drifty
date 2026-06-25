@@ -78,6 +78,9 @@ static uint64_t rng_next(uint64_t *state) {
   return value ^ (value >> 31);
 }
 
+/* Map a raw 0/1 (only the low bit is read) to its DT_TRUE/DT_FALSE symbol. */
+static uint8_t bit_sym(unsigned int v) { return (v & 1u) ? DT_TRUE : DT_FALSE; }
+
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
@@ -627,7 +630,7 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
   const int verify_bits = 2000;
   uint8_t *vmsg = xmalloc((size_t)verify_bits);
   uint64_t vrng = sample_seed ^ 0x5151515151515151ULL;
-  for (int i = 0; i < verify_bits; ++i) vmsg[i] = (uint8_t)(rng_next(&vrng) & 1u);
+  for (int i = 0; i < verify_bits; ++i) vmsg[i] = bit_sym((unsigned int)rng_next(&vrng));
   double worst_compare_cross = 0.0, worst_compare_self = 1.0;
   for (int i = 0; i < count; ++i) {
     worst_compare_self = min_double(
@@ -674,11 +677,11 @@ int main(int argc, char **argv) {
    * random, broadening the worst-case aggregate. */
   uint8_t *messages = xmalloc((size_t)trials * info_bits);
   for (int i = 0; i < info_bits; ++i)
-    messages[i] = (uint8_t)((i * 7 + 3) & 1);
+    messages[i] = bit_sym(i * 7 + 3);
   uint64_t rng = seed;
   for (int m = 1; m < trials; ++m) {
     for (int i = 0; i < info_bits; ++i)
-      messages[(size_t)m * info_bits + i] = (uint8_t)(rng_next(&rng) & 1u);
+      messages[(size_t)m * info_bits + i] = bit_sym((unsigned int)rng_next(&rng));
   }
 
 #ifdef _OPENMP

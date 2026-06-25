@@ -56,7 +56,7 @@ static void test_encode_stream(void) {
 
   const int n_info = 200;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 7 + 3) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 7 + 3);
 
   int data_len = n_info * N_GEN;
   int total_len = data_len + (K - 1) * N_GEN; /* + flush */
@@ -99,7 +99,7 @@ static void test_stream_clean(void) {
 
   const int n_info = 300;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 7 + 3) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 7 + 3);
 
   int clen = n_info * N_GEN;
   uint8_t *coded = malloc((size_t)clen);
@@ -133,7 +133,7 @@ static void test_stream_erasures(void) {
 
   const int n_info = 300;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 7 + 3) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 7 + 3);
 
   int clen = n_info * N_GEN;
   uint8_t *rx = malloc((size_t)clen);
@@ -168,7 +168,7 @@ static void test_stream_reanchor(void) {
 
   const int n_info = 400;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 11 + 5) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 11 + 5);
 
   int clen = n_info * N_GEN; /* 2000 coded bits */
   uint8_t *coded = malloc((size_t)clen);
@@ -225,7 +225,7 @@ static void test_stream_midgroup_indel(void) {
 
   const int n_info = 400;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 11 + 5) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 11 + 5);
 
   int clen = n_info * N_GEN;
   uint8_t *coded = malloc((size_t)clen);
@@ -244,7 +244,7 @@ static void test_stream_midgroup_indel(void) {
       continue;
     }
     if (phase == 62) { /* mid-group insertion of a spurious bit */
-      rx[rl++] = (uint8_t)((i >> 1) & 1);
+      rx[rl++] = bit_sym(i >> 1);
       nins++;
     }
     rx[rl++] = coded[i];
@@ -286,7 +286,7 @@ static void test_standard_code(void) {
 
   const int n_info = 150;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 5 + 1) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 5 + 1);
 
   int clen = n_info * 2;
   uint8_t *coded = malloc((size_t)clen);
@@ -324,7 +324,7 @@ static void test_blind_acquisition(void) {
 
   const int n_info = 400;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 13 + 7) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 13 + 7);
 
   int clen = n_info * N_GEN;
   uint8_t *coded = malloc((size_t)clen);
@@ -375,7 +375,7 @@ static void test_stream_flips_only(void) {
 
   const int n_info = 300;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 7 + 3) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 7 + 3);
 
   int clen = n_info * N_GEN;
   uint8_t *rx = malloc((size_t)clen);
@@ -384,7 +384,7 @@ static void test_stream_flips_only(void) {
 
   int flips[] = {123, 400, 777, 1100, 1450};
   const int nflip = (int)(sizeof(flips) / sizeof(flips[0]));
-  for (int i = 0; i < nflip; ++i) rx[flips[i]] ^= 1;
+  for (int i = 0; i < nflip; ++i) rx[flips[i]] ^= DT_VALUE;
 
   dt_stream_params params = {
       .decision_depth = 40,
@@ -439,7 +439,7 @@ static void test_all_presets(void) {
 
     const int n_info = 200;
     uint8_t msg[200];
-    for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 5 + 1) & 1);
+    for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 5 + 1);
     int clen = n_info * presets[idx].n;
     uint8_t *coded = malloc((size_t)clen);
     int st = 0;
@@ -478,7 +478,7 @@ static void test_lock_probability(void) {
 
   const int n_info = 600;
   uint8_t *msg = malloc((size_t)n_info);
-  for (int i = 0; i < n_info; ++i) msg[i] = (uint8_t)((i * 7 + 3) & 1);
+  for (int i = 0; i < n_info; ++i) msg[i] = bit_sym(i * 7 + 3);
 
   int clen = n_info * N_GEN;
   uint8_t *coded = malloc((size_t)clen);
@@ -511,7 +511,7 @@ static void test_lock_probability(void) {
   uint64_t lcg = 0x1234567u;
   for (int i = 0; i < clen; ++i) {
     lcg = lcg * 6364136223846793005ULL + 1u;
-    rnd[i] = (uint8_t)((lcg >> 40) & 1u);
+    rnd[i] = bit_sym((unsigned int)(lcg >> 40));
   }
   sd = make_decoder(code, 48, 4, 0.01, 0.01, 0.01, 0.0);
   REQUIRE("decoder created", sd != NULL);
@@ -549,7 +549,7 @@ static void test_lock_probability(void) {
   REQUIRE("k3 and k7 created", k3 != NULL && k7 != NULL);
 
   uint8_t lmsg[600];
-  for (int i = 0; i < 600; ++i) lmsg[i] = (uint8_t)((i * 7 + 3) & 1);
+  for (int i = 0; i < 600; ++i) lmsg[i] = bit_sym(i * 7 + 3);
   double k3_k3 = decoder_lock_mean(k3, k3, lmsg, 600, 48);
   double k7_k7 = decoder_lock_mean(k7, k7, lmsg, 600, 48);
   double k3_k7 = decoder_lock_mean(k3, k7, lmsg, 600, 48);
@@ -602,7 +602,7 @@ static void test_cross_lock_within_family(void) {
   /* `msg` is only ever read (decoder_lock_mean encodes a copy of it), so it
    * stays shared across the parallel trials below. */
   uint8_t msg[600];
-  for (int i = 0; i < 600; ++i) msg[i] = (uint8_t)((i * 7 + 3) & 1);
+  for (int i = 0; i < 600; ++i) msg[i] = bit_sym(i * 7 + 3);
 
   /* Flatten every (family, encode-with-i, decode-with-j) triple into one index
    * list - families have different counts, so we enumerate the triples up front

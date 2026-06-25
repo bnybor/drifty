@@ -26,6 +26,7 @@
 
 #include <drifty/hybrid/compare.h>
 
+#include <drifty/bit.h>
 #include <drifty/stdlib.h>
 
 #include <math.h>
@@ -43,8 +44,9 @@
  * transmitted input. For each sample we recover its dual space blindly over
  * GF(2), then measure how well each sample satisfies the other's parity checks.
  *
- * Bit representation follows the drifty convention: one bit per byte
- * (value & 1); only the low bit of each input byte is used.
+ * Bit representation follows the drifty convention: one bit symbol per byte
+ * (DT_FALSE / DT_TRUE / DT_ERASURE); only the value bit, DT_BIT(byte), is used,
+ * so an erasure reads as the 0 it carries.
  *
  * Drift tolerance: this corrects both a constant framing/phase offset *and*
  * cumulative mid-stream insertion/deletion drift, the kind that misaligns an
@@ -139,7 +141,7 @@ static uint32_t dt_window(const uint8_t *stream, size_t start,
                           int window_bits) {
   uint32_t packed = 0;
   for (int i = 0; i < window_bits; ++i) {
-    packed |= (uint32_t)(stream[start + (size_t)i] & 1u) << i;
+    packed |= (uint32_t)DT_BIT(stream[start + (size_t)i]) << i;
   }
   return packed;
 }
@@ -744,10 +746,10 @@ static double dt_detect_confidence(double excess_sum) {
  * strongly DC-biased one - instead has its dual fill nearly the whole window:
  * every parity vector sits at alignment +/-1, so the energy statistic
  * saturates and a pure energy detector calls it a code. Heavy erasure is the
- * common trap: DT_ERASURE (0xFF) reads as a 1 bit, so as the erasure rate
- * climbs the stream tends to all-ones, and even at moderate rates the 1-bias
- * lights up every single-bit check. Recovered duals wider than this cap are
- * rejected. window_bits = n*(k+1), so (k+1) = window_bits / n. */
+ * common trap: DT_ERASURE carries no value bit, so DT_BIT reads it as 0; as the
+ * erasure rate climbs the stream tends to all-zeros, and even at moderate rates
+ * the 0-bias lights up every single-bit check. Recovered duals wider than this
+ * cap are rejected. window_bits = n*(k+1), so (k+1) = window_bits / n. */
 static int dt_max_dual(int n, int window_bits) {
   return (n - 1) * (window_bits / n);
 }

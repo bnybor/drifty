@@ -30,6 +30,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <drifty/bit.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -67,15 +69,6 @@ enum {
   DT_ERR_ALLOC = -2 /* ran out of memory         */
 };
 
-/*
- * Every bit is DT_FALSE or DT_TRUE. In received data you may also mark a bit
- * DT_ERASURE to say "this one was lost"; the decoder then treats it as unknown
- * instead of guessing 0 or 1 (see decode.h).
- */
-#define DT_FALSE ((uint8_t)0u)
-#define DT_TRUE ((uint8_t)1u)
-#define DT_ERASURE ((uint8_t)0xFFu)
-
 /* This library's version, e.g. "0.1.0". */
 const char *drifty_version(void);
 
@@ -88,8 +81,8 @@ const char *drifty_version(void);
 typedef struct dt_code dt_code;
 
 /* Ready-made codes. More output per input bit corrects more errors but uses
- * more bandwidth; when unsure, pick DT_CODE_K7_RATE_1_2. Each rate/K family is a
- * default plus a few alternates, all picked to be mutually distinguishable: a
+ * more bandwidth; when unsure, pick DT_CODE_K7_RATE_1_2. Each rate/K family is
+ * a default plus a few alternates, all picked to be mutually distinguishable: a
  * decoder (or dt_compare) for one will not lock onto another's stream (see
  * dt_decode_details' c_lock). How many alternates a family has depends
  * on how many distinguishable codes its generator space actually holds - the
@@ -97,22 +90,22 @@ typedef struct dt_code dt_code;
  * five. The alternates trade a little free distance for that separation. The
  * trailing comment is each code's free distance: higher corrects more. */
 typedef enum {
-  DT_CODE_K3_RATE_1_2,      /* 2x output size; d_free 5 (good default for K=3) */
-  DT_CODE_K3_RATE_1_2_ALT1, /* 2x output size; d_free 4                        */
-  DT_CODE_K3_RATE_1_2_ALT2, /* 2x output size; d_free 4                        */
-  DT_CODE_K7_RATE_1_2,      /* 2x output size; d_free 10 (good default)        */
-  DT_CODE_K7_RATE_1_2_ALT1, /* 2x output size; d_free 8                        */
-  DT_CODE_K7_RATE_1_2_ALT2, /* 2x output size; d_free 8                        */
-  DT_CODE_K7_RATE_1_3,      /* 3x output size; d_free 15                       */
-  DT_CODE_K7_RATE_1_3_ALT1, /* 3x output size; d_free 14                       */
-  DT_CODE_K7_RATE_1_3_ALT2, /* 3x output size; d_free 13                       */
-  DT_CODE_K7_RATE_1_3_ALT3, /* 3x output size; d_free 12                       */
-  DT_CODE_K7_RATE_1_3_ALT4, /* 3x output size; d_free 12                       */
-  DT_CODE_K5_RATE_1_5,      /* 5x output size; d_free 20 (strongest)           */
-  DT_CODE_K5_RATE_1_5_ALT1, /* 5x output size; d_free 18                       */
-  DT_CODE_K5_RATE_1_5_ALT2, /* 5x output size; d_free 18                       */
-  DT_CODE_K5_RATE_1_5_ALT3, /* 5x output size; d_free 17                       */
-  DT_CODE_K5_RATE_1_5_ALT4  /* 5x output size; d_free 17                       */
+  DT_CODE_K3_RATE_1_2, /* 2x output size; d_free 5 (good default for K=3) */
+  DT_CODE_K3_RATE_1_2_ALT1, /* 2x output size; d_free 4 */
+  DT_CODE_K3_RATE_1_2_ALT2, /* 2x output size; d_free 4 */
+  DT_CODE_K7_RATE_1_2, /* 2x output size; d_free 10 (good default)        */
+  DT_CODE_K7_RATE_1_2_ALT1, /* 2x output size; d_free 8 */
+  DT_CODE_K7_RATE_1_2_ALT2, /* 2x output size; d_free 8 */
+  DT_CODE_K7_RATE_1_3, /* 3x output size; d_free 15                       */
+  DT_CODE_K7_RATE_1_3_ALT1, /* 3x output size; d_free 14 */
+  DT_CODE_K7_RATE_1_3_ALT2, /* 3x output size; d_free 13 */
+  DT_CODE_K7_RATE_1_3_ALT3, /* 3x output size; d_free 12 */
+  DT_CODE_K7_RATE_1_3_ALT4, /* 3x output size; d_free 12 */
+  DT_CODE_K5_RATE_1_5, /* 5x output size; d_free 20 (strongest)           */
+  DT_CODE_K5_RATE_1_5_ALT1, /* 5x output size; d_free 18 */
+  DT_CODE_K5_RATE_1_5_ALT2, /* 5x output size; d_free 18 */
+  DT_CODE_K5_RATE_1_5_ALT3, /* 5x output size; d_free 17 */
+  DT_CODE_K5_RATE_1_5_ALT4 /* 5x output size; d_free 17                       */
 } dt_standard_code;
 
 /* Make one of the ready-made codes above. Returns NULL on a bad argument or out

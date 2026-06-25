@@ -159,9 +159,14 @@ static inline double rng_unit(uint64_t *state) {
   return (double)(rng_next(state) >> 11) * (1.0 / 9007199254740992.0);
 }
 
+/* Map a raw 0/1 (only the low bit is read) to its DT_TRUE/DT_FALSE symbol. */
+static inline uint8_t bit_sym(unsigned int v) {
+  return (v & 1u) ? DT_TRUE : DT_FALSE;
+}
+
 static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
   for (int i = 0; i < n; ++i) {
-    bits[i] = (uint8_t)(rng_next(rng) & 1u);
+    bits[i] = bit_sym((unsigned int)rng_next(rng));
   }
 }
 
@@ -207,7 +212,7 @@ static inline void flip_channel(uint8_t *buf, size_t len, double p_flip,
                                 uint64_t *rng) {
   for (size_t i = 0; i < len; ++i) {
     if (rng_unit(rng) < p_flip) {
-      buf[i] ^= 1u;
+      buf[i] ^= DT_VALUE; /* toggle the value bit: DT_TRUE <-> DT_FALSE */
     }
   }
 }
@@ -220,7 +225,7 @@ static inline size_t insert_channel(const uint8_t *in, size_t len, double p_ins,
   size_t o = 0;
   for (size_t i = 0; i < len; ++i) {
     if (rng_unit(rng) < p_ins) {
-      out[o++] = (uint8_t)(rng_next(rng) & 1u);
+      out[o++] = bit_sym((unsigned int)rng_next(rng));
     }
     out[o++] = in[i];
   }
@@ -243,7 +248,7 @@ static inline void erase_channel(uint8_t *buf, size_t len, double p_erase,
 static inline size_t prepend_prefix(size_t plen, const uint8_t *body,
                                     size_t blen, uint64_t *rng, uint8_t *out) {
   for (size_t i = 0; i < plen; ++i) {
-    out[i] = (uint8_t)(rng_next(rng) & 1u);
+    out[i] = bit_sym((unsigned int)rng_next(rng));
   }
   memcpy(out + plen, body, blen);
   return plen + blen;

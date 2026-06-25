@@ -89,6 +89,9 @@ static double rng_unit(uint64_t *state) {
   return (double)(rng_next(state) >> 11) * (1.0 / 9007199254740992.0);
 }
 
+/* Map a raw 0/1 (only the low bit is read) to its DT_TRUE/DT_FALSE symbol. */
+static uint8_t bit_sym(unsigned int v) { return (v & 1u) ? DT_TRUE : DT_FALSE; }
+
 /* Independent, reproducible seed for work item `index` from the base seed. Each
  * point owns its own PRNG stream, so results don't depend on thread scheduling
  * or how many draws other points made - parallel runs match serial ones. */
@@ -182,14 +185,14 @@ static int apply_channel(const uint8_t *coded, int coded_len, double p_flip,
       received = grown;
     }
     if (p_ins > 0.0 && rng_unit(rng) < p_ins) {
-      received[received_len++] = (uint8_t)(rng_next(rng) & 1u);
+      received[received_len++] = bit_sym((unsigned int)rng_next(rng));
     }
     if (p_del > 0.0 && rng_unit(rng) < p_del) {
       continue;
     }
     uint8_t bit = coded[i];
     if (p_flip > 0.0 && rng_unit(rng) < p_flip) {
-      bit ^= 1u;
+      bit ^= DT_VALUE; /* toggle the value bit: DT_TRUE <-> DT_FALSE */
     }
     if (p_erase > 0.0 && rng_unit(rng) < p_erase) {
       bit = DT_ERASURE;
@@ -539,7 +542,7 @@ static trial_result run_one_trial(const dt_code *code, axis channel_axis,
 
   trial_result r = {0, 0, 0, 0, 0.0, 0.0};
   for (int i = 0; i < info_bits; ++i) {
-    message[i] = (uint8_t)(rng_next(rng) & 1u);
+    message[i] = bit_sym((unsigned int)rng_next(rng));
   }
   int enc_state = 0, coded_len = 0;
   coded_len += dt_code_encode(code, message, info_bits, &enc_state, coded);

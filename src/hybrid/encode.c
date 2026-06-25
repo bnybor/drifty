@@ -187,7 +187,8 @@ int dt_code_k(const dt_code *code) { return code ? code->K : -1; }
 static int emit_group(const dt_code *code, int *state, int bit, uint8_t *out) {
   const uint8_t *group = &code->output[((size_t)(*state * 2 + bit)) * code->n];
   for (int j = 0; j < code->n; ++j) {
-    out[j] = group[j];
+    /* code->output holds the codeword as raw 0/1; emit it as bit symbols. */
+    out[j] = group[j] ? DT_TRUE : DT_FALSE;
   }
   *state = code->next_state[*state * 2 + bit];
   return code->n;
@@ -204,7 +205,7 @@ int dt_code_encode(const dt_code *code, const uint8_t *bits, int n_bits,
 
   int current_state = *state, written = 0;
   for (int i = 0; i < n_bits; ++i) {
-    written += emit_group(code, &current_state, bits[i] & 1, out + written);
+    written += emit_group(code, &current_state, DT_BIT(bits[i]), out + written);
   }
   *state = current_state;
   return written;
@@ -221,7 +222,7 @@ int dt_code_encode_flush(const dt_code *code, int *state, uint8_t *out) {
   /* Feed K-1 zero bits, which shift the state register back to 0. */
   int current_state = *state, written = 0;
   for (int i = 0; i < code->K - 1; ++i) {
-    written += emit_group(code, &current_state, DT_FALSE, out + written);
+    written += emit_group(code, &current_state, DT_BIT(DT_FALSE), out + written);
   }
   *state = current_state;
   return written;

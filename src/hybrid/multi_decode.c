@@ -239,7 +239,7 @@ static int multi_run(dt_multi_decoder *d, uint8_t *out,
 
       if (decided_bit >= 0) {
         last = best_idx;
-        if (out) out[pos] = (uint8_t)decided_bit;
+        if (out) out[pos] = decided_bit ? DT_TRUE : DT_FALSE;
       } else if (out) {
         out[pos] = DT_ERASURE;
       }

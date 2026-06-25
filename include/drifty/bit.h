@@ -1,0 +1,61 @@
+#ifndef DRIFTY_BIT_H
+#define DRIFTY_BIT_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef uint8_t dt_t; /* disposition of one bit position; uint8_t for
+                         slot-struct footprint */
+
+/* --- structural flag bits: each is one axis from the model --- */
+
+/* decoder asserts the slot is missing (channel-claim, output only) */
+#define DT_DELETED 0x10u
+/* a slot exists in the transmit grid (sample/transmit domain) */
+#define DT_PRESENT 0x08u
+/* a value is specified for the slot */
+#define DT_BOUND 0x04u
+/* the bound value is a truth value */
+#define DT_BOOLEAN 0x02u
+/* the truth value itself, meaningful iff DT_BOOLEAN */
+#define DT_VALUE 0x01u
+
+/* --- the symbols, as points in that flag space --- */
+
+/* uninitialized; never written */
+#define DT_NONE 0x00u
+/* inferred deletion / erasure-out */
+#define DT_ABSENT (DT_DELETED)
+/* present, no value bound */
+#define DT_ERASURE (DT_PRESENT)
+/* bound to a non-truth value */
+#define DT_INVALID (DT_PRESENT | DT_BOUND)
+/* bound, false */
+#define DT_FALSE (DT_PRESENT | DT_BOUND | DT_BOOLEAN)
+/* bound, true */
+#define DT_TRUE (DT_PRESENT | DT_BOUND | DT_BOOLEAN | DT_VALUE)
+
+/* --- predicates; each is a single mask, and each names one of the cuts we
+ * made --- */
+
+/* X = {T,F,E,I}; valid on unlocked stream */
+#define DT_IS_TRANSMIT(s) ((s) & DT_PRESENT)
+/* Z = X ∪ {ABSENT}; excludes NONE */
+#define DT_IS_OUTPUT(s) ((s) & (DT_PRESENT | DT_DELETED))
+/* T,F,I — feeds value mass, not erasure */
+#define DT_IS_BOUND(s) ((s) & DT_BOUND)
+/* T or F — a usable boolean */
+#define DT_IS_BIT(s) ((s) & DT_BOOLEAN)
+/* extract 0/1, valid iff DT_IS_BIT */
+#define DT_BIT(s) ((s) & DT_VALUE)
+/* deletion = outer-code erasure */
+#define DT_IS_ABSENT(s) ((s) & DT_DELETED)
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* DRIFTY_BIT_H */

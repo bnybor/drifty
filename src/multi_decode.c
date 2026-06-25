@@ -27,20 +27,20 @@
 /*
  * Multi-decoder: decode one received stream against several candidate codes at
  * once and, per output bit, soft-combine their decisions weighted by how well
- * each code fits the stream. Rather than wrap N independent dv_stream_decoders,
+ * each code fits the stream. Rather than wrap N independent dt_stream_decoders,
  * it drives the decoder internals directly (decode_internal.h): one shared
- * dv_decode_ctx (the single received buffer + cadence) and one dv_trellis per
- * code, all advanced in lockstep by dv_decode_step with one shared re-anchor.
+ * dt_decode_ctx (the single received buffer + cadence) and one dt_trellis per
+ * code, all advanced in lockstep by dt_decode_step with one shared re-anchor.
  * Because the cadence is shared, every trellis decides the same step at the same
  * time, so the per-bit merge needs no output realignment - the codes' bits for a
  * given step are directly commensurable and are combined by likelihood weight
  * (see multi_run).
  */
 
-#include <drift_viterbi/multi_decode.h>
+#include <drifty/multi_decode.h>
 
-#include <drift_viterbi/encode.h>
-#include <drift_viterbi/stdlib.h>
+#include <drifty/encode.h>
+#include <drifty/stdlib.h>
 
 #include "decode_internal.h"
 
@@ -48,12 +48,12 @@
  * least one code's lock probability must clear this floor for any bit to commit,
  * and the winning bit value must lead the other by this share of the total
  * likelihood weight; otherwise the bit is erased. */
-static const double DV_MULTI_LOCK_FLOOR_DEFAULT = 0.6;
-static const double DV_MULTI_LOCK_MARGIN_DEFAULT = 0.2;
+static const double DT_MULTI_LOCK_FLOOR_DEFAULT = 0.6;
+static const double DT_MULTI_LOCK_MARGIN_DEFAULT = 0.2;
 
-struct dv_multi_decoder {
-  dv_decode_ctx ctx;     /* shared received buffer + cadence            */
-  dv_trellis *trellises; /* [n] one per code                            */
+struct dt_multi_decoder {
+  dt_decode_ctx ctx;     /* shared received buffer + cadence            */
+  dt_trellis *trellises; /* [n] one per code                            */
   size_t n;
   double lock_floor;  /* min lock probability to commit a bit       */
   double lock_margin; /* min lead over the next-best code           */
@@ -62,80 +62,80 @@ struct dv_multi_decoder {
   int locked;
 };
 
-dv_multi_decoder *dv_multi_create(const dv_multi_params *params) {
+dt_multi_decoder *dt_multi_create(const dt_multi_params *params) {
   if (!params || (params->codes_len > 0 && !params->codes)) {
     return NULL;
   }
-  dv_multi_decoder *m = dv_calloc(1, sizeof(*m));
+  dt_multi_decoder *m = dt_calloc(1, sizeof(*m));
   if (!m) {
     return NULL;
   }
   m->n = params->codes_len;
   m->lock_floor = params->lock_floor > 0.0 ? params->lock_floor
-                                           : DV_MULTI_LOCK_FLOOR_DEFAULT;
+                                           : DT_MULTI_LOCK_FLOOR_DEFAULT;
   m->lock_margin = params->lock_margin > 0.0 ? params->lock_margin
-                                             : DV_MULTI_LOCK_MARGIN_DEFAULT;
+                                             : DT_MULTI_LOCK_MARGIN_DEFAULT;
   m->locked = -1;
 
   if (params->codes_len > 0) {
     /* All codes share the one context's dimensions and channel model; take them
      * from the first (they must share a rate - see multi.h). */
-    if (dv_decode_ctx_init(&m->ctx, &params->stream, params->codes[0]) < 0) {
-      dv_multi_destroy(m);
+    if (dt_decode_ctx_init(&m->ctx, &params->stream, params->codes[0]) < 0) {
+      dt_multi_destroy(m);
       return NULL;
     }
     /* calloc so a build failure partway leaves the rest zeroed, and
-     * dv_multi_destroy can free what was built (dv_trellis_free is NULL-safe). */
-    m->trellises = dv_calloc(params->codes_len, sizeof(dv_trellis));
+     * dt_multi_destroy can free what was built (dt_trellis_free is NULL-safe). */
+    m->trellises = dt_calloc(params->codes_len, sizeof(dt_trellis));
     if (!m->trellises) {
-      dv_multi_destroy(m);
+      dt_multi_destroy(m);
       return NULL;
     }
     for (size_t j = 0; j < params->codes_len; ++j) {
       /* Every trellis is sized from the shared ctx (taken from codes[0]) yet
        * forward_pass walks each code's own next_state/output tables over
-       * ctx->num_states. Codes that differ in rate (dv_code_n) or constraint
-       * length (dv_code_k, hence n_states) would index those tables out of
+       * ctx->num_states. Codes that differ in rate (dt_code_n) or constraint
+       * length (dt_code_k, hence n_states) would index those tables out of
        * bounds, so reject the set rather than corrupt memory. A NULL slot fails
-       * here too: dv_code_n(NULL) == -1 != codes[0]'s rate. */
-      if (dv_code_n(params->codes[j]) != dv_code_n(params->codes[0]) ||
-          dv_code_k(params->codes[j]) != dv_code_k(params->codes[0])) {
-        dv_multi_destroy(m);
+       * here too: dt_code_n(NULL) == -1 != codes[0]'s rate. */
+      if (dt_code_n(params->codes[j]) != dt_code_n(params->codes[0]) ||
+          dt_code_k(params->codes[j]) != dt_code_k(params->codes[0])) {
+        dt_multi_destroy(m);
         return NULL;
       }
-      if (dv_trellis_init(&m->trellises[j], &m->ctx, params->codes[j]) < 0) {
-        dv_multi_destroy(m);
+      if (dt_trellis_init(&m->trellises[j], &m->ctx, params->codes[j]) < 0) {
+        dt_multi_destroy(m);
         return NULL;
       }
     }
     /* Every trellis has registered its output patterns into the shared ctx, so
      * the union is known - size the shared per-step alignment table. */
-    if (dv_decode_ctx_finalize(&m->ctx) < 0) {
-      dv_multi_destroy(m);
+    if (dt_decode_ctx_finalize(&m->ctx) < 0) {
+      dt_multi_destroy(m);
       return NULL;
     }
   }
   return m;
 }
 
-void dv_multi_destroy(dv_multi_decoder *m) {
+void dt_multi_destroy(dt_multi_decoder *m) {
   if (!m) {
     return;
   }
   if (m->trellises) {
     for (size_t j = 0; j < m->n; ++j) {
-      dv_trellis_free(&m->trellises[j]);
+      dt_trellis_free(&m->trellises[j]);
     }
-    dv_free(m->trellises);
+    dt_free(m->trellises);
   }
-  dv_decode_ctx_free(&m->ctx);
-  dv_free(m);
+  dt_decode_ctx_free(&m->ctx);
+  dt_free(m);
 }
 
 /* Common argument check for the two public entry points; mirrors
- * dv_stream_decode's contract (out may be NULL - the caller may want only
+ * dt_stream_decode's contract (out may be NULL - the caller may want only
  * details, or to drain). */
-static int multi_args_ok(const dv_multi_decoder *d, const uint8_t *in, int n_in,
+static int multi_args_ok(const dt_multi_decoder *d, const uint8_t *in, int n_in,
                          int max_out) {
   return d && !(n_in > 0 && !in) && n_in >= 0 && max_out >= 0 &&
          !(d->n > 0 && !d->trellises);
@@ -146,7 +146,7 @@ static int multi_args_ok(const dv_multi_decoder *d, const uint8_t *in, int n_in,
  * past the last decision are buffered, then decide the whole batch at once.
  *
  * Per-decoder soft output (details) comes from one BCJR backward sweep per
- * decoder (dv_trellis_soft_batch), interleaved into the details block with
+ * decoder (dt_trellis_soft_batch), interleaved into the details block with
  * stride d->n. The merged out bit is the likelihood-weighted vote of the
  * decoders' traced bits: each decoder's weight w_j = exp(-(cost_j - min_cost))
  * and its lock come from its smoothed cost at the bit's OWN decision time
@@ -156,9 +156,9 @@ static int multi_args_ok(const dv_multi_decoder *d, const uint8_t *in, int n_in,
  * ambiguous and erased. One code is still gated absolutely: unless the best
  * decoder clears lock_floor nothing is locked and the bit is erased. `draining`
  * emits the reduced-depth tail. out and details may both be NULL. */
-static int multi_run(dv_multi_decoder *d, uint8_t *out,
-                     dv_decode_details *details, int max_out, int draining) {
-  dv_decode_ctx *ctx = &d->ctx;
+static int multi_run(dt_multi_decoder *d, uint8_t *out,
+                     dt_decode_details *details, int max_out, int draining) {
+  dt_decode_ctx *ctx = &d->ctx;
   const int dd = ctx->decision_depth, rl = ctx->ring_len;
   const long long cap_window = 2 * (long long)dd;
   const size_t ncodes = d->n;
@@ -175,7 +175,7 @@ static int multi_run(dv_multi_decoder *d, uint8_t *out,
       } else if (ctx->received_length - ctx->read_base < ctx->n) {
         break;
       }
-      dv_decode_step(ctx, d->trellises, ncodes);
+      dt_decode_step(ctx, d->trellises, ncodes);
     }
     const long long horizon = draining ? ctx->steps : (ctx->steps - dd);
     long long avail = horizon - ctx->decided;
@@ -191,7 +191,7 @@ static int multi_run(dv_multi_decoder *d, uint8_t *out,
      * the details block (stride ncodes). */
     if (details) {
       for (size_t j = 0; j < ncodes; ++j) {
-        dv_trellis_soft_batch(ctx, &d->trellises[j], ctx->decided, n_emit, NULL,
+        dt_trellis_soft_batch(ctx, &d->trellises[j], ctx->decided, n_emit, NULL,
                               details + (size_t)output_count * ncodes + j,
                               (int)ncodes);
       }
@@ -213,19 +213,19 @@ static int multi_run(dv_multi_decoder *d, uint8_t *out,
           best_idx = (int)j;
         }
       }
-      const double best_lock = dv_lock_from_cost(ctx, min_cost);
+      const double best_lock = dt_lock_from_cost(ctx, min_cost);
 
       int decided_bit = -1; /* 0/1 once chosen; stays -1 to erase */
       if (best_lock >= d->lock_floor) {
         double weight_total = 0.0, weight_ones = 0.0;
         for (size_t j = 0; j < ncodes; ++j) {
           const double w =
-              dv_exp(min_cost - d->trellises[j].smoothed_ring[si]);
+              dt_exp(min_cost - d->trellises[j].smoothed_ring[si]);
           weight_total += w;
           /* Trace this decoder's bit from its frontier at the bit's own decision
            * time (step s = t+decision_depth), exactly as the per-bit decoder. */
           const int fr = d->trellises[j].frontier_ring[si];
-          if (dv_trellis_trace(ctx, &d->trellises[j], s, fr, t)) {
+          if (dt_trellis_trace(ctx, &d->trellises[j], s, fr, t)) {
             weight_ones += w;
           }
         }
@@ -241,7 +241,7 @@ static int multi_run(dv_multi_decoder *d, uint8_t *out,
         last = best_idx;
         if (out) out[pos] = (uint8_t)decided_bit;
       } else if (out) {
-        out[pos] = DV_ERASURE;
+        out[pos] = DT_ERASURE;
       }
     }
     output_count += n_emit;
@@ -254,25 +254,25 @@ static int multi_run(dv_multi_decoder *d, uint8_t *out,
   return output_count;
 }
 
-int dv_multi_decode(dv_multi_decoder *d, const uint8_t *in, int n_in,
-                    uint8_t *out, dv_decode_details *details, int max_out) {
+int dt_multi_decode(dt_multi_decoder *d, const uint8_t *in, int n_in,
+                    uint8_t *out, dt_decode_details *details, int max_out) {
   if (!multi_args_ok(d, in, n_in, max_out)) {
-    return DV_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (d->n == 0) {
     return 0;
   }
-  int status = dv_decode_feed(&d->ctx, in, n_in);
+  int status = dt_decode_feed(&d->ctx, in, n_in);
   if (status < 0) {
     return status;
   }
   return multi_run(d, out, details, max_out, /*draining=*/0);
 }
 
-int dv_multi_decode_flush(dv_multi_decoder *d, uint8_t *out,
-                          dv_decode_details *details, int max_out) {
+int dt_multi_decode_flush(dt_multi_decoder *d, uint8_t *out,
+                          dt_decode_details *details, int max_out) {
   if (!multi_args_ok(d, NULL, 0, max_out)) {
-    return DV_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (d->n == 0 || max_out == 0) {
     return 0;

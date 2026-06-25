@@ -24,15 +24,15 @@
  */
 /* clang-format on */
 
-#include <drift_viterbi/compare.h>
+#include <drifty/compare.h>
 
-#include <drift_viterbi/stdlib.h>
+#include <drifty/stdlib.h>
 
 #include <math.h>
 
 /* clang-format off */
 /*
- * dv_compare: probability that two bit-stream samples were produced by
+ * dt_compare: probability that two bit-stream samples were produced by
  * convolutional codes with the *same* generator polynomials, for a given rate
  * 1/n and constraint length k.
  *
@@ -43,7 +43,7 @@
  * transmitted input. For each sample we recover its dual space blindly over
  * GF(2), then measure how well each sample satisfies the other's parity checks.
  *
- * Bit representation follows the drift_viterbi convention: one bit per byte
+ * Bit representation follows the drifty convention: one bit per byte
  * (value & 1); only the low bit of each input byte is used.
  *
  * Drift tolerance: this corrects both a constant framing/phase offset *and*
@@ -54,12 +54,12 @@
  *    one sitting in a clean run between indels, so the fixed slide-by-n histogram
  *    sees an unmisframed frame. The dual space is global, so checks found there
  *    hold everywhere.
- *  - Cross-satisfaction (dv_cross_satisfaction) then carries those checks across
+ *  - Cross-satisfaction (dt_cross_satisfaction) then carries those checks across
  *    the whole stream along an offset *path* that may slip by +/-1 bit per window
- *    - a self-synchronising analog of drift_viterbi's drift window / re-anchoring,
- *    bounded to +/-DV_MAX_CUMULATIVE_DRIFT bits of net drift.
+ *    - a self-synchronising analog of drifty's drift window / re-anchoring,
+ *    bounded to +/-DT_MAX_CUMULATIVE_DRIFT bits of net drift.
  *
- * We do not (and cannot) invoke drift_viterbi's decoder here: that needs a known
+ * We do not (and cannot) invoke drifty's decoder here: that needs a known
  * trellis, whereas this comparison must stay blind to the code.
  */
 /* clang-format on */
@@ -69,65 +69,65 @@
 /* A candidate parity-check vector joins a sample's dual space if at least this
  * fraction of the sample's windows satisfy it. Clean data sits near 1.0; the
  * margin above 0.5 tolerates substitution noise. */
-static const double DV_DUAL_SATISFACTION_THRESHOLD = 0.85;
+static const double DT_DUAL_SATISFACTION_THRESHOLD = 0.85;
 
 /* Half-range of the *initial* framing offset searched when matching one
  * sample's checks against the other, absorbing framing phase and a constant
  * skew between captures. The cross-satisfaction path then wanders from here
  * (see below). */
-#define DV_MAX_DRIFT 16
+#define DT_MAX_DRIFT 16
 
 /* Bound on *cumulative* drift: the cross-satisfaction offset path may wander up
  * to this many bits from the basis frame over the whole stream (stepping +/-1
- * per window). The cumulative analog of DV_MAX_DRIFT, and the counterpart of
+ * per window). The cumulative analog of DT_MAX_DRIFT, and the counterpart of
  * the decoder's max_drift. */
-#define DV_MAX_CUMULATIVE_DRIFT 128
+#define DT_MAX_CUMULATIVE_DRIFT 128
 
 /* Width of the offset axis in the cross-satisfaction DP (offset in
- * [-DV_MAX_CUMULATIVE_DRIFT, +DV_MAX_CUMULATIVE_DRIFT]). */
-#define DV_OFFSET_WIDTH (2 * DV_MAX_CUMULATIVE_DRIFT + 1)
+ * [-DT_MAX_CUMULATIVE_DRIFT, +DT_MAX_CUMULATIVE_DRIFT]). */
+#define DT_OFFSET_WIDTH (2 * DT_MAX_CUMULATIVE_DRIFT + 1)
 
 /* Nominal channel priors, used only to weight the offset-path DP - only their
- * relative sizes matter, mirroring the decoder's -dv_log(p) branch metrics. A
+ * relative sizes matter, mirroring the decoder's -dt_log(p) branch metrics. A
  * violated parity check is scored as a substitution; a +/-1 offset step (an
  * inserted/dropped bit in the stream relative to the basis frame) as an indel.
  */
-static const double DV_NOMINAL_P_SUB = 0.05;
-static const double DV_NOMINAL_P_INDEL = 0.02;
+static const double DT_NOMINAL_P_SUB = 0.05;
+static const double DT_NOMINAL_P_INDEL = 0.02;
 
 /* Dual recovery is hybrid by window width. For window_bits <=
- * DV_MAX_WINDOW_BITS it uses a Walsh-Hadamard transform over 2^window_bits bins
+ * DT_MAX_WINDOW_BITS it uses a Walsh-Hadamard transform over 2^window_bits bins
  * (noise-robust but exponential, so the width is capped). Wider windows use an
  * exact GF(2) null-space recovery instead (recover_segment_nullspace), which is
  * linear in the window count and O(window_bits) in memory. */
-#define DV_MAX_WINDOW_BITS 22
+#define DT_MAX_WINDOW_BITS 22
 
 /* Hard ceiling on the relation window: parity vectors are packed into a
  * uint32_t, so window_bits must fit. Codes whose window n*(k+1) exceeds this
  * are undetermined (widening the bitvector to uint64_t would raise it to 64).
  */
-#define DV_HARD_WINDOW_CAP 32
+#define DT_HARD_WINDOW_CAP 32
 
 /* Returned when the result cannot be determined (bad args, too little data, or
- * a code whose relation window exceeds DV_HARD_WINDOW_CAP). */
-#define DV_UNDETERMINED (-1.0)
+ * a code whose relation window exceeds DT_HARD_WINDOW_CAP). */
+#define DT_UNDETERMINED (-1.0)
 
 /* Cap on the windows the cross-satisfaction DP processes, bounding time on very
  * long streams; the dual space is global, so a prefix this size suffices. */
-#define DV_MAX_CROSS_WINDOWS 200000L
+#define DT_MAX_CROSS_WINDOWS 200000L
 
 /* Fewest windows a stream needs before recovery is attempted: roughly enough
  * independent step-windows (one per n bits) to pin the dual space, plus margin.
- * Below this dv_compare is undetermined; above it, a stream that is still too
+ * Below this dt_compare is undetermined; above it, a stream that is still too
  * thin is caught by self-validation (see recover_basis). */
-static long dv_min_recovery_windows(int n, int window_bits) {
+static long dt_min_recovery_windows(int n, int window_bits) {
   long floor = (long)(window_bits / n) + 8;
   return floor < 8 ? 8 : floor;
 }
 
 /* -- helpers --------------------------------------------------------------- */
 
-static double dv_clamp01(double value) {
+static double dt_clamp01(double value) {
   if (value < 0.0) return 0.0;
   if (value > 1.0) return 1.0;
   return value;
@@ -135,7 +135,7 @@ static double dv_clamp01(double value) {
 
 /* Pack window_bits consecutive stream bits (LSB = first bit) into an integer.
  */
-static uint32_t dv_window(const uint8_t *stream, size_t start,
+static uint32_t dt_window(const uint8_t *stream, size_t start,
                           int window_bits) {
   uint32_t packed = 0;
   for (int i = 0; i < window_bits; ++i) {
@@ -159,7 +159,7 @@ static uint32_t dv_window(const uint8_t *stream, size_t start,
  * them): restricting recovery to a low-drift prefix keeps cumulative mid-stream
  * drift from misframing the fixed slide-by-n and smearing the spectrum.
  */
-static int *dv_dual_spectrum(const uint8_t *stream, size_t len, int n,
+static int *dt_dual_spectrum(const uint8_t *stream, size_t len, int n,
                              int window_bits, long max_windows,
                              long *window_count_out) {
   size_t bin_count = (size_t)1 << window_bits;
@@ -167,14 +167,14 @@ static int *dv_dual_spectrum(const uint8_t *stream, size_t len, int n,
   if (max_windows > 0 && window_count > max_windows) {
     window_count = max_windows;
   }
-  int *spectrum = dv_calloc(bin_count, sizeof(*spectrum));
+  int *spectrum = dt_calloc(bin_count, sizeof(*spectrum));
   if (!spectrum) {
     return NULL;
   }
 
   for (long window_index = 0; window_index < window_count; ++window_index) {
     uint32_t packed =
-        dv_window(stream, (size_t)window_index * (size_t)n, window_bits);
+        dt_window(stream, (size_t)window_index * (size_t)n, window_bits);
     spectrum[packed]++;
   }
 
@@ -197,19 +197,19 @@ static int *dv_dual_spectrum(const uint8_t *stream, size_t len, int n,
 
 /*
  * Reduce all high-satisfaction parity vectors to a GF(2) basis (one pivot per
- * bit position). Fills basis[] (capacity DV_HARD_WINDOW_CAP) and returns its
+ * bit position). Fills basis[] (capacity DT_HARD_WINDOW_CAP) and returns its
  * dimension = the recovered dual space's dimension.
  */
-static int dv_dual_basis(const int *spectrum, long window_count,
+static int dt_dual_basis(const int *spectrum, long window_count,
                          int window_bits, uint32_t *basis) {
-  uint32_t row_for_bit[DV_MAX_WINDOW_BITS];
-  dv_memset(row_for_bit, 0, sizeof(row_for_bit));
+  uint32_t row_for_bit[DT_MAX_WINDOW_BITS];
+  dt_memset(row_for_bit, 0, sizeof(row_for_bit));
 
   size_t bin_count = (size_t)1 << window_bits;
   for (size_t vector = 1; vector < bin_count; ++vector) {
     double satisfaction = (double)(window_count + spectrum[vector]) /
                           (2.0 * (double)window_count);
-    if (satisfaction < DV_DUAL_SATISFACTION_THRESHOLD) {
+    if (satisfaction < DT_DUAL_SATISFACTION_THRESHOLD) {
       continue;
     }
     uint32_t row = (uint32_t)vector;
@@ -241,7 +241,7 @@ static int dv_dual_basis(const int *spectrum, long window_count,
  * parity vector is orthogonal (over GF(2)) to all of them: the dual space is
  * the orthogonal complement of their span. We row-reduce the windows into a
  * basis of the code (row) space, then read its null space straight off the
- * reduced form. Fills basis[] (capacity DV_HARD_WINDOW_CAP) with up to
+ * reduced form. Fills basis[] (capacity DT_HARD_WINDOW_CAP) with up to
  * window_bits - rank vectors and returns that count. Memory is O(window_bits);
  * no allocation.
  *
@@ -260,12 +260,12 @@ static int recover_segment_nullspace(const uint8_t *stream, size_t len, int n,
   }
 
   /* Row-echelon basis of the code space: pivot[bit] (if set) has its leading 1
-   * at `bit`. Standard GF(2) elimination, the same idiom as dv_dual_basis. */
-  uint32_t pivot[DV_HARD_WINDOW_CAP];
-  dv_memset(pivot, 0, sizeof(pivot));
+   * at `bit`. Standard GF(2) elimination, the same idiom as dt_dual_basis. */
+  uint32_t pivot[DT_HARD_WINDOW_CAP];
+  dt_memset(pivot, 0, sizeof(pivot));
   for (long window_index = 0; window_index < window_count; ++window_index) {
     uint32_t row =
-        dv_window(stream, (size_t)window_index * (size_t)n, window_bits);
+        dt_window(stream, (size_t)window_index * (size_t)n, window_bits);
     for (int bit = window_bits - 1; bit >= 0 && row; --bit) {
       if (!((row >> bit) & 1u)) {
         continue;
@@ -318,18 +318,18 @@ static int recover_segment_nullspace(const uint8_t *stream, size_t len, int n,
  * failure (WHT path only). */
 static int recover_segment(const uint8_t *stream, size_t len, int n,
                            int window_bits, long max_windows, uint32_t *basis) {
-  if (window_bits <= DV_MAX_WINDOW_BITS) {
+  if (window_bits <= DT_MAX_WINDOW_BITS) {
     long used = 0;
     int *spectrum =
-        dv_dual_spectrum(stream, len, n, window_bits, max_windows, &used);
+        dt_dual_spectrum(stream, len, n, window_bits, max_windows, &used);
     if (!spectrum) {
       return -1;
     }
     const int dimension =
-        (used >= dv_min_recovery_windows(n, window_bits))
-            ? dv_dual_basis(spectrum, used, window_bits, basis)
+        (used >= dt_min_recovery_windows(n, window_bits))
+            ? dt_dual_basis(spectrum, used, window_bits, basis)
             : 0;
-    dv_free(spectrum);
+    dt_free(spectrum);
     return dimension;
   }
   return recover_segment_nullspace(stream, len, n, window_bits, max_windows,
@@ -340,9 +340,9 @@ static int recover_segment(const uint8_t *stream, size_t len, int n,
 
 /* Satisfied-check count of one window_bits-wide window of the stream at byte
  * position `position` against every parity vector in basis[]. */
-static int dv_window_good(const uint8_t *stream, long position, int window_bits,
+static int dt_window_good(const uint8_t *stream, long position, int window_bits,
                           const uint32_t *basis, int dimension) {
-  uint32_t packed = dv_window(stream, (size_t)position, window_bits);
+  uint32_t packed = dt_window(stream, (size_t)position, window_bits);
   int good = 0;
   for (int i = 0; i < dimension; ++i) {
     if (!__builtin_parity(packed & basis[i])) {
@@ -361,13 +361,13 @@ static int dv_window_good(const uint8_t *stream, long position, int window_bits,
  * code, ~0.5 when it does not.
  *
  * This is a traceback-free Viterbi over the offset state `offset` in
- * [-DV_MAX_CUMULATIVE_DRIFT, +DV_MAX_CUMULATIVE_DRIFT]: window window_index reads
+ * [-DT_MAX_CUMULATIVE_DRIFT, +DT_MAX_CUMULATIVE_DRIFT]: window window_index reads
  * window_bits bits of the stream at position window_index*n + offset, and we
  * pick the offset trajectory of least total cost, where
  *   cost = sum [ violated*cost_miss + satisfied*cost_match ] (per-window misfit)
  *        + sum [ offset stepped ? cost_indel : 0 ]           (per-step penalty)
  * in negative-log-likelihood units (mirroring the decoder's branch metrics).
- * Window 0 may start anywhere within +/-DV_MAX_DRIFT for free, absorbing framing
+ * Window 0 may start anywhere within +/-DT_MAX_DRIFT for free, absorbing framing
  * phase and a constant skew.
  *
  * The indel penalty is the load-bearing property: without it a free-wandering
@@ -381,11 +381,11 @@ static int dv_window_good(const uint8_t *stream, long position, int window_bits,
  * good / (window_count * dimension).
  */
 /* clang-format on */
-static double dv_cross_satisfaction(const uint8_t *stream, size_t len, int n,
+static double dt_cross_satisfaction(const uint8_t *stream, size_t len, int n,
                                     int window_bits, const uint32_t *basis,
                                     int dimension) {
-  const int max_offset = DV_MAX_CUMULATIVE_DRIFT;
-  const int offset_width = DV_OFFSET_WIDTH;
+  const int max_offset = DT_MAX_CUMULATIVE_DRIFT;
+  const int offset_width = DT_OFFSET_WIDTH;
   long window_count = (long)((len - (size_t)window_bits) / (size_t)n) +
                       1; /* offset=0 windows */
   if (window_count < 1) {
@@ -393,31 +393,31 @@ static double dv_cross_satisfaction(const uint8_t *stream, size_t len, int n,
   }
   /* Bound work on very long streams: the dual space is global, so the satisfied
    * fraction over a long prefix represents the whole stream. */
-  if (window_count > DV_MAX_CROSS_WINDOWS) {
-    window_count = DV_MAX_CROSS_WINDOWS;
+  if (window_count > DT_MAX_CROSS_WINDOWS) {
+    window_count = DT_MAX_CROSS_WINDOWS;
   }
 
-  const double cost_match = -dv_log(1.0 - DV_NOMINAL_P_SUB);
-  const double cost_miss = -dv_log(DV_NOMINAL_P_SUB);
-  const double cost_indel = -dv_log(DV_NOMINAL_P_INDEL);
+  const double cost_match = -dt_log(1.0 - DT_NOMINAL_P_SUB);
+  const double cost_miss = -dt_log(DT_NOMINAL_P_SUB);
+  const double cost_indel = -dt_log(DT_NOMINAL_P_INDEL);
 
   /* Two rolling rows of {cost, good}; offset_index maps to offset =
    * offset_index - max_offset. offset_width is a compile-time constant, so
    * these live on the stack. */
-  double cost[DV_OFFSET_WIDTH], next_cost[DV_OFFSET_WIDTH];
-  long good[DV_OFFSET_WIDTH], next_good[DV_OFFSET_WIDTH];
+  double cost[DT_OFFSET_WIDTH], next_cost[DT_OFFSET_WIDTH];
+  long good[DT_OFFSET_WIDTH], next_good[DT_OFFSET_WIDTH];
 
-  /* Window 0: any starting offset within +/-DV_MAX_DRIFT is free. */
+  /* Window 0: any starting offset within +/-DT_MAX_DRIFT is free. */
   for (int offset_index = 0; offset_index < offset_width; ++offset_index) {
     const int offset = offset_index - max_offset;
     cost[offset_index] = INFINITY;
     good[offset_index] = 0;
-    if (dv_abs(offset) > DV_MAX_DRIFT || offset < 0 ||
+    if (dt_abs(offset) > DT_MAX_DRIFT || offset < 0 ||
         offset + window_bits > (long)len) {
       continue;
     }
     const int good_count =
-        dv_window_good(stream, offset, window_bits, basis, dimension);
+        dt_window_good(stream, offset, window_bits, basis, dimension);
     good[offset_index] = good_count;
     cost[offset_index] = (double)(dimension - good_count) * cost_miss +
                          (double)good_count * cost_match;
@@ -453,14 +453,14 @@ static double dv_cross_satisfaction(const uint8_t *stream, size_t len, int n,
         continue;
       }
       const int good_count =
-          dv_window_good(stream, position, window_bits, basis, dimension);
+          dt_window_good(stream, position, window_bits, basis, dimension);
       next_cost[offset_index] = best +
                                 (double)(dimension - good_count) * cost_miss +
                                 (double)good_count * cost_match;
       next_good[offset_index] = best_good + good_count;
     }
-    dv_memcpy(cost, next_cost, sizeof(cost));
-    dv_memcpy(good, next_good, sizeof(good));
+    dt_memcpy(cost, next_cost, sizeof(cost));
+    dt_memcpy(good, next_good, sizeof(good));
   }
 
   double best = INFINITY;
@@ -484,20 +484,20 @@ static double dv_cross_satisfaction(const uint8_t *stream, size_t len, int n,
  * self-scores ~1.0; a spurious one recovered from a misframed or noisy segment
  * scores ~0.5, and an unstructured (random) stream stays below this floor
  * entirely. */
-static const double DV_SELF_SATISFACTION_FLOOR = 0.9;
+static const double DT_SELF_SATISFACTION_FLOOR = 0.9;
 
 /* Self cross-satisfaction this high means the candidate clearly is the stream's
  * dual space; stop scanning further segments. */
-static const double DV_SELF_SATISFACTION_GOOD = 0.97;
+static const double DT_SELF_SATISFACTION_GOOD = 0.97;
 
 /*
- * Recover a stream's dual basis into basis[] (capacity DV_HARD_WINDOW_CAP) and
+ * Recover a stream's dual basis into basis[] (capacity DT_HARD_WINDOW_CAP) and
  * return its dimension. Returns -1 on allocation failure, 0 if no reliable
  * basis emerged (e.g. an unstructured stream). When self_satisfaction_out is
  * non-NULL it receives the best candidate's whole-stream self
  * cross-satisfaction
  * (~1.0 for a clean coded stream, ~0.5 for noise), a graded measure of how well
- * the stream fits a code - used by dv_detect.
+ * the stream fits a code - used by dt_detect.
  *
  * The fixed slide-by-n histogram needs a clean frame, but cumulative drift
  * misframes it: under deletions a single dropped bit shifts every later window,
@@ -510,13 +510,13 @@ static const double DV_SELF_SATISFACTION_GOOD = 0.97;
  * Each candidate is self-validated by its drift-tolerant cross-satisfaction
  * against the whole stream, which cheaply rejects spurious vectors that a short
  * segment can admit: we keep the best-scoring candidate and stop early once one
- * clearly fits (DV_SELF_SATISFACTION_GOOD). A clean stream is validated at the
+ * clearly fits (DT_SELF_SATISFACTION_GOOD). A clean stream is validated at the
  * first segment, preserving the original behaviour.
  */
 static int recover_basis(const uint8_t *stream, size_t len, int n,
                          int window_bits, uint32_t *basis,
                          double *self_satisfaction_out) {
-  const long min_windows = dv_min_recovery_windows(n, window_bits);
+  const long min_windows = dt_min_recovery_windows(n, window_bits);
   /* Segment window count: large enough to pin the dual space without admitting
    * spurious checks, short enough to fit inside a typical clean run. */
   long segment_windows = 4L * window_bits;
@@ -526,7 +526,7 @@ static int recover_basis(const uint8_t *stream, size_t len, int n,
   const long total_windows =
       (long)((len - (size_t)window_bits) / (size_t)n) + 1;
 
-  uint32_t candidate[DV_HARD_WINDOW_CAP];
+  uint32_t candidate[DT_HARD_WINDOW_CAP];
   int best_dimension = 0;
   double best_self_satisfaction = 0.0;
   for (long start = 0; start + min_windows <= total_windows;
@@ -541,13 +541,13 @@ static int recover_basis(const uint8_t *stream, size_t len, int n,
     if (dimension == 0) {
       continue;
     }
-    const double self_satisfaction = dv_cross_satisfaction(
+    const double self_satisfaction = dt_cross_satisfaction(
         stream, len, n, window_bits, candidate, dimension);
     if (self_satisfaction > best_self_satisfaction) {
       best_self_satisfaction = self_satisfaction;
       best_dimension = dimension;
-      dv_memcpy(basis, candidate, (size_t)dimension * sizeof(*candidate));
-      if (self_satisfaction >= DV_SELF_SATISFACTION_GOOD) {
+      dt_memcpy(basis, candidate, (size_t)dimension * sizeof(*candidate));
+      if (self_satisfaction >= DT_SELF_SATISFACTION_GOOD) {
         break;
       }
     }
@@ -555,91 +555,91 @@ static int recover_basis(const uint8_t *stream, size_t len, int n,
   if (self_satisfaction_out) {
     *self_satisfaction_out = best_self_satisfaction;
   }
-  return best_self_satisfaction >= DV_SELF_SATISFACTION_FLOOR ? best_dimension
+  return best_self_satisfaction >= DT_SELF_SATISFACTION_FLOOR ? best_dimension
                                                               : 0;
 }
 
 /* -- public API ------------------------------------------------------------ */
 
 /* Relation window width for a (rate 1/n, constraint length k) code, or 0 if the
- * code is outside the range dv_compare can handle (n < 1, k < 2, k > 9, or a
- * window wider than DV_HARD_WINDOW_CAP). Shared by dv_compare and the length
+ * code is outside the range dt_compare can handle (n < 1, k < 2, k > 9, or a
+ * window wider than DT_HARD_WINDOW_CAP). Shared by dt_compare and the length
  * helpers so they agree on what is in range. */
-static int dv_window_bits(int n, int k) {
+static int dt_window_bits(int n, int k) {
   if (n < 1 || k < 2 || k > 9) {
     return 0;
   }
   const int window_bits = n * (k + 1);
-  return (window_bits >= 1 && window_bits <= DV_HARD_WINDOW_CAP) ? window_bits
+  return (window_bits >= 1 && window_bits <= DT_HARD_WINDOW_CAP) ? window_bits
                                                                  : 0;
 }
 
-long dv_compare_min_len(int n, int k) {
-  const int window_bits = dv_window_bits(n, k);
+long dt_compare_min_len(int n, int k) {
+  const int window_bits = dt_window_bits(n, k);
   if (window_bits == 0) {
     return -1;
   }
   /* Smallest length whose window count reaches the recovery floor: window count
    * is (len - window_bits) / n + 1, so this hits exactly
-   * dv_min_recovery_windows (one bit shorter falls below it and dv_compare is
+   * dt_min_recovery_windows (one bit shorter falls below it and dt_compare is
    * undetermined). */
-  const long min_windows = dv_min_recovery_windows(n, window_bits);
+  const long min_windows = dt_min_recovery_windows(n, window_bits);
   return (long)window_bits + (min_windows - 1) * (long)n;
 }
 
-long dv_compare_max_len(int n, int k) {
-  const int window_bits = dv_window_bits(n, k);
+long dt_compare_max_len(int n, int k) {
+  const int window_bits = dt_window_bits(n, k);
   if (window_bits == 0) {
     return -1;
   }
   /* Length at which the cross-satisfaction window cap is reached; beyond it the
    * scoring consults only this prefix, so a longer sample cannot change the
    * result and may be truncated to this length. */
-  return (long)window_bits + (DV_MAX_CROSS_WINDOWS - 1) * (long)n;
+  return (long)window_bits + (DT_MAX_CROSS_WINDOWS - 1) * (long)n;
 }
 
-/* dv_detect runs the same single-stream code recovery that dv_compare applies
+/* dt_detect runs the same single-stream code recovery that dt_compare applies
  * to each of its two inputs, so it has the same per-sample length requirements.
  */
-long dv_detect_min_len(int n, int k) { return dv_compare_min_len(n, k); }
-long dv_detect_max_len(int n, int k) { return dv_compare_max_len(n, k); }
+long dt_detect_min_len(int n, int k) { return dt_compare_min_len(n, k); }
+long dt_detect_max_len(int n, int k) { return dt_compare_max_len(n, k); }
 
-double dv_compare(int n, int k, uint8_t *lhs, size_t lhs_len, uint8_t *rhs,
+double dt_compare(int n, int k, uint8_t *lhs, size_t lhs_len, uint8_t *rhs,
                   size_t rhs_len) {
   if (!lhs || !rhs) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
 
-  int window_bits = dv_window_bits(n, k);
+  int window_bits = dt_window_bits(n, k);
   if (window_bits == 0) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
   if (lhs_len < (size_t)window_bits || rhs_len < (size_t)window_bits) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
 
   /* Need enough windows to pin down the dual space; below this floor there is
    * too little data to recover it (anything still too thin self-validates away
    * inside recover_basis). */
-  const long min_windows = dv_min_recovery_windows(n, window_bits);
+  const long min_windows = dt_min_recovery_windows(n, window_bits);
   long windows_lhs = (long)((lhs_len - (size_t)window_bits) / (size_t)n) + 1;
   long windows_rhs = (long)((rhs_len - (size_t)window_bits) / (size_t)n) + 1;
   if (windows_lhs < min_windows || windows_rhs < min_windows) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
 
-  uint32_t basis_lhs[DV_HARD_WINDOW_CAP];
-  uint32_t basis_rhs[DV_HARD_WINDOW_CAP];
+  uint32_t basis_lhs[DT_HARD_WINDOW_CAP];
+  uint32_t basis_rhs[DT_HARD_WINDOW_CAP];
   int dimension_lhs =
       recover_basis(lhs, lhs_len, n, window_bits, basis_lhs, NULL);
   int dimension_rhs =
       recover_basis(rhs, rhs_len, n, window_bits, basis_rhs, NULL);
   if (dimension_lhs < 0 || dimension_rhs < 0) {
-    return DV_UNDETERMINED; /* allocation failure */
+    return DT_UNDETERMINED; /* allocation failure */
   }
 
   if (dimension_lhs == 0 && dimension_rhs == 0) {
-    return DV_UNDETERMINED; /* neither sample exposed any linear structure */
+    return DT_UNDETERMINED; /* neither sample exposed any linear structure */
   }
   if (dimension_lhs == 0 || dimension_rhs == 0) {
     return 0.0; /* one is structured, the other is not -> different */
@@ -656,11 +656,11 @@ double dv_compare(int n, int k, uint8_t *lhs, size_t lhs_len, uint8_t *rhs,
    * dimension at the window boundary even for an identical code.
    */
   double cross_lhs_on_rhs =
-      dv_clamp01(2.0 * (dv_cross_satisfaction(rhs, rhs_len, n, window_bits,
+      dt_clamp01(2.0 * (dt_cross_satisfaction(rhs, rhs_len, n, window_bits,
                                               basis_lhs, dimension_lhs) -
                         0.5));
   double cross_rhs_on_lhs =
-      dv_clamp01(2.0 * (dv_cross_satisfaction(lhs, lhs_len, n, window_bits,
+      dt_clamp01(2.0 * (dt_cross_satisfaction(lhs, lhs_len, n, window_bits,
                                               basis_rhs, dimension_rhs) -
                         0.5));
 
@@ -669,9 +669,9 @@ double dv_compare(int n, int k, uint8_t *lhs, size_t lhs_len, uint8_t *rhs,
 }
 
 /* ========================================================================== *
- *  Graded blind detection (dv_detect)                                        *
+ *  Graded blind detection (dt_detect)                                        *
  *                                                                            *
- *  dv_detect answers whether a buffer carries a rate-1/n, constraint-        *
+ *  dt_detect answers whether a buffer carries a rate-1/n, constraint-        *
  *  length-k code without knowing the generators or the sent bits, and keeps  *
  *  that answer graded, sliding smoothly to zero as noise rises. It rests on  *
  *  four parts:                                                               *
@@ -699,7 +699,7 @@ double dv_compare(int n, int k, uint8_t *lhs, size_t lhs_len, uint8_t *rhs,
  *     window), and re-scored along that path, pulling post-indel windows     *
  *     back into alignment so they reinforce the peaks.                       *
  *                                                                            *
- *   Part 4 - a sequential detector (dv_detect_sequential): recover a basis   *
+ *   Part 4 - a sequential detector (dt_detect_sequential): recover a basis   *
  *     from a warmup prefix, then run a one-sided CUSUM of the per-window     *
  *     satisfied-check log-likelihood ratio (H1 vs the H0 rate 0.5), so a     *
  *     "code present" call fires as soon as enough evidence accrues rather    *
@@ -712,28 +712,28 @@ double dv_compare(int n, int k, uint8_t *lhs, size_t lhs_len, uint8_t *rhs,
 
 /* sqrt built from the stdlib's exp/log (the freestanding build has no libm
  * sqrt). Exact enough for a noise-floor estimate. */
-static double dv_sqrt(double x) { return x > 0.0 ? dv_exp(0.5 * dv_log(x)) : 0.0; }
+static double dt_sqrt(double x) { return x > 0.0 ? dt_exp(0.5 * dt_log(x)) : 0.0; }
 
 /* Safety margin (in units of the H0 standard deviation) added to the extreme-
  * value peak floor, so random data reads ~0 rather than skimming the floor. */
-static const double DV_DETECT_PEAK_MARGIN = 1.0;
+static const double DT_DETECT_PEAK_MARGIN = 1.0;
 
 /* H0 extreme-value floor on |alignment|: the expected largest of ~2^window_bits
  * unit-Gaussian WHT coefficients is ~sqrt(2*window_bits*ln2) standard
  * deviations, and one std of alignment is 1/sqrt(window_count). A selected peak
  * must clear this to count as structure rather than the luckiest noise bin. */
-static double dv_peak_floor(int window_bits, long window_count) {
+static double dt_peak_floor(int window_bits, long window_count) {
   if (window_count <= 0) return 1.0;
   const double sigmas =
-      dv_sqrt(2.0 * (double)window_bits * 0.69314718055994530942) +
-      DV_DETECT_PEAK_MARGIN;
-  return sigmas / dv_sqrt((double)window_count);
+      dt_sqrt(2.0 * (double)window_bits * 0.69314718055994530942) +
+      DT_DETECT_PEAK_MARGIN;
+  return sigmas / dt_sqrt((double)window_count);
 }
 
 /* Turn a basis's summed excess alignment into a [0,1] confidence. The sum
  * saturates: a clean code contributes ~dimension * 1, noise contributes ~0. */
-static double dv_detect_confidence(double excess_sum) {
-  return dv_clamp01(excess_sum);
+static double dt_detect_confidence(double excess_sum) {
+  return dt_clamp01(excess_sum);
 }
 
 /*
@@ -744,11 +744,11 @@ static double dv_detect_confidence(double excess_sum) {
  * strongly DC-biased one - instead has its dual fill nearly the whole window:
  * every parity vector sits at alignment +/-1, so the energy statistic
  * saturates and a pure energy detector calls it a code. Heavy erasure is the
- * common trap: DV_ERASURE (0xFF) reads as a 1 bit, so as the erasure rate
+ * common trap: DT_ERASURE (0xFF) reads as a 1 bit, so as the erasure rate
  * climbs the stream tends to all-ones, and even at moderate rates the 1-bias
  * lights up every single-bit check. Recovered duals wider than this cap are
  * rejected. window_bits = n*(k+1), so (k+1) = window_bits / n. */
-static int dv_max_dual(int n, int window_bits) {
+static int dt_max_dual(int n, int window_bits) {
   return (n - 1) * (window_bits / n);
 }
 
@@ -762,13 +762,13 @@ static int dv_max_dual(int n, int window_bits) {
  * dimension 0) when the recovered dual is too wide to be a genuine rate-1/n
  * code - the degeneracy guard above.
  */
-static double dv_spectral_excess(const int *spectrum, long window_count, int n,
+static double dt_spectral_excess(const int *spectrum, long window_count, int n,
                                  int window_bits, uint32_t *basis_out,
                                  int *dim_out) {
-  const double floor = dv_peak_floor(window_bits, window_count);
+  const double floor = dt_peak_floor(window_bits, window_count);
   const size_t bin_count = (size_t)1 << window_bits;
-  uint32_t row_for_bit[DV_MAX_WINDOW_BITS];
-  dv_memset(row_for_bit, 0, sizeof(row_for_bit));
+  uint32_t row_for_bit[DT_MAX_WINDOW_BITS];
+  dt_memset(row_for_bit, 0, sizeof(row_for_bit));
 
   double excess_sum = 0.0;
   int dimension = 0;
@@ -806,7 +806,7 @@ static double dv_spectral_excess(const int *spectrum, long window_count, int n,
   }
   /* Degeneracy guard: a dual this wide is a constant/biased stream, not a
    * code. Reject rather than let the saturated energy through. */
-  if (dimension > dv_max_dual(n, window_bits)) {
+  if (dimension > dt_max_dual(n, window_bits)) {
     if (dim_out) *dim_out = 0;
     return 0.0;
   }
@@ -817,10 +817,10 @@ static double dv_spectral_excess(const int *spectrum, long window_count, int n,
 /*
  * Lever 2 recovery for one phase: pool the WHOLE stream (from byte `phase`,
  * sliding by n) into one histogram, transform, and score with lever 1. Reuses
- * dv_dual_spectrum, capped at DV_MAX_CROSS_WINDOWS. WHT path only (window_bits
- * <= DV_MAX_WINDOW_BITS); wider codes use dv_basis_excess_wide below.
+ * dt_dual_spectrum, capped at DT_MAX_CROSS_WINDOWS. WHT path only (window_bits
+ * <= DT_MAX_WINDOW_BITS); wider codes use dt_basis_excess_wide below.
  */
-static double dv_phase_excess_wht(const uint8_t *stream, size_t len, int n,
+static double dt_phase_excess_wht(const uint8_t *stream, size_t len, int n,
                                   int window_bits, int phase,
                                   uint32_t *basis_out, int *dim_out) {
   if ((size_t)phase + (size_t)window_bits > len) {
@@ -829,39 +829,39 @@ static double dv_phase_excess_wht(const uint8_t *stream, size_t len, int n,
   }
   long used = 0;
   int *spectrum =
-      dv_dual_spectrum(stream + phase, len - (size_t)phase, n, window_bits,
-                       DV_MAX_CROSS_WINDOWS, &used);
+      dt_dual_spectrum(stream + phase, len - (size_t)phase, n, window_bits,
+                       DT_MAX_CROSS_WINDOWS, &used);
   if (!spectrum) {
     if (dim_out) *dim_out = -1; /* allocation failure */
     return 0.0;
   }
   double excess =
-      dv_spectral_excess(spectrum, used, n, window_bits, basis_out, dim_out);
-  dv_free(spectrum);
+      dt_spectral_excess(spectrum, used, n, window_bits, basis_out, dim_out);
+  dt_free(spectrum);
   return excess;
 }
 
 /*
  * Graded score of an explicit basis at a fixed phase: each check's satisfied
  * fraction over the whole stream, summed in excess of the H0 floor. The wide-
- * window (no-WHT) analog of dv_spectral_excess; also reused by lever 3.
+ * window (no-WHT) analog of dt_spectral_excess; also reused by lever 3.
  */
-static double dv_basis_excess_fixed(const uint8_t *stream, size_t len, int n,
+static double dt_basis_excess_fixed(const uint8_t *stream, size_t len, int n,
                                     int window_bits, int phase,
                                     const uint32_t *basis, int dimension) {
   if (dimension <= 0) return 0.0;
-  long sat[DV_HARD_WINDOW_CAP];
-  dv_memset(sat, 0, sizeof(sat));
+  long sat[DT_HARD_WINDOW_CAP];
+  dt_memset(sat, 0, sizeof(sat));
   long wc = 0;
   for (long pos = phase; pos + window_bits <= (long)len; pos += n) {
-    uint32_t packed = dv_window(stream, (size_t)pos, window_bits);
+    uint32_t packed = dt_window(stream, (size_t)pos, window_bits);
     for (int i = 0; i < dimension; ++i)
       if (!__builtin_parity(packed & basis[i])) ++sat[i];
     ++wc;
-    if (wc >= DV_MAX_CROSS_WINDOWS) break;
+    if (wc >= DT_MAX_CROSS_WINDOWS) break;
   }
   if (wc == 0) return 0.0;
-  const double floor = dv_peak_floor(window_bits, wc);
+  const double floor = dt_peak_floor(window_bits, wc);
   double excess = 0.0;
   for (int i = 0; i < dimension; ++i) {
     double align = 2.0 * ((double)sat[i] / (double)wc) - 1.0;
@@ -874,16 +874,16 @@ static double dv_basis_excess_fixed(const uint8_t *stream, size_t len, int n,
 /*
  * Lever 3: re-score `basis` along a drift-corrected path. Starting at `phase`,
  * advance one symbol at a time but let the frame slip by -1/0/+1 bit per step
- * (bounded to +/-DV_MAX_CUMULATIVE_DRIFT net), greedily choosing the slip that
+ * (bounded to +/-DT_MAX_CUMULATIVE_DRIFT net), greedily choosing the slip that
  * best satisfies the basis. Re-anchoring this way pulls post-indel windows back
  * into frame so they reinforce the peaks instead of smearing them.
  */
-static double dv_basis_excess_drift(const uint8_t *stream, size_t len, int n,
+static double dt_basis_excess_drift(const uint8_t *stream, size_t len, int n,
                                     int window_bits, int phase,
                                     const uint32_t *basis, int dimension) {
   if (dimension <= 0) return 0.0;
-  long sat[DV_HARD_WINDOW_CAP];
-  dv_memset(sat, 0, sizeof(sat));
+  long sat[DT_HARD_WINDOW_CAP];
+  dt_memset(sat, 0, sizeof(sat));
   long wc = 0;
   long pos = phase;
   long net_drift = 0; /* signed bits of accumulated slip from the nominal frame */
@@ -891,21 +891,21 @@ static double dv_basis_excess_drift(const uint8_t *stream, size_t len, int n,
    * step 0 (assume no indel unless a slip strictly helps). */
   static const int kSteps[3] = {0, 1, -1};
   while (pos + window_bits <= (long)len) {
-    uint32_t packed = dv_window(stream, (size_t)pos, window_bits);
+    uint32_t packed = dt_window(stream, (size_t)pos, window_bits);
     for (int i = 0; i < dimension; ++i)
       if (!__builtin_parity(packed & basis[i])) ++sat[i];
     ++wc;
-    if (wc >= DV_MAX_CROSS_WINDOWS) break;
+    if (wc >= DT_MAX_CROSS_WINDOWS) break;
     /* pick the next frame pos + n + step that best satisfies the basis. */
     long best_pos = -1;
     int best_step = 0;
     int best_good = -1;
     for (int si = 0; si < 3; ++si) {
       const int s = kSteps[si];
-      if (dv_abs((int)(net_drift + s)) > DV_MAX_CUMULATIVE_DRIFT) continue;
+      if (dt_abs((int)(net_drift + s)) > DT_MAX_CUMULATIVE_DRIFT) continue;
       const long cand = pos + n + s;
       if (cand < 0 || cand + window_bits > (long)len) continue;
-      uint32_t cw = dv_window(stream, (size_t)cand, window_bits);
+      uint32_t cw = dt_window(stream, (size_t)cand, window_bits);
       int good = 0;
       for (int i = 0; i < dimension; ++i)
         if (!__builtin_parity(cw & basis[i])) ++good;
@@ -920,7 +920,7 @@ static double dv_basis_excess_drift(const uint8_t *stream, size_t len, int n,
     pos = best_pos;
   }
   if (wc == 0) return 0.0;
-  const double floor = dv_peak_floor(window_bits, wc);
+  const double floor = dt_peak_floor(window_bits, wc);
   double excess = 0.0;
   for (int i = 0; i < dimension; ++i) {
     double align = 2.0 * ((double)sat[i] / (double)wc) - 1.0;
@@ -937,36 +937,36 @@ static double dv_basis_excess_drift(const uint8_t *stream, size_t len, int n,
  * whose basis best explains the whole stream under the graded score; a clean
  * run between indels validates itself, and the drift pass then carries it
  * across the rest. */
-static double dv_phase_excess_wide(const uint8_t *stream, size_t len, int n,
+static double dt_phase_excess_wide(const uint8_t *stream, size_t len, int n,
                                    int window_bits, int phase) {
   if ((size_t)phase + (size_t)window_bits > len) return 0.0;
   const long seg = 4L * window_bits;
   const long total_windows =
       (long)((len - (size_t)phase - (size_t)window_bits) / (size_t)n) + 1;
-  const long min_windows = dv_min_recovery_windows(n, window_bits);
+  const long min_windows = dt_min_recovery_windows(n, window_bits);
 
-  uint32_t best_basis[DV_HARD_WINDOW_CAP];
+  uint32_t best_basis[DT_HARD_WINDOW_CAP];
   int best_dim = 0;
   double best_fixed = 0.0;
-  const int max_dual = dv_max_dual(n, window_bits);
+  const int max_dual = dt_max_dual(n, window_bits);
   for (long start = 0; start + min_windows <= total_windows; start += seg) {
     const size_t off = (size_t)phase + (size_t)start * (size_t)n;
-    uint32_t cand[DV_HARD_WINDOW_CAP];
+    uint32_t cand[DT_HARD_WINDOW_CAP];
     int dim = recover_segment_nullspace(stream + off, len - off, n, window_bits,
                                         seg, cand);
     if (dim <= 0 || dim > max_dual) continue; /* skip empty/degenerate duals */
-    double fixed = dv_basis_excess_fixed(stream, len, n, window_bits, phase,
+    double fixed = dt_basis_excess_fixed(stream, len, n, window_bits, phase,
                                          cand, dim);
     if (fixed > best_fixed) {
       best_fixed = fixed;
       best_dim = dim;
-      dv_memcpy(best_basis, cand, (size_t)dim * sizeof(*cand));
+      dt_memcpy(best_basis, cand, (size_t)dim * sizeof(*cand));
     }
   }
   if (best_dim <= 0) return 0.0;
   /* Lever 3: carry the best basis across the stream along a drift-corrected
    * path and keep whichever score is stronger. */
-  double drift = dv_basis_excess_drift(stream, len, n, window_bits, phase,
+  double drift = dt_basis_excess_drift(stream, len, n, window_bits, phase,
                                        best_basis, best_dim);
   return best_fixed > drift ? best_fixed : drift;
 }
@@ -984,21 +984,21 @@ static double dv_phase_excess_wide(const uint8_t *stream, size_t len, int n,
  * Returns the probability in [0, 1], or a negative value when it cannot be
  * determined (null buffer, out-of-range code, or too little data).
  */
-double dv_detect(int n, int k, uint8_t *sample, size_t len) {
+double dt_detect(int n, int k, uint8_t *sample, size_t len) {
   if (!sample) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
-  const int window_bits = dv_window_bits(n, k);
+  const int window_bits = dt_window_bits(n, k);
   if (window_bits == 0) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
   if (len < (size_t)window_bits) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
-  const long min_windows = dv_min_recovery_windows(n, window_bits);
+  const long min_windows = dt_min_recovery_windows(n, window_bits);
   const long windows = (long)((len - (size_t)window_bits) / (size_t)n) + 1;
   if (windows < min_windows) {
-    return DV_UNDETERMINED;
+    return DT_UNDETERMINED;
   }
 
   double best_excess = 0.0;
@@ -1006,27 +1006,27 @@ double dv_detect(int n, int k, uint8_t *sample, size_t len) {
    * to different phase bins, so the best phase pools the most clean evidence. */
   for (int phase = 0; phase < n; ++phase) {
     double excess;
-    if (window_bits <= DV_MAX_WINDOW_BITS) {
-      uint32_t basis[DV_HARD_WINDOW_CAP];
+    if (window_bits <= DT_MAX_WINDOW_BITS) {
+      uint32_t basis[DT_HARD_WINDOW_CAP];
       int dim = 0;
-      excess = dv_phase_excess_wht(sample, len, n, window_bits, phase, basis,
+      excess = dt_phase_excess_wht(sample, len, n, window_bits, phase, basis,
                                    &dim);
       if (dim < 0) {
-        return DV_UNDETERMINED; /* allocation failure */
+        return DT_UNDETERMINED; /* allocation failure */
       }
       /* Lever 3: re-score the recovered basis along a drift-corrected path and
        * keep whichever explains the stream better. */
       if (dim > 0) {
-        double drift = dv_basis_excess_drift(sample, len, n, window_bits, phase,
+        double drift = dt_basis_excess_drift(sample, len, n, window_bits, phase,
                                              basis, dim);
         if (drift > excess) excess = drift;
       }
     } else {
-      excess = dv_phase_excess_wide(sample, len, n, window_bits, phase);
+      excess = dt_phase_excess_wide(sample, len, n, window_bits, phase);
     }
     if (excess > best_excess) best_excess = excess;
   }
-  return dv_detect_confidence(best_excess);
+  return dt_detect_confidence(best_excess);
 }
 
 /* -- sequential (streaming) detection: lever 4 ----------------------------- */
@@ -1034,79 +1034,79 @@ double dv_detect(int n, int k, uint8_t *sample, size_t len) {
 /* Nominal H1 per-check satisfaction used by the CUSUM log-likelihood ratio:
  * any value comfortably above the H0 rate 0.5 works; 0.75 fires when windows
  * consistently satisfy more than ~60% of the recovered checks. */
-static const double DV_DETECT_SEQ_Q1 = 0.75;
+static const double DT_DETECT_SEQ_Q1 = 0.75;
 
 /* SPRT error targets -> CUSUM decision threshold log((1-beta)/alpha). */
-static const double DV_DETECT_SEQ_ALPHA = 1e-3;
-static const double DV_DETECT_SEQ_BETA = 1e-3;
+static const double DT_DETECT_SEQ_ALPHA = 1e-3;
+static const double DT_DETECT_SEQ_BETA = 1e-3;
 
 /* Warmup prefix (in symbols) used to recover the steering basis before the
  * CUSUM begins; capped to the available stream. */
-#define DV_DETECT_SEQ_WARMUP_WINDOWS 256
+#define DT_DETECT_SEQ_WARMUP_WINDOWS 256
 
 /*
  * Sequential blind detection. Recovers a steering basis from a warmup prefix
- * (best phase, same graded recovery as dv_detect), then runs a one-sided CUSUM
+ * (best phase, same graded recovery as dt_detect), then runs a one-sided CUSUM
  * of the per-window satisfied-check log-likelihood ratio. Returns the bit index
  * at which "code present" is first declared, or -1 if the stream never crosses
  * the threshold (or no basis could be recovered). When confidence_out is
  * non-NULL it receives a [0,1] reading: 1.0 once declared, else the CUSUM's
  * closest approach to the threshold as a fraction.
  */
-long dv_detect_sequential(int n, int k, const uint8_t *sample, size_t len,
+long dt_detect_sequential(int n, int k, const uint8_t *sample, size_t len,
                           double *confidence_out) {
   if (confidence_out) *confidence_out = 0.0;
   if (!sample) return -1;
-  const int window_bits = dv_window_bits(n, k);
+  const int window_bits = dt_window_bits(n, k);
   if (window_bits == 0) return -1;
   if (len < (size_t)window_bits) return -1;
-  const long min_windows = dv_min_recovery_windows(n, window_bits);
+  const long min_windows = dt_min_recovery_windows(n, window_bits);
   const long windows = (long)((len - (size_t)window_bits) / (size_t)n) + 1;
   if (windows < min_windows) return -1;
 
   /* Warmup recovery: pick the phase whose prefix exposes the strongest dual. */
-  size_t warmup = (size_t)DV_DETECT_SEQ_WARMUP_WINDOWS * (size_t)n +
+  size_t warmup = (size_t)DT_DETECT_SEQ_WARMUP_WINDOWS * (size_t)n +
                   (size_t)window_bits;
   if (warmup > len) warmup = len;
-  uint32_t basis[DV_HARD_WINDOW_CAP];
+  uint32_t basis[DT_HARD_WINDOW_CAP];
   int dimension = 0;
   int best_phase = 0;
   double best_excess = 0.0;
   for (int phase = 0; phase < n; ++phase) {
-    uint32_t cand[DV_HARD_WINDOW_CAP];
+    uint32_t cand[DT_HARD_WINDOW_CAP];
     int dim = 0;
     double excess;
-    if (window_bits <= DV_MAX_WINDOW_BITS) {
-      excess = dv_phase_excess_wht(sample, warmup, n, window_bits, phase, cand,
+    if (window_bits <= DT_MAX_WINDOW_BITS) {
+      excess = dt_phase_excess_wht(sample, warmup, n, window_bits, phase, cand,
                                    &dim);
       if (dim < 0) return -1;
     } else {
       if ((size_t)phase + (size_t)window_bits > warmup) continue;
       dim = recover_segment_nullspace(sample + phase, warmup - (size_t)phase, n,
                                       window_bits, 4L * window_bits, cand);
-      if (dim > dv_max_dual(n, window_bits)) dim = 0; /* degenerate: reject */
-      excess = dv_basis_excess_fixed(sample, warmup, n, window_bits, phase, cand,
+      if (dim > dt_max_dual(n, window_bits)) dim = 0; /* degenerate: reject */
+      excess = dt_basis_excess_fixed(sample, warmup, n, window_bits, phase, cand,
                                      dim);
     }
     if (dim > 0 && excess > best_excess) {
       best_excess = excess;
       best_phase = phase;
       dimension = dim;
-      dv_memcpy(basis, cand, (size_t)dim * sizeof(*cand));
+      dt_memcpy(basis, cand, (size_t)dim * sizeof(*cand));
     }
   }
   if (dimension <= 0) return -1; /* no structure to steer the CUSUM */
 
-  const double l_sat = dv_log(DV_DETECT_SEQ_Q1 / 0.5);
-  const double l_unsat = dv_log((1.0 - DV_DETECT_SEQ_Q1) / 0.5);
+  const double l_sat = dt_log(DT_DETECT_SEQ_Q1 / 0.5);
+  const double l_unsat = dt_log((1.0 - DT_DETECT_SEQ_Q1) / 0.5);
   const double threshold =
-      dv_log((1.0 - DV_DETECT_SEQ_BETA) / DV_DETECT_SEQ_ALPHA);
+      dt_log((1.0 - DT_DETECT_SEQ_BETA) / DT_DETECT_SEQ_ALPHA);
 
   double cusum = 0.0;
   double closest = 0.0;
   for (long pos = best_phase; pos + window_bits <= (long)len; pos += n) {
     const int good =
-        dv_window_good(sample, pos, window_bits, basis, dimension);
+        dt_window_good(sample, pos, window_bits, basis, dimension);
     const double llr =
         (double)good * l_sat + (double)(dimension - good) * l_unsat;
     cusum += llr;
@@ -1117,6 +1117,6 @@ long dv_detect_sequential(int n, int k, const uint8_t *sample, size_t len,
       return pos; /* bit index of the declaration */
     }
   }
-  if (confidence_out) *confidence_out = dv_clamp01(closest / threshold);
+  if (confidence_out) *confidence_out = dt_clamp01(closest / threshold);
   return -1;
 }

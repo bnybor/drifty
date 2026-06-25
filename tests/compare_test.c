@@ -25,13 +25,13 @@
 /* clang-format on */
 
 /*
- * Tests for dv_compare: does it recognise two streams as sharing a
+ * Tests for dt_compare: does it recognise two streams as sharing a
  * convolutional code, including across cumulative indel drift, wide codes, and
- * short streams? Also covers the dv_compare_min_len/max_len range helpers and
- * the agreement between dv_compare and the decoder's lock probability.
+ * short streams? Also covers the dt_compare_min_len/max_len range helpers and
+ * the agreement between dt_compare and the decoder's lock probability.
  */
 
-#include "dv_test_util.h"
+#include "dt_test_util.h"
 
 #define INFO_BITS 4000
 #define CODED_CAP MAX_CODED(INFO_BITS)
@@ -48,15 +48,15 @@ static void test_clean_and_constant_offset(uint64_t seed) {
     uint64_t rng = seed + (uint64_t)t;
     int n, k;
     rand_bits(msg, INFO_BITS, &rng);
-    size_t la = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
+    size_t la = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
     rand_bits(msg, INFO_BITS, &rng);
-    size_t lb = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, b, &n, &k);
+    size_t lb = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, b, &n, &k);
 
     /* Two independent clean encodings of the same code. */
-    check_ge("clean-same-code", dv_compare(n, k, a, la, b, lb), 0.8);
+    check_ge("clean-same-code", dt_compare(n, k, a, la, b, lb), 0.8);
 
-    /* Same stream skewed by a constant offset of 7 bits (<= DV_MAX_DRIFT). */
-    check_ge("const-offset-7", dv_compare(n, k, a, la, a + 7, la - 7), 0.8);
+    /* Same stream skewed by a constant offset of 7 bits (<= DT_MAX_DRIFT). */
+    check_ge("const-offset-7", dt_compare(n, k, a, la, a + 7, la - 7), 0.8);
     free(msg);
     free(a);
     free(b);
@@ -76,12 +76,12 @@ static void test_cumulative_drift_same_code(uint64_t seed) {
     uint64_t rng = seed + 100 + (uint64_t)t;
     int n, k;
     rand_bits(msg, INFO_BITS, &rng);
-    size_t la = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
+    size_t la = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
     rand_bits(msg, INFO_BITS, &rng);
-    size_t lc = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, c, &n, &k);
+    size_t lc = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, c, &n, &k);
     size_t ld = delete_channel(c, lc, P_DEL, &rng, drift);
 
-    check_ge("cumulative-drift", dv_compare(n, k, a, la, drift, ld), 0.7);
+    check_ge("cumulative-drift", dt_compare(n, k, a, la, drift, ld), 0.7);
     free(msg);
     free(a);
     free(c);
@@ -103,12 +103,12 @@ static void test_different_codes_negative(uint64_t seed) {
     uint64_t rng = seed + 200 + (uint64_t)t;
     int n, k, n2, k2;
     rand_bits(msg, INFO_BITS, &rng);
-    size_t la = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
+    size_t la = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
     rand_bits(msg, INFO_BITS, &rng);
-    size_t ldc = encode(DV_CODE_K7_RATE_1_2_ALT1, msg, INFO_BITS, d, &n2, &k2);
+    size_t ldc = encode(DT_CODE_K7_RATE_1_2_ALT1, msg, INFO_BITS, d, &n2, &k2);
     size_t ld = delete_channel(d, ldc, P_DEL, &rng, drift);
 
-    check_le("different-codes", dv_compare(n, k, a, la, drift, ld), 0.3);
+    check_le("different-codes", dt_compare(n, k, a, la, drift, ld), 0.3);
     free(msg);
     free(a);
     free(d);
@@ -127,46 +127,46 @@ static void test_structured_vs_random(uint64_t seed) {
     uint64_t rng = seed + 300 + (uint64_t)t;
     int n, k;
     rand_bits(msg, INFO_BITS, &rng);
-    size_t la = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
+    size_t la = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
     size_t lr = la;
     rand_bits(r, (int)lr, &rng);
 
-    check_le("structured-vs-random", dv_compare(n, k, a, la, r, lr), 0.3);
+    check_le("structured-vs-random", dt_compare(n, k, a, la, r, lr), 0.3);
     free(msg);
     free(a);
     free(r);
   }
 }
 
-/* 5. The decoder's c_lock and dv_compare are two routes to the same
+/* 5. The decoder's c_lock and dt_compare are two routes to the same
  *    yes/no question - "do these bits belong to this code?" - so they should
  * agree. For each ordered pair within a family we decode code A's stream with
- * code B's decoder (lock) and run dv_compare on independent A and B streams,
+ * code B's decoder (lock) and run dt_compare on independent A and B streams,
  * then check both read "same" exactly on the diagonal (A == B) and "different"
  * off it, matching each other and the ground truth. All four families are
  * covered, including K7_R1_3 (window 24) and K5_R1_5 (window 30), which exceed
- * the WHT cap and exercise dv_compare's null-space recovery path. */
+ * the WHT cap and exercise dt_compare's null-space recovery path. */
 static void test_lock_matches_compare(uint64_t seed) {
   printf("test_lock_matches_compare\n");
   struct {
     const char *name;
     int count;
-    dv_standard_code v[5];
+    dt_standard_code v[5];
   } family[] = {
       {"K3_R1_2",
        3,
-       {DV_CODE_K3_RATE_1_2, DV_CODE_K3_RATE_1_2_ALT1, DV_CODE_K3_RATE_1_2_ALT2}},
+       {DT_CODE_K3_RATE_1_2, DT_CODE_K3_RATE_1_2_ALT1, DT_CODE_K3_RATE_1_2_ALT2}},
       {"K7_R1_2",
        3,
-       {DV_CODE_K7_RATE_1_2, DV_CODE_K7_RATE_1_2_ALT1, DV_CODE_K7_RATE_1_2_ALT2}},
+       {DT_CODE_K7_RATE_1_2, DT_CODE_K7_RATE_1_2_ALT1, DT_CODE_K7_RATE_1_2_ALT2}},
       {"K7_R1_3",
        5,
-       {DV_CODE_K7_RATE_1_3, DV_CODE_K7_RATE_1_3_ALT1, DV_CODE_K7_RATE_1_3_ALT2,
-        DV_CODE_K7_RATE_1_3_ALT3, DV_CODE_K7_RATE_1_3_ALT4}},
+       {DT_CODE_K7_RATE_1_3, DT_CODE_K7_RATE_1_3_ALT1, DT_CODE_K7_RATE_1_3_ALT2,
+        DT_CODE_K7_RATE_1_3_ALT3, DT_CODE_K7_RATE_1_3_ALT4}},
       {"K5_R1_5",
        5,
-       {DV_CODE_K5_RATE_1_5, DV_CODE_K5_RATE_1_5_ALT1, DV_CODE_K5_RATE_1_5_ALT2,
-        DV_CODE_K5_RATE_1_5_ALT3, DV_CODE_K5_RATE_1_5_ALT4}},
+       {DT_CODE_K5_RATE_1_5, DT_CODE_K5_RATE_1_5_ALT1, DT_CODE_K5_RATE_1_5_ALT2,
+        DT_CODE_K5_RATE_1_5_ALT3, DT_CODE_K5_RATE_1_5_ALT4}},
   };
   const int n_families = (int)(sizeof(family) / sizeof(family[0]));
   const int info_bits = 1500;
@@ -206,18 +206,18 @@ static void test_lock_matches_compare(uint64_t seed) {
     rand_bits(msg_b, info_bits, &rng);
 
     /* lock: decode code i's stream with code j's decoder. */
-    dv_code *enc = dv_code_create_standard(family[f].v[i]);
-    dv_code *dec = dv_code_create_standard(family[f].v[j]);
+    dt_code *enc = dt_code_create_standard(family[f].v[i]);
+    dt_code *dec = dt_code_create_standard(family[f].v[j]);
     double lock =
-        decoder_lock_mean(enc, dec, msg_a, info_bits, 8 * dv_code_k(dec));
-    dv_code_destroy(enc);
-    dv_code_destroy(dec);
+        decoder_lock_mean(enc, dec, msg_a, info_bits, 8 * dt_code_k(dec));
+    dt_code_destroy(enc);
+    dt_code_destroy(dec);
 
     /* compare: independent streams from code i and code j. */
     int n, k, n2, k2;
     size_t len_a = encode(family[f].v[i], msg_a, info_bits, coded_a, &n, &k);
     size_t len_b = encode(family[f].v[j], msg_b, info_bits, coded_b, &n2, &k2);
-    double compare = dv_compare(n, k, coded_a, len_a, coded_b, len_b);
+    double compare = dt_compare(n, k, coded_a, len_a, coded_b, len_b);
 
     int truth_same = (i == j);
     int lock_same = lock > LOCK_SAME;
@@ -237,7 +237,7 @@ static void test_lock_matches_compare(uint64_t seed) {
 }
 
 /* 6. Stream length: a moderately short same-code pair still recovers, while a
- *    genuinely too-short stream returns DV_UNDETERMINED (< 0) rather than a
+ *    genuinely too-short stream returns DT_UNDETERMINED (< 0) rather than a
  * spurious verdict. Confirms the lowered length floor degrades gracefully. */
 static void test_short_stream(uint64_t seed) {
   printf("test_short_stream\n");
@@ -250,18 +250,18 @@ static void test_short_stream(uint64_t seed) {
     uint64_t rng = seed + 500 + (uint64_t)t;
     int n, k;
     rand_bits(msg, 150, &rng);
-    size_t la = encode(DV_CODE_K7_RATE_1_2, msg, 150, a, &n, &k);
+    size_t la = encode(DT_CODE_K7_RATE_1_2, msg, 150, a, &n, &k);
     rand_bits(msg, 150, &rng);
-    size_t lb = encode(DV_CODE_K7_RATE_1_2, msg, 150, b, &n, &k);
-    check_ge("short-same-code", dv_compare(n, k, a, la, b, lb), 0.7);
+    size_t lb = encode(DT_CODE_K7_RATE_1_2, msg, 150, b, &n, &k);
+    check_ge("short-same-code", dt_compare(n, k, a, la, b, lb), 0.7);
   }
 
   /* Too short to determine: a handful of coded bits -> must be undetermined. */
   {
     int n, k;
     rand_bits(msg, 6, &seed);
-    size_t la = encode(DV_CODE_K7_RATE_1_2, msg, 6, a, &n, &k);
-    check_undetermined("too-short", dv_compare(n, k, a, la, a, la));
+    size_t la = encode(DT_CODE_K7_RATE_1_2, msg, 6, a, &n, &k);
+    check_undetermined("too-short", dt_compare(n, k, a, la, a, la));
   }
 
   free(msg);
@@ -269,41 +269,41 @@ static void test_short_stream(uint64_t seed) {
   free(b);
 }
 
-/* 7. dv_compare_min_len / dv_compare_max_len report dv_compare's usable length
+/* 7. dt_compare_min_len / dt_compare_max_len report dt_compare's usable length
  *    range. min_len is a necessary floor: any sample shorter is UNDETERMINED,
  * while a comfortably longer same-code pair is determinate. max_len must exceed
- * min_len, and out-of-range (n, k) must return negative. The dv_detect_*_len
+ * min_len, and out-of-range (n, k) must return negative. The dt_detect_*_len
  * pair must match (same single-stream recovery). */
 static void test_len_helpers(uint64_t seed) {
   printf("test_len_helpers\n");
 
   /* Out-of-range codes -> negative. */
-  check_undetermined("compare_min_len k<2", (double)dv_compare_min_len(1, 1));
-  check_undetermined("compare_max_len n<1", (double)dv_compare_max_len(0, 7));
+  check_undetermined("compare_min_len k<2", (double)dt_compare_min_len(1, 1));
+  check_undetermined("compare_max_len n<1", (double)dt_compare_max_len(0, 7));
   check_undetermined("compare_min_len window>32",
-                     (double)dv_compare_min_len(5, 9));
+                     (double)dt_compare_min_len(5, 9));
 
   /* A representative in-range code. */
-  dv_code *code = dv_code_create_standard(DV_CODE_K7_RATE_1_2);
+  dt_code *code = dt_code_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  int n = dv_code_n(code), k = dv_code_k(code);
-  dv_code_destroy(code);
+  int n = dt_code_n(code), k = dt_code_k(code);
+  dt_code_destroy(code);
 
-  long min_len = dv_compare_min_len(n, k);
-  long max_len = dv_compare_max_len(n, k);
+  long min_len = dt_compare_min_len(n, k);
+  long max_len = dt_compare_max_len(n, k);
   printf("  K7_R1_2: min_len=%ld max_len=%ld\n", min_len, max_len);
   check("min_len positive", min_len > 0);
   check("max_len > min_len", max_len > min_len);
 
-  /* dv_detect runs the same single-stream recovery, so its length range matches
-   * dv_compare's and obeys the same out-of-range contract. */
-  check("detect_min_len matches compare", dv_detect_min_len(n, k) == min_len);
-  check("detect_max_len matches compare", dv_detect_max_len(n, k) == max_len);
+  /* dt_detect runs the same single-stream recovery, so its length range matches
+   * dt_compare's and obeys the same out-of-range contract. */
+  check("detect_min_len matches compare", dt_detect_min_len(n, k) == min_len);
+  check("detect_max_len matches compare", dt_detect_max_len(n, k) == max_len);
   check_undetermined("detect_min_len window>32",
-                     (double)dv_detect_min_len(5, 9));
-  check_undetermined("detect_max_len k<2", (double)dv_detect_max_len(1, 1));
+                     (double)dt_detect_min_len(5, 9));
+  check_undetermined("detect_max_len k<2", (double)dt_detect_max_len(1, 1));
 
-  /* Below min_len dv_compare must always be UNDETERMINED (the firm guarantee);
+  /* Below min_len dt_compare must always be UNDETERMINED (the firm guarantee);
    * a sample comfortably above the floor recovers. Distinct messages so it is a
    * genuine recovery, not a self-comparison. */
   const int info = 4 * (int)min_len; /* coded length ~8*min_len bits */
@@ -312,15 +312,15 @@ static void test_len_helpers(uint64_t seed) {
   uint8_t *msg = malloc((size_t)info);
 
   rand_bits(msg, info, &seed);
-  size_t la = encode(DV_CODE_K7_RATE_1_2, msg, info, a, &n, &k);
+  size_t la = encode(DT_CODE_K7_RATE_1_2, msg, info, a, &n, &k);
   rand_bits(msg, info, &seed);
-  size_t lb = encode(DV_CODE_K7_RATE_1_2, msg, info, b, &n, &k);
+  size_t lb = encode(DT_CODE_K7_RATE_1_2, msg, info, b, &n, &k);
   REQUIRE("encoded above min_len",
           la > (size_t)min_len && lb > (size_t)min_len);
 
-  check_undetermined("below min_len", dv_compare(n, k, a, (size_t)min_len - 1,
+  check_undetermined("below min_len", dt_compare(n, k, a, (size_t)min_len - 1,
                                                  b, (size_t)min_len - 1));
-  check_ge("sufficient recovers", dv_compare(n, k, a, la, b, lb), 0.0);
+  check_ge("sufficient recovers", dt_compare(n, k, a, la, b, lb), 0.0);
 
   free(a);
   free(b);
@@ -342,17 +342,17 @@ static void test_blind_acquisition_compare(uint64_t seed) {
   uint64_t rng = seed + 600;
   int n, k, n2, k2;
   rand_bits(msg, INFO_BITS, &rng);
-  size_t la = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
+  size_t la = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, a, &n, &k);
   rand_bits(msg, INFO_BITS, &rng);
-  size_t lb = encode(DV_CODE_K7_RATE_1_2, msg, INFO_BITS, b, &n, &k);
+  size_t lb = encode(DT_CODE_K7_RATE_1_2, msg, INFO_BITS, b, &n, &k);
   rand_bits(msg, INFO_BITS, &rng);
-  size_t ld = encode(DV_CODE_K7_RATE_1_2_ALT1, msg, INFO_BITS, d, &n2, &k2);
+  size_t ld = encode(DT_CODE_K7_RATE_1_2_ALT1, msg, INFO_BITS, d, &n2, &k2);
 
   /* Spliced mid-stream: rhs tapped partway through, past the phase search and
    * not a multiple of n. */
   const size_t splice = 137;
   check_ge("splice-same-code",
-           dv_compare(n, k, a, la, b + splice, lb - splice), 0.7);
+           dt_compare(n, k, a, la, b + splice, lb - splice), 0.7);
 
   /* Leading garbage / partial-codeword prefixes of growing length on lhs. */
   const size_t prefixes[] = {1, 3, 5, 17, 64, 256, 1024};
@@ -360,16 +360,16 @@ static void test_blind_acquisition_compare(uint64_t seed) {
     size_t lp = prepend_prefix(prefixes[i], a, la, &rng, buf);
     char label[48];
     snprintf(label, sizeof label, "garbage-prefix-%zu", prefixes[i]);
-    check_ge(label, dv_compare(n, k, buf, lp, b, lb), 0.7);
+    check_ge(label, dt_compare(n, k, buf, lp, b, lb), 0.7);
   }
 
   /* Garbage-prefixed random vs clean, and garbage-prefixed different code:
    * still different. */
   rand_bits(buf, (int)(256 + la), &rng); /* whole lhs random (prefix + body) */
-  check_le("garbage-prefix-random", dv_compare(n, k, buf, 256 + la, b, lb), 0.3);
+  check_le("garbage-prefix-random", dt_compare(n, k, buf, 256 + la, b, lb), 0.3);
 
   size_t ldp = prepend_prefix(256, d, ld, &rng, buf);
-  check_le("garbage-prefix-diff", dv_compare(n, k, buf, ldp, b, lb), 0.3);
+  check_le("garbage-prefix-diff", dt_compare(n, k, buf, ldp, b, lb), 0.3);
 
   free(msg);
   free(a);

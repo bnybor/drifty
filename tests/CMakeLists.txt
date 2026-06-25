@@ -5,7 +5,7 @@ find_package(OpenMP COMPONENTS C QUIET)
 
 foreach(t decoder_test compare_test detect_test multi_test multi_encode_test)
     add_executable(${t} ${t}.c)
-    target_link_libraries(${t} PRIVATE drift_viterbi::drift_viterbi)
+    target_link_libraries(${t} PRIVATE drifty::drifty)
     if(OpenMP_C_FOUND)
         target_link_libraries(${t} PRIVATE OpenMP::OpenMP_C)
     endif()

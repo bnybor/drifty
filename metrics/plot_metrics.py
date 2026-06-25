@@ -2,7 +2,7 @@
 # MIT License - Copyright (c) 2026 Robyn Kirkman
 """Plot decoding-mistake metrics vs channel rate.
 
-Reads the CSV produced by the dv_metrics harness and renders, for each channel
+Reads the CSV produced by the dt_metrics harness and renders, for each channel
 axis (flip / insert / delete), one curve per code. Three metrics are available:
 
   edit       - normalized edit (Levenshtein) distance: mistakes per bit.
@@ -23,7 +23,7 @@ whole measurement); those points are dropped and reported, since the true value
 there is only a lower bound (> the bits measured), not infinity.
 
 Usage:
-    build/metrics/dv_metrics > metrics/metrics.csv
+    build/metrics/dt_metrics > metrics/metrics.csv
     python3 metrics/plot_metrics.py metrics/metrics.csv -o metrics/plots/
 """
 import argparse
@@ -235,7 +235,7 @@ def plot_prob_axis(axis, by_code, outdir, metric):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("csv", help="CSV from dv_metrics")
+    ap.add_argument("csv", help="CSV from dt_metrics")
     ap.add_argument("-o", "--outdir", default=".", help="output directory")
     ap.add_argument("--metric",
                     choices=["edit", "runlength", "lock", "detect", "all"],

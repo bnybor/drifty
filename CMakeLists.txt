@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(drift_viterbi
+project(drifty
     VERSION 0.1.0
     DESCRIPTION "Drift-tolerance convolutional coding"
     LANGUAGES C)
 
-option(DRIFT_VITERBI_BUILD_TESTS "Build the drift_viterbi tests" ${PROJECT_IS_TOP_LEVEL})
-option(DRIFT_VITERBI_BUILD_BENCH "Build the drift_viterbi metrics and code-search harnesses" OFF)
+option(DRIFTY_BUILD_TESTS "Build the drifty tests" ${PROJECT_IS_TOP_LEVEL})
+option(DRIFTY_BUILD_BENCH "Build the drifty metrics and code-search harnesses" OFF)
 
 # Size-focused flags for the MinSizeRel config (applied to the core and stdlib
 # below, since this precedes their targets). The library is plain C with no
@@ -20,52 +20,52 @@ add_compile_options($<$<CONFIG:MinSizeRel>:-fno-asynchronous-unwind-tables>
 
 add_subdirectory(stdlib)
 
-add_library(drift_viterbi_interface INTERFACE)
-target_include_directories(drift_viterbi_interface INTERFACE include)
+add_library(drifty_interface INTERFACE)
+target_include_directories(drifty_interface INTERFACE include)
 
 # The freestanding core, compiled once as an OBJECT library so the same objects
 # can be archived into both libraries below (the bare core, and the public core +
 # stdlib) without compiling twice.
-add_library(drift_viterbi_bare_obj OBJECT
+add_library(drifty_bare_obj OBJECT
     src/encode.c
     src/decode.c
     src/compare.c
     src/multi_decode.c
     src/multi_encode.c)
-target_compile_features(drift_viterbi_bare_obj PUBLIC c_std_11)
-target_compile_options(drift_viterbi_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
-target_link_libraries(drift_viterbi_bare_obj PUBLIC drift_viterbi_interface PRIVATE drift_viterbi_stdlib_interface)
+target_compile_features(drifty_bare_obj PUBLIC c_std_11)
+target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
+target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
 
 # Only the public API - the symbols declared in the installed include/ headers -
 # should be exported from the archives. The decoder shares internal helpers across
-# translation units (dv_decode_step, dv_trellis_*, dv_decode_ctx_*), and the full
-# library also bundles the stdlib shims (dv_malloc, dv_memcpy, dv_log, ...); both
+# translation units (dt_decode_step, dt_trellis_*, dt_decode_ctx_*), and the full
+# library also bundles the stdlib shims (dt_malloc, dt_memcpy, dt_log, ...); both
 # are internal plumbing that would otherwise land in the archive's symbol table.
 # Because they are referenced across object boundaries, hiding them needs a partial
 # link: combine an archive's objects into one relocatable object, then localize
 # every *defined* symbol except the public API. Undefined references are left
 # alone, so the bare archive still asks the consumer to supply the shims and the
 # full archive still resolves libc at the consumer's final link.
-set(_dv_public_symbols
-    drift_viterbi_version
-    dv_code_create dv_code_create_standard dv_code_destroy
-    dv_code_encode dv_code_encode_flush dv_code_k dv_code_n
-    dv_compare dv_compare_max_len dv_compare_min_len
-    dv_detect dv_detect_max_len dv_detect_min_len dv_detect_sequential
-    dv_multi_create dv_multi_decode dv_multi_decode_flush dv_multi_destroy
-    dv_multi_encode dv_multi_encode_create dv_multi_encode_destroy
-    dv_multi_encode_flush
-    dv_stream_decode dv_stream_decode_flush
-    dv_stream_decoder_create dv_stream_decoder_destroy)
-string(REPLACE ";" "\n" _dv_public_symbols_text "${_dv_public_symbols}")
-set(_dv_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dv_public_symbols.txt)
-file(WRITE ${_dv_keep_file} "${_dv_public_symbols_text}\n")
+set(_dt_public_symbols
+    drifty_version
+    dt_code_create dt_code_create_standard dt_code_destroy
+    dt_code_encode dt_code_encode_flush dt_code_k dt_code_n
+    dt_compare dt_compare_max_len dt_compare_min_len
+    dt_detect dt_detect_max_len dt_detect_min_len dt_detect_sequential
+    dt_multi_create dt_multi_decode dt_multi_decode_flush dt_multi_destroy
+    dt_multi_encode dt_multi_encode_create dt_multi_encode_destroy
+    dt_multi_encode_flush
+    dt_stream_decode dt_stream_decode_flush
+    dt_stream_decoder_create dt_stream_decoder_destroy)
+string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
+set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
+file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")
 
 # Build STATIC library `name` from the given OBJECT-library targets, exporting only
 # the public API (see above). Falls back to a plain multi-object archive where the
 # binutils ld -r / objcopy are unavailable - that still works, it just leaves the
 # internals exported.
-function(dv_add_archive name)
+function(dt_add_archive name)
     set(_obj_exprs "")
     foreach(_lib IN LISTS ARGN)
         list(APPEND _obj_exprs $<TARGET_OBJECTS:${_lib}>)
@@ -83,9 +83,9 @@ function(dv_add_archive name)
         add_custom_command(
             OUTPUT ${_merged}
             COMMAND ${CMAKE_LINKER} -r -o ${_merged} ${_obj_exprs}
-            COMMAND ${CMAKE_OBJCOPY} --keep-global-symbols=${_dv_keep_file} ${_merged}
+            COMMAND ${CMAKE_OBJCOPY} --keep-global-symbols=${_dt_keep_file} ${_merged}
             ${_strip}
-            DEPENDS ${ARGN} ${_dv_keep_file} ${_obj_exprs}
+            DEPENDS ${ARGN} ${_dt_keep_file} ${_obj_exprs}
             COMMENT "Linking and localizing internal symbols for lib${name}.a"
             COMMAND_EXPAND_LISTS VERBATIM)
         set_source_files_properties(${_merged} PROPERTIES
@@ -97,33 +97,33 @@ function(dv_add_archive name)
     endif()
 endfunction()
 
-# The freestanding core on its own, as libdrift_viterbi_bare.a (no stdlib shims -
+# The freestanding core on its own, as libdrifty_bare.a (no stdlib shims -
 # the consumer supplies those, so they stay undefined here).
-dv_add_archive(drift_viterbi_bare drift_viterbi_bare_obj)
-target_link_libraries(drift_viterbi_bare PUBLIC drift_viterbi_interface)
-target_compile_features(drift_viterbi_bare PUBLIC c_std_11)
+dt_add_archive(drifty_bare drifty_bare_obj)
+target_link_libraries(drifty_bare PUBLIC drifty_interface)
+target_compile_features(drifty_bare PUBLIC c_std_11)
 
 # The public library: the core and the stdlib shims archived together into one
-# self-contained libdrift_viterbi.a. libm is carried through for the shims' math.
-dv_add_archive(drift_viterbi drift_viterbi_bare_obj drift_viterbi_stdlib)
-target_link_libraries(drift_viterbi PUBLIC drift_viterbi_interface PRIVATE m)
-target_compile_features(drift_viterbi PUBLIC c_std_11)
-add_library(drift_viterbi::drift_viterbi ALIAS drift_viterbi)
+# self-contained libdrifty.a. libm is carried through for the shims' math.
+dt_add_archive(drifty drifty_bare_obj drifty_stdlib)
+target_link_libraries(drifty PUBLIC drifty_interface PRIVATE m)
+target_compile_features(drifty PUBLIC c_std_11)
+add_library(drifty::drifty ALIAS drifty)
 
-if(DRIFT_VITERBI_BUILD_TESTS)
+if(DRIFTY_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-if(DRIFT_VITERBI_BUILD_BENCH)
+if(DRIFTY_BUILD_BENCH)
     add_subdirectory(metrics)
     add_subdirectory(bench)
 endif()
 
 include(GNUInstallDirs)
 
-install(TARGETS drift_viterbi drift_viterbi_bare
-    EXPORT drift_viterbi-targets
+install(TARGETS drifty drifty_bare
+    EXPORT drifty-targets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

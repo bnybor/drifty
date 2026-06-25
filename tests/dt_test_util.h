@@ -25,16 +25,16 @@
 /* clang-format on */
 
 /*
- * Shared test utilities for the drift_viterbi suite: a small soft-assertion
+ * Shared test utilities for the drifty suite: a small soft-assertion
  * framework plus the PRNG, encode, channel, and decoder helpers the test files
  * have in common. Header-only; every helper is `static inline` so a test file
  * that does not use one draws no -Wunused warning.
  */
 
-#ifndef DV_TEST_UTIL_H
-#define DV_TEST_UTIL_H
+#ifndef DT_TEST_UTIL_H
+#define DT_TEST_UTIL_H
 
-#include <drift_viterbi/drift_viterbi.h>
+#include <drifty/drifty.h>
 
 #include <assert.h>
 #include <stdint.h>
@@ -56,7 +56,7 @@ static int g_failures = 0;
 /* Record a boolean outcome; print PASS/FAIL and return the condition so callers
  * can branch (see REQUIRE). */
 static inline int check(const char *name, int cond) {
-#pragma omp critical(dv_check)
+#pragma omp critical(dt_check)
   {
     printf("  [%s] %s\n", name, cond ? "PASS" : "FAIL");
     if (!cond) {
@@ -68,7 +68,7 @@ static inline int check(const char *name, int cond) {
 
 static inline void check_ge(const char *name, double got, double want) {
   int ok = got >= want;
-#pragma omp critical(dv_check)
+#pragma omp critical(dt_check)
   {
     printf("  [%s] %.4f (want >= %.4f) %s\n", name, got, want,
            ok ? "PASS" : "FAIL");
@@ -80,7 +80,7 @@ static inline void check_ge(const char *name, double got, double want) {
 
 static inline void check_gt(const char *name, double got, double want) {
   int ok = got > want;
-#pragma omp critical(dv_check)
+#pragma omp critical(dt_check)
   {
     printf("  [%s] %.4f (want > %.4f) %s\n", name, got, want,
            ok ? "PASS" : "FAIL");
@@ -92,7 +92,7 @@ static inline void check_gt(const char *name, double got, double want) {
 
 static inline void check_le(const char *name, double got, double want) {
   int ok = got <= want;
-#pragma omp critical(dv_check)
+#pragma omp critical(dt_check)
   {
     printf("  [%s] %.4f (want <= %.4f) %s\n", name, got, want,
            ok ? "PASS" : "FAIL");
@@ -104,7 +104,7 @@ static inline void check_le(const char *name, double got, double want) {
 
 static inline void check_lt(const char *name, double got, double want) {
   int ok = got < want;
-#pragma omp critical(dv_check)
+#pragma omp critical(dt_check)
   {
     printf("  [%s] %.4f (want < %.4f) %s\n", name, got, want,
            ok ? "PASS" : "FAIL");
@@ -117,7 +117,7 @@ static inline void check_lt(const char *name, double got, double want) {
 /* A negative value is the "result could not be determined" signal. */
 static inline void check_undetermined(const char *name, double got) {
   int ok = got < 0.0;
-#pragma omp critical(dv_check)
+#pragma omp critical(dt_check)
   {
     printf("  [%s] %.4f (want < 0, undetermined) %s\n", name, got,
            ok ? "PASS" : "FAIL");
@@ -174,16 +174,16 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 /* Encode `info_bits` message bits with the given standard code into out[]
  * (which must hold MAX_CODED(info_bits)), reporting the code's n and k. Returns
  * the coded length. */
-static inline size_t encode(dv_standard_code which, const uint8_t *msg,
+static inline size_t encode(dt_standard_code which, const uint8_t *msg,
                             int info_bits, uint8_t *out, int *n, int *k) {
-  dv_code *code = dv_code_create_standard(which);
+  dt_code *code = dt_code_create_standard(which);
   assert(code);
-  *n = dv_code_n(code);
-  *k = dv_code_k(code);
+  *n = dt_code_n(code);
+  *k = dt_code_k(code);
   int state = 0;
-  int len = dv_code_encode(code, msg, info_bits, &state, out);
-  len += dv_code_encode_flush(code, &state, out + len);
-  dv_code_destroy(code);
+  int len = dt_code_encode(code, msg, info_bits, &state, out);
+  len += dt_code_encode_flush(code, &state, out + len);
+  dt_code_destroy(code);
   return (size_t)len;
 }
 
@@ -202,7 +202,7 @@ static inline size_t delete_channel(const uint8_t *in, size_t len, double p_del,
 }
 
 /* Flip each bit with probability p_sub, in place. Run before erase_channel so a
- * flip never lands on a DV_ERASURE marker. */
+ * flip never lands on a DT_ERASURE marker. */
 static inline void flip_channel(uint8_t *buf, size_t len, double p_sub,
                                 uint64_t *rng) {
   for (size_t i = 0; i < len; ++i) {
@@ -227,12 +227,12 @@ static inline size_t insert_channel(const uint8_t *in, size_t len, double p_ins,
   return o;
 }
 
-/* Mark each bit DV_ERASURE with probability p_erase, in place. */
+/* Mark each bit DT_ERASURE with probability p_erase, in place. */
 static inline void erase_channel(uint8_t *buf, size_t len, double p_erase,
                                  uint64_t *rng) {
   for (size_t i = 0; i < len; ++i) {
     if (rng_unit(rng) < p_erase) {
-      buf[i] = DV_ERASURE;
+      buf[i] = DT_ERASURE;
     }
   }
 }
@@ -252,11 +252,11 @@ static inline size_t prepend_prefix(size_t plen, const uint8_t *body,
 /* -- decoder helpers ------------------------------------------------------- */
 
 /* Build a decoder from positional settings (keeps tests concise). */
-static inline dv_stream_decoder *make_decoder(const dv_code *code, int depth,
+static inline dt_stream_decoder *make_decoder(const dt_code *code, int depth,
                                               int drift, double p_sub,
                                               double p_ins, double p_del,
                                               double p_erase) {
-  dv_stream_params params = {
+  dt_stream_params params = {
       .decision_depth = depth,
       .max_drift = drift,
       .p_sub = p_sub,
@@ -264,23 +264,23 @@ static inline dv_stream_decoder *make_decoder(const dv_code *code, int depth,
       .p_del = p_del,
       .p_erase = p_erase,
   };
-  return dv_stream_decoder_create(code, &params);
+  return dt_stream_decoder_create(code, &params);
 }
 
 /* Push a whole received buffer through the streaming decoder in small chunks,
  * then drain. Returns the number of decoded bits collected. */
-static inline int stream_decode_all(dv_stream_decoder *sd, const uint8_t *rx,
+static inline int stream_decode_all(dt_stream_decoder *sd, const uint8_t *rx,
                                     int rl, uint8_t *out, int cap) {
   int got = 0;
   for (int pos = 0; pos < rl;) {
     int chunk = (rl - pos < 41) ? (rl - pos) : 41;
-    int w = dv_stream_decode(sd, rx + pos, chunk, out + got, NULL, cap - got);
+    int w = dt_stream_decode(sd, rx + pos, chunk, out + got, NULL, cap - got);
     assert(w >= 0);
     got += w;
     pos += chunk;
   }
   for (;;) {
-    int w = dv_stream_decode_flush(sd, out + got, NULL, cap - got);
+    int w = dt_stream_decode_flush(sd, out + got, NULL, cap - got);
     assert(w >= 0);
     if (w == 0) break;
     got += w;
@@ -292,20 +292,20 @@ static inline int stream_decode_all(dv_stream_decoder *sd, const uint8_t *rx,
  * `dec` at the given decision depth, and return the mean lock probability over
  * the settled second half. When enc != dec this measures whether one code's
  * stream is mistaken for the other's. */
-static inline double decoder_lock_mean(const dv_code *enc, const dv_code *dec,
+static inline double decoder_lock_mean(const dt_code *enc, const dt_code *dec,
                                        const uint8_t *msg, int info_bits,
                                        int depth) {
-  int clen = info_bits * dv_code_n(enc);
+  int clen = info_bits * dt_code_n(enc);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dv_code_encode(enc, msg, info_bits, &st, coded);
+  dt_code_encode(enc, msg, info_bits, &st, coded);
 
-  dv_stream_decoder *sd = make_decoder(dec, depth, 4, 0.01, 0.01, 0.01, 0.0);
+  dt_stream_decoder *sd = make_decoder(dec, depth, 4, 0.01, 0.01, 0.01, 0.0);
   assert(sd != NULL);
   int cap = info_bits + 64;
   uint8_t *out = malloc((size_t)cap);
-  dv_decode_details *details = malloc((size_t)cap * sizeof(dv_decode_details));
-  int got = dv_stream_decode(sd, coded, clen, out, details, cap);
+  dt_decode_details *details = malloc((size_t)cap * sizeof(dt_decode_details));
+  int got = dt_stream_decode(sd, coded, clen, out, details, cap);
   assert(got > 0);
 
   double sum = 0.0;
@@ -315,11 +315,11 @@ static inline double decoder_lock_mean(const dv_code *enc, const dv_code *dec,
     ++count;
   }
 
-  dv_stream_decoder_destroy(sd);
+  dt_stream_decoder_destroy(sd);
   free(coded);
   free(out);
   free(details);
   return count ? sum / count : 0.0;
 }
 
-#endif /* DV_TEST_UTIL_H */
+#endif /* DT_TEST_UTIL_H */

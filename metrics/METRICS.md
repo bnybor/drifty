@@ -1,6 +1,6 @@
-# drift_viterbi metrics
+# drifty metrics
 
-`metrics/dv_metrics.c` measures the decoding-mistake rate as a function of the
+`metrics/dt_metrics.c` measures the decoding-mistake rate as a function of the
 channel's flip / insert / delete / erase rates, for all four standard codes. It
 runs a Monte-Carlo sweep — random message → encode → channel → stream-decode —
 and reports the **normalized edit (Levenshtein) distance** between the decoded
@@ -23,15 +23,15 @@ They write to `metrics/tuned/`, `metrics/untuned/`, `metrics/overmatched/`, and
 
 ```sh
 # Build the harness (off by default) and run each variation to its own CSV.
-cmake -S . -B build -DDRIFT_VITERBI_BUILD_BENCH=ON
-cmake --build build --target dv_metrics
-# dv_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
+cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
+cmake --build build --target dt_metrics
+# dt_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
 #   variation = pegged|matched|overmatched|detect   (defaults: 50 1000 0xC0FFEE pegged)
 #   rate_grids_file defaults to metrics/rate_grids.txt (so run from the repo root)
-build/metrics/dv_metrics 30 4000 0xC0FFEE matched     > metrics/tuned/metrics.csv
-build/metrics/dv_metrics 30 4000 0xC0FFEE pegged      > metrics/untuned/metrics.csv
-build/metrics/dv_metrics 30 4000 0xC0FFEE overmatched > metrics/overmatched/metrics.csv
-build/metrics/dv_metrics 30 4000 0xC0FFEE detect      > metrics/detect/metrics.csv
+build/metrics/dt_metrics 30 4000 0xC0FFEE matched     > metrics/tuned/metrics.csv
+build/metrics/dt_metrics 30 4000 0xC0FFEE pegged      > metrics/untuned/metrics.csv
+build/metrics/dt_metrics 30 4000 0xC0FFEE overmatched > metrics/overmatched/metrics.csv
+build/metrics/dt_metrics 30 4000 0xC0FFEE detect      > metrics/detect/metrics.csv
 
 # Plot the metrics each CSV carries (one curve per code). Needs matplotlib:
 python3 -m venv .venv && .venv/bin/pip install matplotlib
@@ -52,7 +52,7 @@ own differently-shaped curves (and `overmatched`'s swept rate is the decoder's
 expectation, not a channel rate) — so they line up only where their grids share a
 rate.
 
-The sweep's rate grids are not compiled in: `dv_metrics` reads them at startup
+The sweep's rate grids are not compiled in: `dt_metrics` reads them at startup
 from a plain-text file (`metrics/rate_grids.txt` by default, or a path passed as
 the 5th argument). Each line is `<variation> <metric> <axis>  <rate> <rate> ...`
 (`#` begins a comment), so you can retune which rates a curve samples — densify a
@@ -81,7 +81,7 @@ and the two probabilities are unitless, one plot per axis —
   value there is only a lower bound, not infinity).
 - **lock** — mean lock probability (0–1): the decoder's own running confidence
   that it is tracking a valid coded stream, averaged over the kept bits.
-- **detect** — mean detect probability (0–1): `dv_detect`'s blind confidence that
+- **detect** — mean detect probability (0–1): `dt_detect`'s blind confidence that
   the received buffer still carries *any* rate-1/n, constraint-length-k code,
   knowing neither the generators nor the sent bits.
 
@@ -99,7 +99,7 @@ side-by-side untuned/tuned plots below share a vertical scale and compare by eye
 
 The decoding metrics — edit distance, run length, lock — come in three variations
 that differ in the decoder's channel model: what the decoder believes about the
-impairment it is facing. The codes and seed are the same; the `dv_stream_params`
+impairment it is facing. The codes and seed are the same; the `dt_stream_params`
 probabilities the decoder is built with change (and, for `overmatched`, the
 channel goes clean), and because that reshapes the curves, each variation samples
 its **own rate grid** tuned to where its curves actually move.
@@ -133,7 +133,7 @@ no decoder model, lives in `metrics/detect/`, and is described under
 
 ## Generated plots
 
-The figures come from a `dv_metrics` sweep (the published set uses 30 trials ×
+The figures come from a `dt_metrics` sweep (the published set uses 30 trials ×
 4000 info bits, default seed). In every plot the x-axis is the channel impairment
 rate per coded bit and the four curves are the standard codes — `K3_R1_2`,
 `K7_R1_2` (rate 1/2), `K7_R1_3` (rate 1/3) and `K5_R1_5` (rate 1/5), in order of
@@ -254,7 +254,7 @@ here; the full set is in `metrics/overmatched/plots/`.)
 Detection stands apart from the three decoding variations: it uses no decoder
 model, so it is computed once and lives in `metrics/detect/`, shared by both.
 
-`dv_detect`'s blind confidence that the received buffer still carries *any*
+`dt_detect`'s blind confidence that the received buffer still carries *any*
 rate-1/n, constraint-length-k code, knowing neither the generators nor the sent
 bits. It is the opposite story from lock: it falls well before decoding with a
 known code fails, so it is an early warning, not a correctness measure. How early

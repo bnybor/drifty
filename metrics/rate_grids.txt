@@ -1,4 +1,4 @@
-# drift_viterbi metrics rate grids — read by dv_metrics (see METRICS.md).
+# drifty metrics rate grids — read by dt_metrics (see METRICS.md).
 # One grid per line:  <variation> <metric> <axis>  <rate> <rate> ...
 #   variation: pegged | matched | overmatched | detect
 #   metric:    edit | lock | detect      axis: flip | insert | delete | erase

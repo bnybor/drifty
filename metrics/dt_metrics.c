@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * dv_metrics - Monte-Carlo measurement of decoding-mistake rate as a function
+ * dt_metrics - Monte-Carlo measurement of decoding-mistake rate as a function
  * of the channel's flip / insert / delete / erase rates, for each standard code.
  *
  * For one data point we: generate a random message, encode it (with a flush so
@@ -48,11 +48,11 @@
  *
  * Alongside the edit rate we report two confidence metrics, both in [0, 1]:
  *
- *   mean_lock   - the decoder's own running estimate (see dv_decode_details'
+ *   mean_lock   - the decoder's own running estimate (see dt_decode_details'
  *                 c_lock) that it is tracking a valid coded stream,
  *                 averaged across the kept bits. It shows how confidently the
  *                 decoder stays synced as each impairment ramps up.
- *   mean_detect - the blind detector's confidence (dv_detect) that the stream
+ *   mean_detect - the blind detector's confidence (dt_detect) that the stream
  *                 carries *any* rate-1/n, constraint-length-k code, with no
  *                 knowledge of the generators or the sent bits, averaged over a
  *                 sliding window across the received bits. It shows how
@@ -60,10 +60,10 @@
  *
  * Output is CSV on stdout (see header row); feed it to metrics/plot_metrics.py.
  *
- * Usage: dv_metrics [trials] [info_bits] [seed]
+ * Usage: dt_metrics [trials] [info_bits] [seed]
  */
 
-#include <drift_viterbi/drift_viterbi.h>
+#include <drifty/drifty.h>
 
 #include <limits.h>
 #include <stdint.h>
@@ -104,7 +104,7 @@ static uint64_t derive_seed(uint64_t base, int index) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dv_metrics: out of memory\n");
+    fprintf(stderr, "dt_metrics: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -122,14 +122,14 @@ static double clamp_double(double value, double lo, double hi) {
  * `details` is non-NULL it receives the per-bit soft output for the bits emitted
  * by streaming; the trailing flush bits carry no lock value, so *n_stream (if
  * non-NULL) reports how many leading bits `details` was filled for. */
-static int decode_all(dv_stream_decoder *decoder, const uint8_t *received,
+static int decode_all(dt_stream_decoder *decoder, const uint8_t *received,
                       int received_len, uint8_t *decoded,
-                      dv_decode_details *details, int decoded_cap,
+                      dt_decode_details *details, int decoded_cap,
                       int *n_stream) {
   int n_decoded = 0, read_pos = 0;
   while (read_pos < received_len && n_decoded < decoded_cap) {
     int chunk = received_len - read_pos < 64 ? received_len - read_pos : 64;
-    int written = dv_stream_decode(decoder, received + read_pos, chunk,
+    int written = dt_stream_decode(decoder, received + read_pos, chunk,
                                    decoded + n_decoded,
                                    details ? details + n_decoded : NULL,
                                    decoded_cap - n_decoded);
@@ -146,7 +146,7 @@ static int decode_all(dv_stream_decoder *decoder, const uint8_t *received,
     if (n_decoded >= decoded_cap) {
       break;
     }
-    int written = dv_stream_decode_flush(decoder, decoded + n_decoded, NULL,
+    int written = dt_stream_decode_flush(decoder, decoded + n_decoded, NULL,
                                          decoded_cap - n_decoded);
     if (written < 0) {
       return written;
@@ -162,7 +162,7 @@ static int decode_all(dv_stream_decoder *decoder, const uint8_t *received,
 /* Apply the channel to `coded` (coded_len bits): with probability p_ins emit a
  * random bit before each coded bit, with probability p_del drop the coded bit,
  * otherwise emit it flipped with probability p_sub and then, with probability
- * p_erase, marked DV_ERASURE (received but known-lost). Returns the received
+ * p_erase, marked DT_ERASURE (received but known-lost). Returns the received
  * length and stores a freshly malloc'd buffer in *out_received. */
 static int apply_channel(const uint8_t *coded, int coded_len, double p_sub,
                          double p_ins, double p_del, double p_erase,
@@ -176,7 +176,7 @@ static int apply_channel(const uint8_t *coded, int coded_len, double p_sub,
       uint8_t *grown = realloc(received, (size_t)capacity);
       if (!grown) {
         free(received);
-        fprintf(stderr, "dv_metrics: out of memory\n");
+        fprintf(stderr, "dt_metrics: out of memory\n");
         exit(1);
       }
       received = grown;
@@ -192,7 +192,7 @@ static int apply_channel(const uint8_t *coded, int coded_len, double p_sub,
       bit ^= 1u;
     }
     if (p_erase > 0.0 && rng_unit(rng) < p_erase) {
-      bit = DV_ERASURE;
+      bit = DT_ERASURE;
     }
     received[received_len++] = bit;
   }
@@ -268,14 +268,14 @@ static long edit_distance(const uint8_t *seq_a, int len_a, const uint8_t *seq_b,
 
 typedef struct {
   const char *name;
-  dv_standard_code which;
+  dt_standard_code which;
 } code_entry;
 
 static const code_entry CODES[] = {
-    {"K3_R1_2", DV_CODE_K3_RATE_1_2},
-    {"K7_R1_2", DV_CODE_K7_RATE_1_2},
-    {"K7_R1_3", DV_CODE_K7_RATE_1_3},
-    {"K5_R1_5", DV_CODE_K5_RATE_1_5},
+    {"K3_R1_2", DT_CODE_K3_RATE_1_2},
+    {"K7_R1_2", DT_CODE_K7_RATE_1_2},
+    {"K7_R1_3", DT_CODE_K7_RATE_1_3},
+    {"K5_R1_5", DT_CODE_K5_RATE_1_5},
 };
 #define N_CODES ((int)(sizeof(CODES) / sizeof(CODES[0])))
 
@@ -343,7 +343,7 @@ static int parse_variation(const char *s) {
 static int load_grids(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) {
-    fprintf(stderr, "dv_metrics: cannot open rate-grid file '%s'\n", path);
+    fprintf(stderr, "dt_metrics: cannot open rate-grid file '%s'\n", path);
     return -1;
   }
   char line[8192];
@@ -360,7 +360,7 @@ static int load_grids(const char *path) {
     int m = mn ? name_index(mn, METRIC_NAME, N_METRICS) : -1;
     int a = an ? name_index(an, AXIS_NAME, N_AXES) : -1;
     if (v < 0 || m < 0 || a < 0) {
-      fprintf(stderr, "dv_metrics: %s:%d: bad variation/metric/axis\n", path,
+      fprintf(stderr, "dt_metrics: %s:%d: bad variation/metric/axis\n", path,
               lineno);
       ok = 0;
       break;
@@ -371,7 +371,7 @@ static int load_grids(const char *path) {
       char *end;
       double value = strtod(t, &end);
       if (*end != '\0') {
-        fprintf(stderr, "dv_metrics: %s:%d: bad rate '%s'\n", path, lineno, t);
+        fprintf(stderr, "dt_metrics: %s:%d: bad rate '%s'\n", path, lineno, t);
         ok = 0;
         break;
       }
@@ -379,7 +379,7 @@ static int load_grids(const char *path) {
         cap *= 2;
         double *grown = realloc(rates, (size_t)cap * sizeof(double));
         if (!grown) {
-          fprintf(stderr, "dv_metrics: out of memory\n");
+          fprintf(stderr, "dt_metrics: out of memory\n");
           exit(1);
         }
         rates = grown;
@@ -391,7 +391,7 @@ static int load_grids(const char *path) {
       break;
     }
     if (n == 0) {
-      fprintf(stderr, "dv_metrics: %s:%d: grid has no rates\n", path, lineno);
+      fprintf(stderr, "dt_metrics: %s:%d: grid has no rates\n", path, lineno);
       free(rates);
       ok = 0;
       break;
@@ -415,7 +415,7 @@ static const double *metric_axis_rates(variation var, metric which_metric,
  * axis, rate, and variation but not the trial, so both the trial worker and the
  * row formatter derive them the same way from make_model(). */
 typedef struct {
-  dv_stream_params params;
+  dt_stream_params params;
   int code_n;
   int constraint_len;
   int decision_depth;
@@ -431,11 +431,11 @@ typedef struct {
   double lock_sum, detect_sum;
 } trial_result;
 
-static point_model make_model(const dv_code *code, axis channel_axis,
+static point_model make_model(const dt_code *code, axis channel_axis,
                               double rate, variation var) {
   point_model m;
-  m.code_n = dv_code_n(code);
-  m.constraint_len = dv_code_k(code);
+  m.code_n = dt_code_n(code);
+  m.constraint_len = dt_code_k(code);
   m.decision_depth = 8 * m.constraint_len;
 
   if (var != VAR_MATCHED && var != VAR_OVERMATCHED) {
@@ -446,7 +446,7 @@ static point_model make_model(const dv_code *code, axis channel_axis,
      * something increasingly unexpected - the stress this variation measures. */
     const double pegged = 0.01;
     m.max_drift = 8;
-    m.params = (dv_stream_params){
+    m.params = (dt_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_sub = pegged,
@@ -469,7 +469,7 @@ static point_model make_model(const dv_code *code, axis channel_axis,
     const double channel_del = channel_axis == AXIS_DELETE ? rate : 0.0;
     m.max_drift =
         (channel_axis == AXIS_INSERT || channel_axis == AXIS_DELETE) ? 8 : 0;
-    m.params = (dv_stream_params){
+    m.params = (dt_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_sub = (channel_axis == AXIS_FLIP)
@@ -488,16 +488,16 @@ static point_model make_model(const dv_code *code, axis channel_axis,
   }
   m.warmup = m.decision_depth;
 
-  /* Sliding-window detection. dv_detect collapses a whole buffer into one
+  /* Sliding-window detection. dt_detect collapses a whole buffer into one
    * confidence value, so feeding it the entire stream would yield a single
    * sample per trial. Instead we slide a short window across the received bits
    * and average its detections, the per-window analog of mean_lock's per-bit
    * average - it tracks how recognizable the coded structure stays along the
-   * stream. The window clears the code's dv_detect_min_len (30-95 bits here);
+   * stream. The window clears the code's dt_detect_min_len (30-95 bits here);
    * 512 sits well above it and still gives many windows. Step by half a window
    * so neighbors overlap. */
   m.detect_window = 512;
-  const long detect_floor = dv_detect_min_len(m.code_n, m.constraint_len);
+  const long detect_floor = dt_detect_min_len(m.code_n, m.constraint_len);
   if (detect_floor > 0 && m.detect_window < detect_floor) {
     m.detect_window = (int)detect_floor;
   }
@@ -511,7 +511,7 @@ static point_model make_model(const dv_code *code, axis channel_axis,
  * buffer (no decode), while edit distance and lock probability both come from a
  * single decode and each skips the other's post-processing. Each trial is fully
  * independent, so trials parallelize across cores (see main). */
-static trial_result run_one_trial(const dv_code *code, axis channel_axis,
+static trial_result run_one_trial(const dt_code *code, axis channel_axis,
                                   metric which_metric, double rate,
                                   int info_bits, uint64_t seed,
                                   variation var) {
@@ -537,8 +537,8 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
     message[i] = (uint8_t)(rng_next(rng) & 1u);
   }
   int enc_state = 0, coded_len = 0;
-  coded_len += dv_code_encode(code, message, info_bits, &enc_state, coded);
-  coded_len += dv_code_encode_flush(code, &enc_state, coded + coded_len);
+  coded_len += dt_code_encode(code, message, info_bits, &enc_state, coded);
+  coded_len += dt_code_encode_flush(code, &enc_state, coded + coded_len);
 
   uint8_t *received = NULL;
   int received_len = apply_channel(coded, coded_len, channel_sub, channel_ins,
@@ -546,11 +546,11 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
 
   if (which_metric == METRIC_DETECT) {
     /* Blind detection, averaged over a sliding window: at each step, does this
-     * stretch still look like a rate-1/n, k code? dv_detect reads the buffer
-     * without modifying it and may report DV_UNDETERMINED (negative) on a window
+     * stretch still look like a rate-1/n, k code? dt_detect reads the buffer
+     * without modifying it and may report DT_UNDETERMINED (negative) on a window
      * that lands too short; skip those. No decode is needed. */
     for (int p = 0; p + m.detect_window <= received_len; p += m.detect_step) {
-      double detect = dv_detect(m.code_n, m.constraint_len, received + p,
+      double detect = dt_detect(m.code_n, m.constraint_len, received + p,
                                 (size_t)m.detect_window);
       if (detect >= 0.0) {
         r.detect_sum += detect;
@@ -568,23 +568,23 @@ static trial_result run_one_trial(const dv_code *code, axis channel_axis,
    * this metric uses. */
   const int decoded_cap = info_bits + 256;
   uint8_t *decoded = xmalloc((size_t)decoded_cap);
-  dv_decode_details *details =
+  dt_decode_details *details =
       which_metric == METRIC_LOCK
-          ? xmalloc((size_t)decoded_cap * sizeof(dv_decode_details))
+          ? xmalloc((size_t)decoded_cap * sizeof(dt_decode_details))
           : NULL;
 
-  dv_stream_decoder *decoder = dv_stream_decoder_create(code, &m.params);
+  dt_stream_decoder *decoder = dt_stream_decoder_create(code, &m.params);
   if (!decoder) {
-    fprintf(stderr, "dv_metrics: decoder create failed\n");
+    fprintf(stderr, "dt_metrics: decoder create failed\n");
     exit(1);
   }
   int n_stream = 0;
   int n_decoded = decode_all(decoder, received, received_len, decoded, details,
                              decoded_cap, &n_stream);
-  dv_stream_decoder_destroy(decoder);
+  dt_stream_decoder_destroy(decoder);
   free(received);
   if (n_decoded < 0) {
-    fprintf(stderr, "dv_metrics: decode error %d\n", n_decoded);
+    fprintf(stderr, "dt_metrics: decode error %d\n", n_decoded);
     exit(1);
   }
 
@@ -678,7 +678,7 @@ int main(int argc, char **argv) {
     int parsed = parse_variation(argv[4]);
     if (parsed < 0) {
       fprintf(stderr,
-              "dv_metrics: unknown variation '%s' "
+              "dt_metrics: unknown variation '%s' "
               "(use pegged|matched|overmatched|detect)\n",
               argv[4]);
       return 2;
@@ -701,13 +701,13 @@ int main(int argc, char **argv) {
       var == VAR_DETECT ? DETECT_METRICS : DECODE_METRICS;
   const int n_run_metrics = var == VAR_DETECT ? 1 : 2;
 
-  /* The trellis tables in a dv_code are read-only once built, so all threads
+  /* The trellis tables in a dt_code are read-only once built, so all threads
    * share the four codes; each decode allocates its own decoder state. */
-  dv_code *codes[N_CODES];
+  dt_code *codes[N_CODES];
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    codes[code_idx] = dv_code_create_standard(CODES[code_idx].which);
+    codes[code_idx] = dt_code_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
-      fprintf(stderr, "dv_metrics: code create failed\n");
+      fprintf(stderr, "dt_metrics: code create failed\n");
       return 1;
     }
   }
@@ -722,7 +722,7 @@ int main(int argc, char **argv) {
       int count;
       metric_axis_rates(var, run_metrics[mi], (axis)axis_idx, &count);
       if (count == 0) {
-        fprintf(stderr, "dv_metrics: %s: no grid for %s %s %s\n", grids_path,
+        fprintf(stderr, "dt_metrics: %s: no grid for %s %s %s\n", grids_path,
                 argc > 4 ? argv[4] : "pegged", METRIC_NAME[run_metrics[mi]],
                 AXIS_NAME[axis_idx]);
         return 2;
@@ -841,7 +841,7 @@ int main(int argc, char **argv) {
   free(remaining);
   free(items);
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    dv_code_destroy(codes[code_idx]);
+    dt_code_destroy(codes[code_idx]);
   }
   return 0;
 }

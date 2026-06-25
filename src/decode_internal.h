@@ -24,24 +24,24 @@
  */
 /* clang-format on */
 
-#ifndef DRIFT_VITERBI_DECODE_INTERNAL_H
-#define DRIFT_VITERBI_DECODE_INTERNAL_H
+#ifndef DRIFTY_DECODE_INTERNAL_H
+#define DRIFTY_DECODE_INTERNAL_H
 
 /*
  * Private decoder internals shared by the single-stream decoder (decode.c) and
  * the multi-decoder (multi.c). Not installed.
  *
- * The sliding-window Viterbi state splits in two: a `dv_decode_ctx` holds
+ * The sliding-window Viterbi state splits in two: a `dt_decode_ctx` holds
  * everything identical across codes decoded over the same stream - the received
  * buffer, the cadence (read_base/steps/decided and the shared re-anchor history),
  * the channel-derived cost constants, and the trellis dimensions - while a
- * `dv_trellis` holds one code's per-step working state. The single decoder is one
+ * `dt_trellis` holds one code's per-step working state. The single decoder is one
  * ctx + one trellis; the multi-decoder is one ctx + an array of trellises stepped
  * in lockstep, so a single received buffer and a single re-anchor decision serve
  * them all.
  */
 
-#include <drift_viterbi/decode.h> /* dv_stream_params, dv_code (opaque), uint8_t */
+#include <drifty/decode.h> /* dt_stream_params, dt_code (opaque), uint8_t */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -51,41 +51,41 @@
  * -nostdlib, so it cannot use <assert.h> (that would pull in __assert_fail /
  * abort from libc). __builtin_trap is a compiler intrinsic - not a libc symbol
  * and not suppressed by -fno-builtin - so it traps without breaking the
- * freestanding link. Off by default (zero cost); define DV_DEBUG_ASSERT to arm
- * the load-bearing invariants in the decoder (see dv_trellis_trace). */
-#if defined(DV_DEBUG_ASSERT)
-#define DV_ASSERT(cond) \
+ * freestanding link. Off by default (zero cost); define DT_DEBUG_ASSERT to arm
+ * the load-bearing invariants in the decoder (see dt_trellis_trace). */
+#if defined(DT_DEBUG_ASSERT)
+#define DT_ASSERT(cond) \
   do {                  \
     if (!(cond)) {      \
       __builtin_trap(); \
     }                   \
   } while (0)
 #else
-#define DV_ASSERT(cond) ((void)0)
+#define DT_ASSERT(cond) ((void)0)
 #endif
 
 /* Backpointer for one node: where it came from (prev_state, prev_drift_index)
  * and the input bit that got there, packed into one 32-bit word to shrink the
  * backpointer ring (~3x vs a struct) and make each forward-pass write a single
  * store. Layout: bit:1 | prev_drift_index:15 | prev_state:16. The field widths
- * dwarf the validated ranges (dv_code_create caps K <= 9, so prev_state < 256;
- * dv_trellis_init guards prev_drift_index/prev_state against overflow). */
-typedef uint32_t dv_backpointer;
+ * dwarf the validated ranges (dt_code_create caps K <= 9, so prev_state < 256;
+ * dt_trellis_init guards prev_drift_index/prev_state against overflow). */
+typedef uint32_t dt_backpointer;
 
-static inline dv_backpointer dv_bp_pack(int prev_state, int prev_drift_index,
+static inline dt_backpointer dt_bp_pack(int prev_state, int prev_drift_index,
                                         unsigned int bit) {
   return (bit & 1u) | ((unsigned int)prev_drift_index << 1) |
          ((unsigned int)prev_state << 16);
 }
-static inline unsigned int dv_bp_bit(dv_backpointer b) { return b & 1u; }
-static inline int dv_bp_drift(dv_backpointer b) {
+static inline unsigned int dt_bp_bit(dt_backpointer b) { return b & 1u; }
+static inline int dt_bp_drift(dt_backpointer b) {
   return (int)((b >> 1) & 0x7FFFu);
 }
-static inline int dv_bp_state(dv_backpointer b) { return (int)(b >> 16); }
+static inline int dt_bp_state(dt_backpointer b) { return (int)(b >> 16); }
 
-/* Field capacities for the packing above (used by dv_trellis_init's guard). */
-#define DV_BP_MAX_STATE 0xFFFF
-#define DV_BP_MAX_DRIFT 0x7FFF
+/* Field capacities for the packing above (used by dt_trellis_init's guard). */
+#define DT_BP_MAX_STATE 0xFFFF
+#define DT_BP_MAX_DRIFT 0x7FFF
 
 /* Shared decode context: received buffer, cadence, channel constants, and
  * trellis dimensions - all identical across codes decoded together. */
@@ -136,26 +136,26 @@ typedef struct {
   /* Per-step branch-cost snapshots for the forward-backward (BCJR) soft output:
    * a ring of the shared per-(pattern, source drift) final rows (== align_shared,
    * the rows forward_pass scatters), indexed by step % decision_depth. The
-   * backward beta pass (dv_trellis_details) reads these to recover the cost of
+   * backward beta pass (dt_trellis_details) reads these to recover the cost of
    * the best complete path for each bit value at the target step - which plain
    * traceback cannot, since compare-select discards the losing hypothesis. Sized
    * [decision_depth * n_patterns * drift_width * (n+2*max_drift+1)], allocated in
-   * dv_decode_ctx_finalize once n_patterns is known. */
+   * dt_decode_ctx_finalize once n_patterns is known. */
   double *branch_ring;
   /* Two [num_states*drift_width] scratch buffers for the backward beta pass
    * (only beta[t+1] is needed to form beta[t]). */
   double *beta_a, *beta_b;
-} dv_decode_ctx;
+} dt_decode_ctx;
 
 /* One code's trellis working state. The alignment scratch lives in the shared
  * ctx now (it is computed once per step for all codes); a trellis carries only
  * its own metric/backpointers and the map from each edge to its output pattern's
  * index in ctx->pattern_bits / ctx->align_shared. */
 typedef struct {
-  const dv_code *code;          /* borrowed                                  */
+  const dt_code *code;          /* borrowed                                  */
   double *metric;               /* [num_states*drift_width] node costs       */
   double *next_metric;          /* [num_states*drift_width] scratch          */
-  dv_backpointer *backpointers; /* [decision_depth*num_states*drift_width]   */
+  dt_backpointer *backpointers; /* [decision_depth*num_states*drift_width]   */
   double smoothed_cost;         /* EWMA of best-path per-step cost           */
   int *group_of;                /* [2*num_states] (state*2+bit)->pattern idx */
   /* Per-step forward-metric (alpha) snapshots for the BCJR backward pass: the
@@ -172,58 +172,58 @@ typedef struct {
    * can trace each decoder's bit from its own decision-time frontier (exactly as
    * the per-bit decoder would), not from the later batch frontier. */
   int *frontier_ring;
-} dv_trellis;
+} dt_trellis;
 
 /* Validate `params`, take dimensions from `code`, allocate the shared buffers,
- * and zero the cadence. Returns DV_OK or a negative DV_ERR_*. A ctx that failed
- * (or was zero-initialised) is safe to pass to dv_decode_ctx_free. */
-int dv_decode_ctx_init(dv_decode_ctx *ctx, const dv_stream_params *params,
-                       const dv_code *code);
-void dv_decode_ctx_free(dv_decode_ctx *ctx);
+ * and zero the cadence. Returns DT_OK or a negative DT_ERR_*. A ctx that failed
+ * (or was zero-initialised) is safe to pass to dt_decode_ctx_free. */
+int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
+                       const dt_code *code);
+void dt_decode_ctx_free(dt_decode_ctx *ctx);
 
 /* Allocate the shared per-step alignment table now that every trellis sharing
  * this ctx has been initialised (so the union of output patterns is known). Call
- * once after the last dv_trellis_init. Returns DV_OK or negative. */
-int dv_decode_ctx_finalize(dv_decode_ctx *ctx);
+ * once after the last dt_trellis_init. Returns DT_OK or negative. */
+int dt_decode_ctx_finalize(dt_decode_ctx *ctx);
 
 /* Allocate one trellis's per-code arrays (sized from `ctx`), initialise its
  * metric and smoothed cost for blind acquisition, and register its output
- * patterns into the shared `ctx` (so `ctx` is mutated). Returns DV_OK or
- * negative; a failed/zeroed trellis is safe to dv_trellis_free. */
-int dv_trellis_init(dv_trellis *tr, dv_decode_ctx *ctx, const dv_code *code);
-void dv_trellis_free(dv_trellis *tr);
+ * patterns into the shared `ctx` (so `ctx` is mutated). Returns DT_OK or
+ * negative; a failed/zeroed trellis is safe to dt_trellis_free. */
+int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_code *code);
+void dt_trellis_free(dt_trellis *tr);
 
-/* Append `n_in` received bits to the shared buffer. Returns DV_OK or negative. */
-int dv_decode_feed(dv_decode_ctx *ctx, const uint8_t *in, int n_in);
+/* Append `n_in` received bits to the shared buffer. Returns DT_OK or negative. */
+int dt_decode_feed(dt_decode_ctx *ctx, const uint8_t *in, int n_in);
 
 /* Advance every trellis one fused step: one re-anchor sigma (picked from the
  * best-fitting trellis) is applied to all, then each runs its forward pass, then
  * the shared cadence advances. With n == 1 this is the plain single-decoder step. */
-void dv_decode_step(dv_decode_ctx *ctx, dv_trellis *trs, size_t n);
+void dt_decode_step(dt_decode_ctx *ctx, dt_trellis *trs, size_t n);
 
 /* Lowest-cost node at a trellis's current frontier. */
-int dv_trellis_frontier(const dv_decode_ctx *ctx, const dv_trellis *tr);
+int dt_trellis_frontier(const dt_decode_ctx *ctx, const dt_trellis *tr);
 
 /* Input bit a trellis decided at step `target`, traced back from node `frontier`
  * at step `from_step` (from_step - target <= ring_len). Pass ctx->steps and a
  * current frontier node for an ordinary frontier traceback; the batched multi
  * vote passes a snapshotted earlier frontier (frontier_ring). */
-unsigned char dv_trellis_trace(const dv_decode_ctx *ctx, const dv_trellis *tr,
+unsigned char dt_trellis_trace(const dt_decode_ctx *ctx, const dt_trellis *tr,
                                long long from_step, int frontier,
                                long long target);
 
 /* Map one per-step path cost onto the lock scale (0..1): expected_unlock -> 0,
  * expected_lock -> 1, clamped. The lock consistency c_lock is this applied to a
- * trellis's smoothed cost (dv_trellis_soft_batch). */
-double dv_lock_from_cost(const dv_decode_ctx *ctx, double cost);
+ * trellis's smoothed cost (dt_trellis_soft_batch). */
+double dt_lock_from_cost(const dt_decode_ctx *ctx, double cost);
 
 /* Forward-backward (BCJR) soft output for the n targets [base, base+n) from one
  * backward sweep over the retained window (frontier at ctx->steps). bits_out[k]
  * (stride 1) and details_out[k*detail_stride] (either may be NULL) receive target
  * base+k. The multi-decoder uses detail_stride = codes_len to interleave each
  * decoder's details; the single-stream decoder uses 1. */
-void dv_trellis_soft_batch(const dv_decode_ctx *ctx, const dv_trellis *tr,
+void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr,
                            long long base, int n, uint8_t *bits_out,
-                           dv_decode_details *details_out, int detail_stride);
+                           dt_decode_details *details_out, int detail_stride);
 
-#endif /* DRIFT_VITERBI_DECODE_INTERNAL_H */
+#endif /* DRIFTY_DECODE_INTERNAL_H */

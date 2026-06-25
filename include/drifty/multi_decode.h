@@ -24,10 +24,10 @@
  */
 /* clang-format on */
 
-#ifndef INCLUDE_DRIFT_VITERBI_MULTI_DECODE_H_
-#define INCLUDE_DRIFT_VITERBI_MULTI_DECODE_H_
+#ifndef INCLUDE_DRIFTY_MULTI_DECODE_H_
+#define INCLUDE_DRIFTY_MULTI_DECODE_H_
 
-#include <drift_viterbi/decode.h>
+#include <drifty/decode.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -37,56 +37,56 @@ extern "C" {
 /*
  * Runs several stream decoders over one received stream and, per output bit,
  * keeps the bit from whichever is most confidently locked. Opaque handle - make
- * it with dv_multi_create(), free it with dv_multi_destroy().
+ * it with dt_multi_create(), free it with dt_multi_destroy().
  */
-typedef struct dv_multi_decoder dv_multi_decoder;
+typedef struct dt_multi_decoder dt_multi_decoder;
 
 /* clang-format off */
 /*
- * Settings for dv_multi_create(). Use designated initializers; any tuning field
+ * Settings for dt_multi_create(). Use designated initializers; any tuning field
  * left 0 takes its default.
  *
  *   codes      : array of `codes_len` codes to decode against in parallel over a
  *                single shared received buffer and cadence. Required. They must
- *                share a rate (same dv_code_n) AND a constraint length (same
- *                dv_code_k) - one decoded bit corresponds to one message bit
+ *                share a rate (same dt_code_n) AND a constraint length (same
+ *                dt_code_k) - one decoded bit corresponds to one message bit
  *                across all of them, and they advance in lockstep under one
  *                shared re-anchor over one trellis geometry - and otherwise
  *                typically differ only in their generator polynomials. A set
- *                that violates this is rejected (dv_multi_create returns NULL).
+ *                that violates this is rejected (dt_multi_create returns NULL).
  *                Each code must outlive the multi-decoder.
  *   codes_len  : how many codes `codes` points to.
  *   stream     : decoder settings (decision_depth, drift, channel probabilities;
- *                see dv_stream_params) shared by every code's decoder. Required.
- *   lock_floor : the lock probability (see dv_stream_decode) the best-fitting
+ *                see dt_stream_params) shared by every code's decoder. Required.
+ *   lock_floor : the lock probability (see dt_stream_decode) the best-fitting
  *                code must reach for any bit to be committed; if none does,
- *                nothing is locked and the bit is DV_ERASURE. Default 0.6.
+ *                nothing is locked and the bit is DT_ERASURE. Default 0.6.
  *   lock_margin: how decisively the codes' likelihood-weighted vote must favour
  *                one bit value over the other - as a share of the total weight,
  *                so 0 commits on any majority and 1 never commits - for that bit
- *                to be emitted rather than DV_ERASURE. Default 0.2.
+ *                to be emitted rather than DT_ERASURE. Default 0.2.
  */
 /* clang-format on */
 typedef struct {
-  const dv_code *const *codes;
+  const dt_code *const *codes;
   size_t codes_len;
-  dv_stream_params stream;
+  dt_stream_params stream;
   double lock_floor;
   double lock_margin;
-} dv_multi_params;
+} dt_multi_params;
 
 /*
  * Allocate a multi-decoder from `params` (must be non-NULL), building one
  * stream decoder per code in params->codes using params->stream. The codes must
  * outlive the multi-decoder; it owns the decoders it builds and frees them in
- * dv_multi_destroy(). Returns NULL on a NULL params, invalid settings, or out
+ * dt_multi_destroy(). Returns NULL on a NULL params, invalid settings, or out
  * of memory.
  */
-dv_multi_decoder *dv_multi_create(const dv_multi_params *params);
+dt_multi_decoder *dt_multi_create(const dt_multi_params *params);
 
 /* Free a multi-decoder and every stream decoder it owns. Passing NULL is fine.
  */
-void dv_multi_destroy(dv_multi_decoder *m);
+void dt_multi_destroy(dt_multi_decoder *m);
 
 /*
  * Decode a received bit stream with all of the decoders in the multi struct at
@@ -94,9 +94,9 @@ void dv_multi_destroy(dv_multi_decoder *m);
  * likelihood weight - each code's weight falls off with how poorly it fits the
  * stream - and the heavier bit value is emitted when it leads the other by
  * lock_margin of the total weight. When no code is locked (none reaches
- * lock_floor) or the weighted vote is too close, that bit is DV_ERASURE.
+ * lock_floor) or the weighted vote is too close, that bit is DT_ERASURE.
  *
- * `in`/`n_in`, `out`/`max_out`, and the return value follow dv_stream_decode.
+ * `in`/`n_in`, `out`/`max_out`, and the return value follow dt_stream_decode.
  *
  * `details`, if supplied, is an array of length `codes_len * max_out`.
  * For each position i and decoder index j, the details of that decoder
@@ -106,19 +106,19 @@ void dv_multi_destroy(dv_multi_decoder *m);
  *
  * `out` and `details` may be NULL.
  */
-int dv_multi_decode(dv_multi_decoder *d, const uint8_t *in, int n_in,
-                    uint8_t *out, dv_decode_details *details, int max_out);
+int dt_multi_decode(dt_multi_decoder *d, const uint8_t *in, int n_in,
+                    uint8_t *out, dt_decode_details *details, int max_out);
 
 /*
  * Flush a multi-decoder at end of stream, draining the last bits still in
- * flight in every wrapped decoder. Like dv_stream_decode_flush: call repeatedly
+ * flight in every wrapped decoder. Like dt_stream_decode_flush: call repeatedly
  * until it returns 0, after which every bit has been decoded.
  */
-int dv_multi_decode_flush(dv_multi_decoder *d, uint8_t *out,
-                          dv_decode_details *details, int max_out);
+int dt_multi_decode_flush(dt_multi_decoder *d, uint8_t *out,
+                          dt_decode_details *details, int max_out);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* INCLUDE_DRIFT_VITERBI_MULTI_DECODE_H_ */
+#endif /* INCLUDE_DRIFTY_MULTI_DECODE_H_ */

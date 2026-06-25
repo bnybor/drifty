@@ -25,8 +25,8 @@
 /* clang-format on */
 
 /*
- * dv_codesearch - selects, per (K, rate) family, the FIVE generator-polynomial
- * sets behind dv_standard_code so that all five are mutually distinguishable: a
+ * dt_codesearch - selects, per (K, rate) family, the FIVE generator-polynomial
+ * sets behind dt_standard_code so that all five are mutually distinguishable: a
  * decoder built for one preset must not lock onto a sibling preset's stream
  * (the property tested by test_cross_lock_within_family / test_lock_matches_
  * compare). It exists so those polynomials are reproducible rather than picked
@@ -49,13 +49,13 @@
  *
  * Output is a human-readable report plus paste-ready octal tables and the worst
  * pairwise cross-lock achieved per family (which sets each family's test
- * threshold). Like dv_metrics, each lock measurement owns a seeded PRNG stream,
+ * threshold). Like dt_metrics, each lock measurement owns a seeded PRNG stream,
  * so a given seed reproduces exactly regardless of thread count.
  *
- * Usage: dv_codesearch [trials] [info_bits] [seed] [pool]
+ * Usage: dt_codesearch [trials] [info_bits] [seed] [pool]
  */
 
-#include <drift_viterbi/drift_viterbi.h>
+#include <drifty/drifty.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -69,7 +69,7 @@
 #define MAX_N 5       /* widest rate this tool handles (1/5)          */
 #define MAX_PRESETS 5 /* most presets a family ships (default + 4 alt) */
 
-/* -- deterministic PRNG (splitmix64), matching metrics/dv_metrics.c -------- */
+/* -- deterministic PRNG (splitmix64), matching metrics/dt_metrics.c -------- */
 
 static uint64_t rng_next(uint64_t *state) {
   uint64_t value = (*state += 0x9E3779B97F4A7C15ULL);
@@ -81,7 +81,7 @@ static uint64_t rng_next(uint64_t *state) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dv_codesearch: out of memory\n");
+    fprintf(stderr, "dt_codesearch: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -90,7 +90,7 @@ static void *xmalloc(size_t size) {
 static double max_double(double a, double b) { return a > b ? a : b; }
 static double min_double(double a, double b) { return a < b ? a : b; }
 
-/* -- code structure (computed locally, decoupled from the opaque dv_code) --- */
+/* -- code structure (computed locally, decoupled from the opaque dt_code) --- */
 
 /* GF(2) polynomial gcd of the generators; the code is non-catastrophic iff this
  * is 1 (the Massey-Sain condition for a rate-1/n code, restricted to the
@@ -199,7 +199,7 @@ static void cand_push(cand_vec *v, const unsigned int *g, int n) {
     v->cap = v->cap ? v->cap * 2 : 1024;
     v->data = realloc(v->data, v->cap * sizeof(*v->data));
     if (!v->data) {
-      fprintf(stderr, "dv_codesearch: out of memory\n");
+      fprintf(stderr, "dt_codesearch: out of memory\n");
       exit(1);
     }
   }
@@ -239,32 +239,32 @@ static int cand_cmp(const void *pa, const void *pb) {
   return 0;
 }
 
-/* -- lock metric (mirrors tests/dv_test_util.h decoder_lock_mean) ----------- */
+/* -- lock metric (mirrors tests/dt_test_util.h decoder_lock_mean) ----------- */
 
 /* Mean lock probability over the settled second half when `enc`'s coded stream
  * is decoded with `dec`'s decoder. Same settings the test helper uses. */
-static double lock_mean(const dv_code *enc, const dv_code *dec,
+static double lock_mean(const dt_code *enc, const dt_code *dec,
                         const uint8_t *msg, int info_bits, int depth) {
-  const int clen = info_bits * dv_code_n(enc);
+  const int clen = info_bits * dt_code_n(enc);
   uint8_t *coded = xmalloc((size_t)clen);
   int st = 0;
-  dv_code_encode(enc, msg, info_bits, &st, coded);
+  dt_code_encode(enc, msg, info_bits, &st, coded);
 
-  dv_stream_params params = {.decision_depth = depth,
+  dt_stream_params params = {.decision_depth = depth,
                              .max_drift = 4,
                              .p_sub = 0.01,
                              .p_ins = 0.01,
                              .p_del = 0.01,
                              .p_erase = 0.0};
-  dv_stream_decoder *sd = dv_stream_decoder_create(dec, &params);
+  dt_stream_decoder *sd = dt_stream_decoder_create(dec, &params);
   if (!sd) {
     free(coded);
     return 1.0; /* treat as worst case (indistinguishable) */
   }
   const int cap = info_bits + 64;
   uint8_t *out = xmalloc((size_t)cap);
-  dv_decode_details *details = xmalloc((size_t)cap * sizeof(dv_decode_details));
-  int got = dv_stream_decode(sd, coded, clen, out, details, cap);
+  dt_decode_details *details = xmalloc((size_t)cap * sizeof(dt_decode_details));
+  int got = dt_stream_decode(sd, coded, clen, out, details, cap);
 
   double result = 1.0;
   if (got > 0) {
@@ -276,7 +276,7 @@ static double lock_mean(const dv_code *enc, const dv_code *dec,
     }
     result = count ? sum / count : 1.0;
   }
-  dv_stream_decoder_destroy(sd);
+  dt_stream_decoder_destroy(sd);
   free(coded);
   free(out);
   free(details);
@@ -287,7 +287,7 @@ static double lock_mean(const dv_code *enc, const dv_code *dec,
  * single lucky message can't inflate distinguishability. For self pairs we take
  * the MIN observed lock (the worst self-lock); for cross pairs the MAX (the
  * worst cross-lock). */
-static double lock_agg(const dv_code *enc, const dv_code *dec,
+static double lock_agg(const dt_code *enc, const dt_code *dec,
                        const uint8_t *messages, int n_msg, int info_bits,
                        int depth, int take_min) {
   double agg = take_min ? 1.0 : 0.0;
@@ -299,21 +299,21 @@ static double lock_agg(const dv_code *enc, const dv_code *dec,
   return agg;
 }
 
-/* Blind dv_compare similarity between two codes' clean streams (~1 same, ~0
- * different). The distinguishability tests cross-check lock against dv_compare,
+/* Blind dt_compare similarity between two codes' clean streams (~1 same, ~0
+ * different). The distinguishability tests cross-check lock against dt_compare,
  * so the selected five must separate under this metric too; this verifies the
- * final pick rather than driving it (dv_compare is the costlier metric). */
-static double compare_codes(const dv_code *a, const dv_code *b,
+ * final pick rather than driving it (dt_compare is the costlier metric). */
+static double compare_codes(const dt_code *a, const dt_code *b,
                             const uint8_t *msg, int info_bits) {
-  const int n = dv_code_n(a), K = dv_code_k(a);
-  const int ca = info_bits * n, cb = info_bits * dv_code_n(b);
+  const int n = dt_code_n(a), K = dt_code_k(a);
+  const int ca = info_bits * n, cb = info_bits * dt_code_n(b);
   uint8_t *sa = xmalloc((size_t)ca);
   uint8_t *sb = xmalloc((size_t)cb);
   int st = 0;
-  dv_code_encode(a, msg, info_bits, &st, sa);
+  dt_code_encode(a, msg, info_bits, &st, sa);
   st = 0;
-  dv_code_encode(b, msg, info_bits, &st, sb);
-  double result = dv_compare(n, K, sa, (size_t)ca, sb, (size_t)cb);
+  dt_code_encode(b, msg, info_bits, &st, sb);
+  double result = dt_compare(n, K, sa, (size_t)ca, sb, (size_t)cb);
   free(sa);
   free(sb);
   return result;
@@ -325,7 +325,7 @@ static double compare_codes(const dv_code *a, const dv_code *b,
 
 typedef struct {
   const char *name;
-  const char *enum_prefix; /* e.g. DV_CODE_K7_RATE_1_2 */
+  const char *enum_prefix; /* e.g. DT_CODE_K7_RATE_1_2 */
   int K, n;
   /* Alternate-selection margin. 0: distinguishable at the normal 0.75 bound
    * (strongest codes that stay distinguishable). 1: hold the alternates to a
@@ -341,13 +341,13 @@ typedef struct {
 } family;
 
 static const family FAMILIES[] = {
-    {"K3_R1_2", "DV_CODE_K3_RATE_1_2", 3, 2, 0, 0, {0}},
+    {"K3_R1_2", "DT_CODE_K3_RATE_1_2", 3, 2, 0, 0, {0}},
     /* Pin the canonical NASA/Voyager K=7 rate-1/2 code (0171, 0133) as default. */
-    {"K7_R1_2", "DV_CODE_K7_RATE_1_2", 7, 2, 0, 2, {0171, 0133}},
+    {"K7_R1_2", "DT_CODE_K7_RATE_1_2", 7, 2, 0, 2, {0171, 0133}},
     /* Rate-1/3 has a roomy distinguishable set, so spread the five out for a
      * wider cross-lock margin rather than squeezing maximum free distance. */
-    {"K7_R1_3", "DV_CODE_K7_RATE_1_3", 7, 3, 1, 0, {0}},
-    {"K5_R1_5", "DV_CODE_K5_RATE_1_5", 5, 5, 0, 0, {0}},
+    {"K7_R1_3", "DT_CODE_K7_RATE_1_3", 7, 3, 1, 0, {0}},
+    {"K5_R1_5", "DT_CODE_K5_RATE_1_5", 5, 5, 0, 0, {0}},
 };
 #define N_FAMILIES ((int)(sizeof(FAMILIES) / sizeof(FAMILIES[0])))
 
@@ -433,11 +433,11 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
   qsort(samp, (size_t)nsamp, sizeof(*samp), cand_cmp);
 
   /* 2. Build a decoder-ready code for each sample member (shared read-only). */
-  dv_code **codes = xmalloc((size_t)nsamp * sizeof(*codes));
+  dt_code **codes = xmalloc((size_t)nsamp * sizeof(*codes));
   for (int i = 0; i < nsamp; ++i) {
-    codes[i] = dv_code_create(fam->K, samp[i].g, fam->n);
+    codes[i] = dt_code_create(fam->K, samp[i].g, fam->n);
     if (!codes[i]) {
-      fprintf(stderr, "dv_codesearch: code create failed\n");
+      fprintf(stderr, "dt_codesearch: code create failed\n");
       exit(1);
     }
   }
@@ -609,7 +609,7 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
     printf("    case %s%s: {\n", fam->enum_prefix, suffix[i]);
     printf("      static const unsigned int generators[] = {");
     for (int j = 0; j < fam->n; ++j) printf("%s0%o", j ? ", " : "", c->g[j]);
-    printf("};\n      return dv_code_create(%d, generators, %d);\n    }\n",
+    printf("};\n      return dt_code_create(%d, generators, %d);\n    }\n",
            fam->K, fam->n);
   }
   printf("  --- encode.h d_free comments ---\n");
@@ -618,9 +618,9 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
            samp[sel[i]].dfree);
   }
 
-  /* Cross-check the pick under dv_compare (the other route the tests use):
+  /* Cross-check the pick under dt_compare (the other route the tests use):
    * every off-diagonal pair must read as different, the diagonal as same.
-   * dv_compare needs a longer stream than lock selection to recover the dual
+   * dt_compare needs a longer stream than lock selection to recover the dual
    * space, so it gets its own dedicated message - independent of the (short)
    * selection length. */
   const int verify_bits = 2000;
@@ -638,12 +638,12 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
           compare_codes(codes[sel[i]], codes[sel[j]], vmsg, verify_bits));
   }
   free(vmsg);
-  printf("  dv_compare check: worst self=%.3f, worst cross=%.3f %s\n",
+  printf("  dt_compare check: worst self=%.3f, worst cross=%.3f %s\n",
          worst_compare_self, worst_compare_cross,
          (worst_compare_self > 0.5 && worst_compare_cross < 0.5) ? "OK"
                                                                  : "FAIL");
 
-  for (int i = 0; i < nsamp; ++i) dv_code_destroy(codes[i]);
+  for (int i = 0; i < nsamp; ++i) dt_code_destroy(codes[i]);
   free(codes);
   free(self);
   free(samp);
@@ -681,12 +681,12 @@ int main(int argc, char **argv) {
   }
 
 #ifdef _OPENMP
-  fprintf(stderr, "dv_codesearch: %d threads, %d messages x %d info bits, "
+  fprintf(stderr, "dt_codesearch: %d threads, %d messages x %d info bits, "
                   "sample %d, seed 0x%llx\n",
           omp_get_max_threads(), trials, info_bits, sample_size,
           (unsigned long long)seed);
 #else
-  fprintf(stderr, "dv_codesearch: single-threaded, %d messages x %d info bits, "
+  fprintf(stderr, "dt_codesearch: single-threaded, %d messages x %d info bits, "
                   "sample %d, seed 0x%llx\n",
           trials, info_bits, sample_size, (unsigned long long)seed);
 #endif

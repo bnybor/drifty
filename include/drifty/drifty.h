@@ -24,20 +24,20 @@
  */
 /* clang-format on */
 
-#ifndef DRIFT_VITERBI_DRIFT_VITERBI_H
-#define DRIFT_VITERBI_DRIFT_VITERBI_H
+#ifndef DRIFTY_DRIFTY_H
+#define DRIFTY_DRIFTY_H
 
 /*
- * Umbrella header for the full drift_viterbi API. The library is split into the
+ * Umbrella header for the full drifty API. The library is split into the
  * sender's half (encode.h - pick a code and encode), the receiver's half
  * (decode.h - stream-decode received bits), and a blind code comparison
  * (compare.h - do two streams share a code?). Include this to get all of them
  * at once, or include just the part you need.
  */
-#include <drift_viterbi/compare.h>
-#include <drift_viterbi/decode.h>
-#include <drift_viterbi/encode.h>
-#include <drift_viterbi/multi_decode.h>
-#include <drift_viterbi/multi_encode.h>
+#include <drifty/compare.h>
+#include <drifty/decode.h>
+#include <drifty/encode.h>
+#include <drifty/multi_decode.h>
+#include <drifty/multi_encode.h>
 
-#endif /* DRIFT_VITERBI_DRIFT_VITERBI_H */
+#endif /* DRIFTY_DRIFTY_H */

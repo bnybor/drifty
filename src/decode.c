@@ -639,12 +639,13 @@ static double branch_cost(const dt_decode_ctx *ctx, const dt_trellis *tr,
  * and c_false both approach 1.
  *
  * c_lost is the consistency that the bit's information was lost - that the data
- * cannot tell true from false. That is exactly the overlap of the other two,
- * min(c_true, c_false) = exp(-|m0 - m1|): high whenever the values are
- * indistinguishable, whether the evidence is absent (both high) or the decoder
- * has lost lock on random data (m0 ~ m1). It is deliberately NOT scaled by
+ * cannot tell true from false. It is the agreement of the other two,
+ * 1 - |c_true - c_false|: high whenever the values are indistinguishable,
+ * whether the evidence is absent (both ~1) or the decoder has lost lock on random
+ * data (m0 ~ m1, so both consistencies match). It is deliberately NOT scaled by
  * c_lock, so it stays high through a lock collapse. A bit with only one feasible
- * value is determined, not lost (the infeasible side is 0, so the overlap is 0).
+ * value is determined, not lost (the winner is 1 and the infeasible side is 0, so
+ * the agreement is 0).
  *
  * c_lock is the independent lock consistency (is this the right code at all?). */
 static uint8_t finalize_soft(const dt_decode_ctx *ctx, double m0, double m1,
@@ -652,14 +653,15 @@ static uint8_t finalize_soft(const dt_decode_ctx *ctx, double m0, double m1,
   const double mmin = m0 < m1 ? m0 : m1;
   const double c_true = m1 == INFINITY ? 0.0 : dt_exp(mmin - m1);
   const double c_false = m0 == INFINITY ? 0.0 : dt_exp(mmin - m0);
-  const double c_lost = c_true < c_false ? c_true : c_false;
+  const double diff = c_true - c_false;
+  const double c_lost = 1.0 - (diff < 0.0 ? -diff : diff);
   if (out) {
     out->c_true = c_true;
     out->c_false = c_false;
     out->c_lost = c_lost;
     out->c_lock = dt_lock_from_cost(ctx, smoothed);
   }
-  /* Most consistent of the three. c_lost is the overlap of the other two, so it
+  /* Most consistent of the three. c_lost is the agreement of the other two, so it
    * only leads on a tie (m0 == m1 - genuinely undeterminable), abstaining. */
   if (c_lost >= c_true && c_lost >= c_false) {
     return DT_ERASURE;

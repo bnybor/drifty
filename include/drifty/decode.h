@@ -96,17 +96,22 @@ typedef struct dt_stream_decoder dt_stream_decoder;
  *   p_ins_true,
  *   p_ins_false,
  *   p_ins_erase    : how often a spurious DT_TRUE / DT_FALSE / DT_ERASURE bit is
- *                    inserted into the stream, per bit and at any position.
- *   p_del          : how often a coded bit is dropped, per bit and at any position
- *                    (the insertion rates + p_del must sum to < 1). The insertion
- *                    rates and p_del are required when max_drift > 0; leave 0
- *                    otherwise.
+ *                    inserted into the stream, per bit and at any position. Their
+ *                    sum is the overall insertion rate; it sets how readily the
+ *                    decoder realigns, while the split only biases which value it
+ *                    expects an inserted bit to carry. So an even true/false split
+ *                    behaves the same as one combined rate - set them unequal only
+ *                    to favour one inserted value.
+ *   p_del          : how often a coded bit is dropped, per bit and at any position.
+ *                    The insertion rates and p_del together must sum to < 1, and
+ *                    are required when max_drift > 0; leave 0 otherwise.
  *   p_ovr_true,
  *   p_ovr_false,
  *   p_ovr_erase    : how often a coded bit is overwritten with a fixed DT_TRUE /
- *                    DT_FALSE / DT_ERASURE, regardless of what was sent (the three
- *                    must sum to < 1). All 0 (the default) if there are no
- *                    overwrites; p_ovr_erase doubles as the plain erasure rate.
+ *                    DT_FALSE / DT_ERASURE, regardless of what was sent. The three
+ *                    must sum to < 1 (the remainder is the chance the bit arrives
+ *                    normally). All 0 (the default) if there are no overwrites;
+ *                    p_ovr_erase doubles as the plain erasure rate.
  *
  * Rough probabilities are fine; only their relative sizes matter.
  */

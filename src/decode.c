@@ -898,9 +898,16 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
   ctx->cost_bit[1][1] = -dt_log(p_ovr_true + pn * (1.0 - p_flip));
   ctx->cost_erase = -dt_log(p_ovr_erase); /* +inf when 0 (never read) */
   ctx->cost_keep = -dt_log(1.0 - p_ins - p_del);
-  ctx->cost_ins_t = -dt_log(p_ins_true);   /* consume a received 1 as insertion */
-  ctx->cost_ins_f = -dt_log(p_ins_false);  /* consume a received 0 as insertion */
-  ctx->cost_ins_e = -dt_log(p_ins_erase);  /* consume an erasure as insertion   */
+  /* Cost to consume a received bit as an insertion. The total insertion rate
+   * (p_ins_true + p_ins_false + p_ins_erase) sets how readily the decoder
+   * realigns; the per-value rates only bias which value it expects an inserted
+   * bit to carry. A data insertion's value is scored against a uniform 0/1 prior
+   * (the 2x), so an evenly-split rate gives -log(p_ins) - the same eagerness as a
+   * single combined rate, only tilting when the true/false rates differ. An
+   * erasure carries no value to score, so it is taken at its own rate. */
+  ctx->cost_ins_t = -dt_log(2.0 * p_ins_true);  /* consume a received 1 */
+  ctx->cost_ins_f = -dt_log(2.0 * p_ins_false); /* consume a received 0 */
+  ctx->cost_ins_e = -dt_log(p_ins_erase);       /* consume an erasure   */
   ctx->cost_del = -dt_log(p_del);
 
   /* Lock anchors (per step = n coded bits). A "kept" coded bit costs cost_keep

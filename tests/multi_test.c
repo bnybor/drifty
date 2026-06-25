@@ -464,18 +464,12 @@ int main(void) {
                                .p_erase = 0.08,
                                .min_frac = 0.6,
                                .label = "erasures"};
-    /* insertions only: cumulative positive drift past max_drift. The decoder's
-     * insertion metric now scores the inserted bit's value (an inserted symbol
-     * of a given value has rate p_ins_true/p_ins_false, half the total each for
-     * a uniform inserting channel), so it is marginally less eager to realign
-     * than the old value-agnostic metric; a few settled bits may slip on a
-     * heavy-insertion stream before it re-locks. */
+    /* insertions only: cumulative positive drift past max_drift */
     trials[n++] = (trial_desc){.kind = TK_RECOVER,
                                .seed = seed + 300 + (uint64_t)t,
                                .true_idx = t % N_DEC,
                                .p_ins = 0.01,
                                .min_frac = 0.4,
-                               .max_errs = 16,
                                .label = "insertions"};
     /* deletions only: cumulative negative drift */
     trials[n++] = (trial_desc){.kind = TK_RECOVER,
@@ -493,7 +487,6 @@ int main(void) {
                                .p_del = 0.003,
                                .p_erase = 0.02,
                                .min_frac = 0.25,
-                               .max_errs = 16, /* see "insertions" above */
                                .label = "combined"};
   }
   /* Light trials (no drift tracking) last. */

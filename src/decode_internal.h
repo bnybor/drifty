@@ -99,8 +99,14 @@ typedef struct {
    * ring_len = 2*decision_depth + slack (the backpointer ring stays
    * decision_depth - only the per-bit multi traceback uses it). */
   int ring_len;
-  /* Branch-metric constants, in cost (negative-log-likelihood) units. */
-  double cost_match, cost_miss, cost_erase, cost_keep, cost_ins, cost_del;
+  /* Branch-metric constants, in cost (negative-log-likelihood) units.
+   * cost_bit[expected][received] is the per-bit match/mismatch cost for an
+   * expected 0/1 against a received 0/1 (asymmetric: overwrites bias the two
+   * directions differently). Insertion cost depends on the inserted bit's value:
+   * cost_ins_t / cost_ins_f / cost_ins_e for a consumed 1 / 0 / DT_ERASURE. */
+  double cost_bit[2][2];
+  double cost_erase, cost_keep, cost_del;
+  double cost_ins_t, cost_ins_f, cost_ins_e;
   /* Lock detection reference costs (channel-derived, code-independent). */
   double expected_lock, expected_unlock;
 
@@ -130,6 +136,7 @@ typedef struct {
    * cost of aligning an expected 0/1 bit there, with in_range gating the ends. */
   double *match_cost0;     /* [n+4*max_drift] expected-bit-0 costs              */
   double *match_cost1;     /* [n+4*max_drift] expected-bit-1 costs              */
+  double *ins_cost;        /* [n+4*max_drift] cost to consume position as insert */
   signed char *in_range;   /* [n+4*max_drift] 1 if position buffered            */
   int match_lo;            /* absolute received index of match table position 0 */
 

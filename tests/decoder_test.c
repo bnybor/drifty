@@ -667,7 +667,8 @@ static void test_error_paths(void) {
       .decision_depth = 40,
       .max_drift = 4,
       .p_flip = 0.01,
-      .p_ins = 0.01,
+      .p_ins_true = 0.005,
+      .p_ins_false = 0.005,
       .p_del = 0.01,
   };
   check("decoder rejects null code",
@@ -687,28 +688,28 @@ static void test_error_paths(void) {
   p.p_flip = 0.0;
   check("decoder rejects p_flip 0", dt_stream_decoder_create(code, &p) == NULL);
   p = ok;
-  p.p_ins = p.p_del = 0.6;
+  p.p_ins_true = p.p_del = 0.6;
   check("decoder rejects p_ins+p_del>=1",
         dt_stream_decoder_create(code, &p) == NULL);
   p = ok;
-  p.p_erase = 1.0;
-  check("decoder rejects p_erase 1",
+  p.p_ovr_erase = 1.0;
+  check("decoder rejects p_ovr_erase 1",
         dt_stream_decoder_create(code, &p) == NULL);
-  /* p_ovr (override rate) is accepted in [0, 1), but p_erase + p_ovr must be
-   * < 1 so some "normal" transmission mass remains. */
+  /* Overwrite rates are accepted in [0, 1), but p_ovr_true + p_ovr_false +
+   * p_ovr_erase must be < 1 so some "normal" transmission mass remains. */
   p = ok;
-  p.p_ovr = 0.1;
+  p.p_ovr_true = 0.1;
   dt_stream_decoder *ovr_sd = dt_stream_decoder_create(code, &p);
   check("decoder accepts p_ovr in range", ovr_sd != NULL);
   dt_stream_decoder_destroy(ovr_sd);
   p = ok;
-  p.p_erase = 0.6;
-  p.p_ovr = 0.6;
-  check("decoder rejects p_erase+p_ovr>=1",
+  p.p_ovr_erase = 0.6;
+  p.p_ovr_true = 0.6;
+  check("decoder rejects p_ovr sum>=1",
         dt_stream_decoder_create(code, &p) == NULL);
   /* max_drift > 0 needs insertion/deletion probabilities. */
   p = ok;
-  p.p_ins = p.p_del = 0.0;
+  p.p_ins_true = p.p_ins_false = p.p_del = 0.0;
   check("decoder rejects drift without indel probs",
         dt_stream_decoder_create(code, &p) == NULL);
 

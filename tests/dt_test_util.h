@@ -260,9 +260,12 @@ static inline dt_stream_decoder *make_decoder(const dt_code *code, int depth,
       .decision_depth = depth,
       .max_drift = drift,
       .p_flip = p_flip,
-      .p_ins = p_ins,
+      /* insert_channel inserts uniformly-random 0/1 bits, so split the total
+       * insertion rate evenly between the true/false components. */
+      .p_ins_true = p_ins * 0.5,
+      .p_ins_false = p_ins * 0.5,
       .p_del = p_del,
-      .p_erase = p_erase,
+      .p_ovr_erase = p_erase,
   };
   return dt_stream_decoder_create(code, &params);
 }

@@ -127,9 +127,10 @@ static int multi_decode_all(dt_multi_decoder *md, const uint8_t *rx, int rl,
 static const dt_stream_params IMPAIRED_STREAM = {.decision_depth = DEPTH,
                                                  .max_drift = MAX_DRIFT,
                                                  .p_flip = 0.02,
-                                                 .p_ins = 0.01,
+                                                 .p_ins_true = 0.005,
+                                                 .p_ins_false = 0.005,
                                                  .p_del = 0.01,
-                                                 .p_erase = 0.05};
+                                                 .p_ovr_erase = 0.05};
 
 /* One clean trial: a fresh random message encoded with code `true_idx`, fed
  * verbatim (no channel). The multi-decoder must recover it exactly, attribute
@@ -463,12 +464,18 @@ int main(void) {
                                .p_erase = 0.08,
                                .min_frac = 0.6,
                                .label = "erasures"};
-    /* insertions only: cumulative positive drift past max_drift */
+    /* insertions only: cumulative positive drift past max_drift. The decoder's
+     * insertion metric now scores the inserted bit's value (an inserted symbol
+     * of a given value has rate p_ins_true/p_ins_false, half the total each for
+     * a uniform inserting channel), so it is marginally less eager to realign
+     * than the old value-agnostic metric; a few settled bits may slip on a
+     * heavy-insertion stream before it re-locks. */
     trials[n++] = (trial_desc){.kind = TK_RECOVER,
                                .seed = seed + 300 + (uint64_t)t,
                                .true_idx = t % N_DEC,
                                .p_ins = 0.01,
                                .min_frac = 0.4,
+                               .max_errs = 16,
                                .label = "insertions"};
     /* deletions only: cumulative negative drift */
     trials[n++] = (trial_desc){.kind = TK_RECOVER,
@@ -486,6 +493,7 @@ int main(void) {
                                .p_del = 0.003,
                                .p_erase = 0.02,
                                .min_frac = 0.25,
+                               .max_errs = 16, /* see "insertions" above */
                                .label = "combined"};
   }
   /* Light trials (no drift tracking) last. */

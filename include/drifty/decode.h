@@ -46,7 +46,7 @@ extern "C" {
  *   dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_stream_params){
  *       .decision_depth = 40,
  *       .max_drift      = 4,
- *       .p_flip = 0.01, .p_ins = 0.01, .p_del = 0.01,
+ *       .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
  *   });
  *   int n = dt_stream_decode(d, in, n_in, out, NULL, out_cap);
  *   while (dt_stream_decode_flush(d, out, out_cap) > 0) { }
@@ -93,14 +93,20 @@ typedef struct dt_stream_decoder dt_stream_decoder;
  *   max_drift      : how far alignment may slip from inserted/dropped bits before
  *                    the decoder loses track. 0 (the default) corrects flipped
  *                    bits only; 4-8 also recovers from insertions and deletions.
- *   p_ins, p_del   : how often a coded bit is inserted / dropped, per bit and at
- *                    any position (p_ins + p_del < 1). Required when
- *                    max_drift > 0; leave 0 otherwise.
- *   p_erase        : how often a received bit is DT_ERASURE. 0 (the default) if
- *                    you never mark erasures.
- *   p_ovr          : how often a coded bit is overwritten with a fixed value -
- *                    equally likely DT_TRUE or DT_FALSE, regardless of what was
- *                    sent. 0 (the default) if you never have overrides.
+ *   p_ins_true,
+ *   p_ins_false,
+ *   p_ins_erase    : how often a spurious DT_TRUE / DT_FALSE / DT_ERASURE bit is
+ *                    inserted into the stream, per bit and at any position.
+ *   p_del          : how often a coded bit is dropped, per bit and at any position
+ *                    (the insertion rates + p_del must sum to < 1). The insertion
+ *                    rates and p_del are required when max_drift > 0; leave 0
+ *                    otherwise.
+ *   p_ovr_true,
+ *   p_ovr_false,
+ *   p_ovr_erase    : how often a coded bit is overwritten with a fixed DT_TRUE /
+ *                    DT_FALSE / DT_ERASURE, regardless of what was sent (the three
+ *                    must sum to < 1). All 0 (the default) if there are no
+ *                    overwrites; p_ovr_erase doubles as the plain erasure rate.
  *
  * Rough probabilities are fine; only their relative sizes matter.
  */
@@ -108,11 +114,14 @@ typedef struct dt_stream_decoder dt_stream_decoder;
 typedef struct {
   int decision_depth;
   int max_drift;
-  double p_ins;
-  double p_del;
-  double p_erase;
   double p_flip;
-  double p_ovr;
+  double p_ins_true;
+  double p_ins_false;
+  double p_ins_erase;
+  double p_del;
+  double p_ovr_true;
+  double p_ovr_false;
+  double p_ovr_erase;
 } dt_stream_params;
 
 /*

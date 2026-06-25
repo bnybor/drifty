@@ -170,13 +170,14 @@ static void align_fill_into(const dt_decode_ctx *ctx, const uint8_t *expected,
   const int off = base - ctx->match_lo;
   const signed char *in_range = ctx->in_range;
   const double *match_cost0 = ctx->match_cost0, *match_cost1 = ctx->match_cost1;
-  const double cost_ins = ctx->cost_ins, cost_del = ctx->cost_del;
+  const double *ins_cost = ctx->ins_cost;
+  const double cost_del = ctx->cost_del;
   double *scratch = ctx->alignment;
 
   scratch[0] = 0.0;
   for (int consumed = 1; consumed <= max_consume; ++consumed) {
     scratch[consumed] = in_range[off + consumed - 1]
-                            ? scratch[consumed - 1] + cost_ins
+                            ? scratch[consumed - 1] + ins_cost[off + consumed - 1]
                             : INFINITY;
   }
   for (int j = 1; j <= n; ++j) {
@@ -192,7 +193,7 @@ static void align_fill_into(const dt_decode_ctx *ctx, const uint8_t *expected,
         const double align_cost =
             prev_row[consumed - 1] + match_cost[position]; /* match / sub */
         const double insert_cost =
-            cost_row[consumed - 1] + cost_ins; /* extra received bit */
+            cost_row[consumed - 1] + ins_cost[position]; /* extra received bit */
         if (align_cost < best) best = align_cost;
         if (insert_cost < best) best = insert_cost;
       }
@@ -210,8 +211,7 @@ static void align_fill_into(const dt_decode_ctx *ctx, const uint8_t *expected,
  * spans every (source drift, consumed) an edge can touch: n + 4*max_drift wide. */
 static void fill_match_costs(dt_decode_ctx *ctx) {
   const int window = ctx->n + 4 * ctx->max_drift;
-  const double keep = ctx->cost_keep, match = ctx->cost_match,
-               miss = ctx->cost_miss, erase = ctx->cost_erase;
+  const double keep = ctx->cost_keep, erase = ctx->cost_erase;
   ctx->match_lo = ctx->read_base - ctx->max_drift;
   for (int p = 0; p < window; ++p) {
     const int absolute = ctx->match_lo + p;
@@ -220,9 +220,11 @@ static void fill_match_costs(dt_decode_ctx *ctx) {
       if (received_bit == DT_ERASURE) {
         ctx->match_cost0[p] = keep + erase;
         ctx->match_cost1[p] = keep + erase;
+        ctx->ins_cost[p] = ctx->cost_ins_e;
       } else {
-        ctx->match_cost0[p] = keep + (received_bit == 0 ? match : miss);
-        ctx->match_cost1[p] = keep + (received_bit == 1 ? match : miss);
+        ctx->match_cost0[p] = keep + ctx->cost_bit[0][received_bit];
+        ctx->match_cost1[p] = keep + ctx->cost_bit[1][received_bit];
+        ctx->ins_cost[p] = received_bit ? ctx->cost_ins_t : ctx->cost_ins_f;
       }
       ctx->in_range[p] = 1;
     } else {
@@ -390,8 +392,8 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
   tr->next_metric = temp;
 }
 
-/* Fast path for max_drift == 0 with indels disabled (cost_ins == cost_del ==
- * +inf, i.e. p_ins == p_del == 0). The drift window is one wide and the
+/* Fast path for max_drift == 0 with indels disabled (all insertion costs and
+ * cost_del == +inf, i.e. p_ins == p_del == 0). The drift window is one wide and the
  * alignment is forced diagonal, so an edge's cost is just the sum of its n
  * per-bit match costs - a plain Viterbi butterfly with no alignment DP and no
  * drift loops. This yields exactly the general path's branch cost (final_row[n])
@@ -423,9 +425,9 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
         branch_cost = keep_total;
         for (int j = 0; j < n; ++j) {
           const uint8_t received_bit = ctx->received[base + j];
-          branch_cost += received_bit == DT_ERASURE       ? ctx->cost_erase
-                         : received_bit == expected[j]     ? ctx->cost_match
-                                                           : ctx->cost_miss;
+          branch_cost += received_bit == DT_ERASURE
+                             ? ctx->cost_erase
+                             : ctx->cost_bit[expected[j]][received_bit];
         }
       }
       if (branch_cost == INFINITY) {
@@ -482,9 +484,8 @@ static void snapshot_step(dt_decode_ctx *ctx, dt_trellis *trs, size_t n,
         branch = keep_total;
         for (int jj = 0; jj < nn; ++jj) {
           const uint8_t rb = ctx->received[base + jj];
-          branch += rb == DT_ERASURE       ? ctx->cost_erase
-                    : rb == pat[jj]          ? ctx->cost_match
-                                             : ctx->cost_miss;
+          branch += rb == DT_ERASURE ? ctx->cost_erase
+                                     : ctx->cost_bit[pat[jj]][rb];
         }
       }
       bslot[(size_t)p * stride + nn] = branch;
@@ -520,7 +521,8 @@ void dt_decode_step(dt_decode_ctx *ctx, dt_trellis *trs, size_t n) {
    * a dedicated butterfly skips the DP entirely (identical result). Otherwise the
    * per-(pattern, drift) alignment rows are computed once for all fused trellises,
    * then each scatters them - so decoding N codes runs the DP once, not N times. */
-  const int nodrift = ctx->max_drift == 0 && ctx->cost_ins == INFINITY &&
+  const int nodrift = ctx->max_drift == 0 && ctx->cost_ins_t == INFINITY &&
+                      ctx->cost_ins_f == INFINITY && ctx->cost_ins_e == INFINITY &&
                       ctx->cost_del == INFINITY;
   if (!nodrift) {
     align_precompute(ctx, trs, n);
@@ -848,17 +850,23 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
   const int decision_depth = params->decision_depth;
   const int max_drift = params->max_drift;
   const double p_flip = params->p_flip;
-  const double p_ins = params->p_ins;
+  const double p_ins_true = params->p_ins_true;
+  const double p_ins_false = params->p_ins_false;
+  const double p_ins_erase = params->p_ins_erase;
   const double p_del = params->p_del;
-  const double p_erase = params->p_erase;
-  const double p_ovr = params->p_ovr;
+  const double p_ovr_true = params->p_ovr_true;
+  const double p_ovr_false = params->p_ovr_false;
+  const double p_ovr_erase = params->p_ovr_erase;
+  const double p_ins = p_ins_true + p_ins_false + p_ins_erase;
+  const double p_ovr = p_ovr_true + p_ovr_false + p_ovr_erase;
 
   if (decision_depth < 1 || max_drift < 0) {
     return DT_ERR_ARG;
   }
-  if (!(p_flip > 0.0 && p_flip < 1.0) || !(p_erase >= 0.0 && p_erase < 1.0) ||
-      !(p_ovr >= 0.0 && p_ovr < 1.0) || !(p_erase + p_ovr < 1.0) ||
-      !(p_ins + p_del < 1.0) || p_ins < 0.0 || p_del < 0.0) {
+  if (!(p_flip > 0.0 && p_flip < 1.0) || p_ins_true < 0.0 ||
+      p_ins_false < 0.0 || p_ins_erase < 0.0 || p_del < 0.0 ||
+      p_ovr_true < 0.0 || p_ovr_false < 0.0 || p_ovr_erase < 0.0 ||
+      !(p_ovr < 1.0) || !(p_ins + p_del < 1.0)) {
     return DT_ERR_ARG;
   }
   /* Insertion/deletion probabilities are only consulted when tracking drift;
@@ -877,36 +885,47 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
    * (+ slack so the oldest needed slot is never aliased by the newest). */
   ctx->ring_len = 2 * decision_depth + 2;
 
-  /* Channel model: a coded bit is erased with prob p_erase; else overridden with
-   * prob p_ovr to a fixed value that is equally likely TRUE or FALSE (so it
-   * lands on the true bit with prob 1/2 either way); else transmitted (prob
-   * pn = 1 - p_erase - p_ovr) and flipped with prob p_flip. The override adds a
-   * p_ovr/2 floor to BOTH the match and miss likelihood. p_ovr = 0 reduces these
-   * to the plain (1 - p_erase) hard-decision metric. */
-  const double pn = 1.0 - p_erase - p_ovr;
-  ctx->cost_match = -dt_log(pn * (1.0 - p_flip) + 0.5 * p_ovr);
-  ctx->cost_miss = -dt_log(pn * p_flip + 0.5 * p_ovr);
-  ctx->cost_erase = -dt_log(p_erase); /* +inf when p_erase == 0 (never read) */
+  /* Channel model: a coded bit is overwritten - with a fixed DT_TRUE, DT_FALSE
+   * or DT_ERASURE (probs p_ovr_true / p_ovr_false / p_ovr_erase, regardless of
+   * what was sent) - else transmitted (prob pn = 1 - p_ovr) and flipped with
+   * prob p_flip. So receiving value r against an expected/sent bit b mixes the
+   * overwrite floor with the normal channel; cost_bit[b][r] is its -log. The
+   * overwrite-to-erasure rate p_ovr_erase doubles as the plain erasure rate. */
+  const double pn = 1.0 - p_ovr;
+  ctx->cost_bit[0][0] = -dt_log(p_ovr_false + pn * (1.0 - p_flip));
+  ctx->cost_bit[0][1] = -dt_log(p_ovr_true + pn * p_flip);
+  ctx->cost_bit[1][0] = -dt_log(p_ovr_false + pn * p_flip);
+  ctx->cost_bit[1][1] = -dt_log(p_ovr_true + pn * (1.0 - p_flip));
+  ctx->cost_erase = -dt_log(p_ovr_erase); /* +inf when 0 (never read) */
   ctx->cost_keep = -dt_log(1.0 - p_ins - p_del);
-  ctx->cost_ins = -dt_log(p_ins);
+  ctx->cost_ins_t = -dt_log(p_ins_true);   /* consume a received 1 as insertion */
+  ctx->cost_ins_f = -dt_log(p_ins_false);  /* consume a received 0 as insertion */
+  ctx->cost_ins_e = -dt_log(p_ins_erase);  /* consume an erasure as insertion   */
   ctx->cost_del = -dt_log(p_del);
 
   /* Lock anchors (per step = n coded bits). A "kept" coded bit costs cost_keep
-   * plus a match/miss term; the expected misfit fraction when locked is the
-   * model's miss rate among non-erased bits (= p_flip with no overrides), and we
-   * call it "unlocked" once misfit reaches the midpoint between that and 0.5
-   * (random). Erased bits contribute cost_erase to both. */
-  const double misfit_lock = (pn * p_flip + 0.5 * p_ovr) / (1.0 - p_erase);
+   * plus a match/miss term; with asymmetric overwrites we average the per-bit
+   * match and miss costs over the two sent values. The expected misfit fraction
+   * when locked is the model's miss rate among non-erased bits (= p_flip with no
+   * overwrites), and we call it "unlocked" once misfit reaches the midpoint
+   * between that and 0.5 (random). Erased bits contribute cost_erase to both. */
+  const double avg_match =
+      0.5 * (ctx->cost_bit[0][0] + ctx->cost_bit[1][1]);
+  const double avg_miss = 0.5 * (ctx->cost_bit[0][1] + ctx->cost_bit[1][0]);
+  const double misfit_lock =
+      (pn * p_flip + 0.5 * (p_ovr_true + p_ovr_false)) / (1.0 - p_ovr_erase);
   const double misfit_unlock = 0.5 * (misfit_lock + 0.5);
-  const double erase_term = p_erase > 0.0 ? p_erase * ctx->cost_erase : 0.0;
-  const double kept = 1.0 - p_erase;
-  ctx->expected_lock = ctx->n * (ctx->cost_keep + erase_term +
-                                 kept * ((1.0 - misfit_lock) * ctx->cost_match +
-                                         misfit_lock * ctx->cost_miss));
+  const double erase_term =
+      p_ovr_erase > 0.0 ? p_ovr_erase * ctx->cost_erase : 0.0;
+  const double kept = 1.0 - p_ovr_erase;
+  ctx->expected_lock =
+      ctx->n * (ctx->cost_keep + erase_term +
+                kept * ((1.0 - misfit_lock) * avg_match +
+                        misfit_lock * avg_miss));
   ctx->expected_unlock =
       ctx->n * (ctx->cost_keep + erase_term +
-                kept * ((1.0 - misfit_unlock) * ctx->cost_match +
-                        misfit_unlock * ctx->cost_miss));
+                kept * ((1.0 - misfit_unlock) * avg_match +
+                        misfit_unlock * avg_miss));
 
   ctx->steps = 0;
   ctx->decided = 0;
@@ -933,12 +952,13 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
       dt_malloc((size_t)(ctx->n + 1) * (max_consume + 1) * sizeof(double));
   ctx->match_cost0 = dt_malloc((size_t)window * sizeof(double));
   ctx->match_cost1 = dt_malloc((size_t)window * sizeof(double));
+  ctx->ins_cost = dt_malloc((size_t)window * sizeof(double));
   ctx->in_range = dt_malloc((size_t)window * sizeof(signed char));
   ctx->beta_a = dt_malloc(node_count * sizeof(double));
   ctx->beta_b = dt_malloc(node_count * sizeof(double));
   if (!ctx->shift || !ctx->received || !ctx->pattern_bits || !ctx->alignment ||
-      !ctx->match_cost0 || !ctx->match_cost1 || !ctx->in_range ||
-      !ctx->beta_a || !ctx->beta_b) {
+      !ctx->match_cost0 || !ctx->match_cost1 || !ctx->ins_cost ||
+      !ctx->in_range || !ctx->beta_a || !ctx->beta_b) {
     dt_decode_ctx_free(ctx);
     return DT_ERR_ALLOC;
   }
@@ -974,6 +994,7 @@ void dt_decode_ctx_free(dt_decode_ctx *ctx) {
   dt_free(ctx->align_shared);
   dt_free(ctx->match_cost0);
   dt_free(ctx->match_cost1);
+  dt_free(ctx->ins_cost);
   dt_free(ctx->in_range);
   dt_free(ctx->branch_ring);
   dt_free(ctx->beta_a);
@@ -985,6 +1006,7 @@ void dt_decode_ctx_free(dt_decode_ctx *ctx) {
   ctx->align_shared = NULL;
   ctx->match_cost0 = NULL;
   ctx->match_cost1 = NULL;
+  ctx->ins_cost = NULL;
   ctx->in_range = NULL;
   ctx->branch_ring = NULL;
   ctx->beta_a = NULL;

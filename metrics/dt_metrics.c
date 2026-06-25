@@ -450,9 +450,10 @@ static point_model make_model(const dt_code *code, axis channel_axis,
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = pegged,
-        .p_ins = pegged,
+        .p_ins_true = pegged * 0.5,
+        .p_ins_false = pegged * 0.5,
         .p_del = pegged,
-        .p_erase = pegged,
+        .p_ovr_erase = pegged,
     };
   } else {
     /* Matched model: the decoder anticipates the channel, setting the active
@@ -469,19 +470,23 @@ static point_model make_model(const dt_code *code, axis channel_axis,
     const double channel_del = channel_axis == AXIS_DELETE ? rate : 0.0;
     m.max_drift =
         (channel_axis == AXIS_INSERT || channel_axis == AXIS_DELETE) ? 8 : 0;
+    /* The channel inserts uniformly-random 0/1 bits, so split the total
+     * insertion rate evenly across the true/false components. */
+    const double ins_total = (m.max_drift > 0)
+                                 ? clamp_double(channel_ins, min_prob, drift_max)
+                                 : 0.0;
     m.params = (dt_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = (channel_axis == AXIS_FLIP)
                      ? clamp_double(rate, min_prob, max_prob)
                      : 0.005,
-        .p_ins = (m.max_drift > 0)
-                     ? clamp_double(channel_ins, min_prob, drift_max)
-                     : 0.0,
+        .p_ins_true = ins_total * 0.5,
+        .p_ins_false = ins_total * 0.5,
         .p_del = (m.max_drift > 0)
                      ? clamp_double(channel_del, min_prob, drift_max)
                      : 0.0,
-        .p_erase = (channel_axis == AXIS_ERASE)
+        .p_ovr_erase = (channel_axis == AXIS_ERASE)
                        ? clamp_double(rate, min_prob, max_prob)
                        : 0.0,
     };
@@ -633,7 +638,8 @@ static void format_row(char *out, size_t cap, const char *code_name,
   char head[192];
   snprintf(head, sizeof(head), "%s,%s,%s,%.6g,%.6g,%.6g,%.6g,%.6g,%d,%d,%d",
            code_name, METRIC_NAME[which_metric], AXIS_NAME[channel_axis], rate,
-           m->params.p_flip, m->params.p_ins, m->params.p_del, m->params.p_erase,
+           m->params.p_flip, m->params.p_ins_true + m->params.p_ins_false,
+           m->params.p_del, m->params.p_ovr_erase,
            m->decision_depth, m->max_drift, trials);
   if (which_metric == METRIC_EDIT) {
     double edit_rate =
@@ -769,7 +775,7 @@ int main(int argc, char **argv) {
 #endif
 
   printf(
-      "code,metric,axis,rate,dec_p_flip,dec_p_ins,dec_p_del,dec_p_erase,"
+      "code,metric,axis,rate,dec_p_flip,dec_p_ins,dec_p_del,dec_p_ovr_erase,"
       "decision_depth,max_drift,trials,ref_bits,edit_distance,edit_rate,"
       "lock_bits,mean_lock,detect_samples,mean_detect\n");
   fflush(stdout);

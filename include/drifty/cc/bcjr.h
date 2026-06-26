@@ -41,9 +41,7 @@ extern "C" {
  * decoder over a dt_ccode. Where the viterbi codec finds the single most likely
  * path, BCJR computes the per-bit a-posteriori probability of each input bit,
  * which makes it a natural soft-output decoder. Like viterbi it corrects flipped
- * and erased bits and does not track drift (inserted or dropped bits - for that
- * use the vindel or hybrid codecs). This is the single header to include for its
- * public API.
+ * and erased bits. This is the single header to include for its public API.
  *
  * Build a codec object over a dt_ccode with one of the factories below, drive it
  * through its vtable (see encoder.h / decoder.h / soft_decoder.h), and free it
@@ -51,11 +49,6 @@ extern "C" {
  *
  * NOTE: the maxir codec (cc/maxir.h) began as a copy of this one but diverged on
  * 2026-06-26 and is now independent - do not propagate bcjr changes to it.
- *
- * NOTE: the encoder is the standard convolutional encoder and is fully
- * implemented; the hard and soft decoders are stubs (the vtable plumbing is
- * wired and the channel model validated, but no bits come out until the
- * forward-backward algorithm lands - see src/cc/bcjr/decode.c).
  */
 
 /* clang-format off */
@@ -68,9 +61,6 @@ extern "C" {
  *                    sliding window the backward recursion spans. Bigger is more
  *                    reliable but slower to emit. Try ~6 * dt_ccode_k().
  *                    Required (must be >= 1).
- *   max_drift      : the BCJR codec does not track inserted or dropped bits, so
- *                    this must be 0 (the default); a nonzero value is rejected.
- *                    For drift tolerance use the vindel or hybrid codecs.
  *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
  *                    0.01 for 1%). Sets the branch likelihoods. Required.
  *   p_erase        : how often a received bit is DT_ERASURE. 0 (the default) if
@@ -81,7 +71,6 @@ extern "C" {
 /* clang-format on */
 typedef struct {
   int decision_depth;
-  int max_drift;
   float p_flip;
   float p_erase;
 } dt_bcjr_stream_params;

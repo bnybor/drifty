@@ -26,15 +26,12 @@
 
 /* clang-format off */
 /*
- * BCJR (max-log-MAP / forward-backward) decoder - no-drift core.
+ * BCJR (max-log-MAP / forward-backward) decoder.
  *
- * This is the synchronous-channel version of the decoder: it assumes the
- * received stream is bit-aligned with the encoder (no insertions or deletions),
- * so the trellis is just the encoder-state trellis and step t's coded group is
- * exactly the n received bits at offset t*n. Substitution noise and erasures are
- * handled; indels are NOT (max_drift must be 0). The drift-augmented version
- * layers a (state x drift) super-trellis, a per-edge bit-alignment DP, and
- * re-anchoring on top of this same forward/backward skeleton.
+ * The channel is synchronous: the received stream is bit-aligned with the
+ * encoder, so the trellis is just the encoder-state trellis and step t's coded
+ * group is exactly the n received bits at offset t*n. Substitution noise and
+ * erasures are handled.
  *
  * It is the max-product (max-log-MAP) sibling of a Viterbi decoder: instead of a
  * single most-likely traceback it runs a forward (alpha) AND a backward (beta)
@@ -110,7 +107,7 @@ struct dt_bcjr_stream_decoder {
   /* Received-bit buffer, kept as raw dt_t symbols (so DT_INVALID stays distinct
    * from DT_ERASURE, and c_invalid can be counted). read_base is the buffer
    * index of the next forward step's group; received_origin + read_base is the
-   * absolute bit offset of that group, which (no indels) equals steps * n. */
+   * absolute bit offset of that group, which equals steps * n. */
   dt_t *received;
   int received_capacity, received_length, read_base;
 
@@ -141,7 +138,7 @@ struct dt_bcjr_stream_decoder {
  * encoder's "no clean parity here" marker) is FREE so a poisoned run keeps lock
  * without favouring a value; anything else (DT_ERASURE, or a stray non-transmit
  * symbol) is the neutral but PENALISED erasure cost so a sustained burst reads
- * as a lost lock. (No cost_keep term: with no indels every bit is "kept".) */
+ * as a lost lock. */
 static float dt_bit_cost(const dt_bcjr_stream_decoder *d, dt_t s, int expected) {
   if (s & DT_BOOLEAN) {
     return ((int)(s & DT_VALUE) == expected) ? d->cost_match : d->cost_miss;
@@ -482,8 +479,7 @@ static void sweep_window(dt_bcjr_stream_decoder *d, long long emit_hi) {
     const int base = (int)(t * (long long)d->n - d->received_origin);
     compute_branches(d, base);
     compute_beta_step(d, t, alpha_t, emit_hi);
-    /* Hand beta_t to the next (older) step. No drift -> no frame shift, just
-     * swap the working vectors. */
+    /* Hand beta_t to the next (older) step by swapping the working vectors. */
     float *temp = d->beta_tilde;
     d->beta_tilde = d->beta_cur;
     d->beta_cur = temp;
@@ -496,8 +492,8 @@ static void sweep_window(dt_bcjr_stream_decoder *d, long long emit_hi) {
 
 /* -- forward pumping / output draining ------------------------------------- */
 
-/* Can the forward pass take another step? With no drift it just needs the next
- * group's n bits buffered; commit latency is enforced by the sweep trigger. */
+/* Can the forward pass take another step? It just needs the next group's n bits
+ * buffered; commit latency is enforced by the sweep trigger. */
 static int can_forward(const dt_bcjr_stream_decoder *d) {
   return d->received_length - d->read_base >= d->n;
 }
@@ -552,10 +548,6 @@ static int decoder_init(dt_bcjr_stream_decoder *d,
   const float p_erase = params->p_erase;
 
   if (decision_depth < 1) {
-    return DT_ERR_ARG;
-  }
-  /* This is the no-drift core: it cannot track insertions or deletions. */
-  if (params->max_drift != 0) {
     return DT_ERR_ARG;
   }
   if (!(p_flip > 0.0f && p_flip < 1.0f) ||

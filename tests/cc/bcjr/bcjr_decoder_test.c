@@ -27,11 +27,10 @@
 /*
  * Tests for the bcjr codec. The encoder is exercised for real (length, chunked
  * == one-shot, flush, error paths, all presets, and the public encoder vtable).
- * The decoder is the no-drift max-log-MAP core, so it is tested end to end:
+ * The decoder is the max-log-MAP core, so it is tested end to end:
  * channel-model validation, clean round trip and flip correction across the
  * presets, the soft-output invariants, the DT_INVALID poison contract and
  * erasure handling, blind acquisition, and the hard and soft decoder vtables.
- * The no-drift build must also reject a drift request (max_drift > 0).
  */
 
 #include "dt_test_util.h"
@@ -48,7 +47,7 @@ static const char *PRESET_NAMES[] = {"K3_R1_2", "K7_R1_2", "K7_R1_3",
                                      "K5_R1_5"};
 #define NUM_PRESETS ((int)(sizeof(PRESETS) / sizeof(PRESETS[0])))
 
-/* A valid channel model for the decoder stubs. */
+/* A valid channel model for the decoder. */
 static dt_bcjr_stream_params good_params(void) {
   return (dt_bcjr_stream_params){.decision_depth = 40, .p_flip = 0.01f};
 }
@@ -207,8 +206,7 @@ static int bcjr_decode_all(const dt_ccode *code, const dt_bcjr_stream_params *p,
   return total;
 }
 
-/* The engine validates its channel model and rejects bad settings with NULL.
- * The no-drift core also rejects a request to track drift. */
+/* The engine validates its channel model and rejects bad settings with NULL. */
 static void test_decoder_param_validation(void) {
   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
@@ -234,10 +232,6 @@ static void test_decoder_param_validation(void) {
   bad = p;
   bad.p_erase = 1.0f;
   check("create rejects p_erase == 1",
-        dt_bcjr_stream_decoder_create(code, &bad) == NULL);
-  bad = p;
-  bad.max_drift = 1;
-  check("no-drift build rejects max_drift > 0",
         dt_bcjr_stream_decoder_create(code, &bad) == NULL);
 
   dt_ccode_destroy(code);

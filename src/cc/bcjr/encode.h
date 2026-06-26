@@ -41,9 +41,8 @@ extern "C" {
 /*
  * bcjr - forward error correction for a stream of bits sent over a noisy
  * channel, using a convolutional code and BCJR (MAP / forward-backward)
- * decoding. It corrects flipped bits (it does not track inserted or dropped
- * bits - for that see the vindel or hybrid codecs) and, unlike viterbi, can
- * report a per-bit soft decision.
+ * decoding. It corrects flipped and erased bits and, unlike viterbi, can report
+ * a per-bit soft decision.
  *
  * This header is the sender's half: pick a code, then encode your bits (this
  * adds redundancy). The receiver's half - feeding the received bits to a decoder

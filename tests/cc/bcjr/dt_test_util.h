@@ -26,11 +26,10 @@
 
 /*
  * Shared test utilities for the bcjr suite: a small soft-assertion framework
- * plus the PRNG and encode helpers the test files have in common. The encoder is
- * fully implemented; the decoders are stubs, so the helpers here cover the
- * encoder and leave decode exercising to the test bodies. Header-only; every
- * helper is `static inline` so a test file that does not use one draws no
- * -Wunused warning.
+ * plus the PRNG and encode helpers the test files have in common. They cover the
+ * encoder; each test body drives the decoder directly. Header-only; every helper
+ * is `static inline` so a test file that does not use one draws no -Wunused
+ * warning.
  */
 
 #ifndef DT_BCJR_TEST_UTIL_H

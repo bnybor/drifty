@@ -47,7 +47,7 @@ extern "C" {
  * received stream, correcting flipped and erased bits. Unlike the Viterbi
  * decoder, which returns the single most likely path, BCJR weighs every path to
  * give each input bit's a-posteriori probability - so a soft decision falls out
- * of the same recursions. It does not track inserted or dropped bits.
+ * of the same recursions.
  *
  *   dt_bcjr_stream_decoder *d = dt_bcjr_stream_decoder_create(code,
  *       &(dt_bcjr_stream_params){ .decision_depth = 40, .p_flip = 0.01 });
@@ -59,9 +59,9 @@ extern "C" {
  * decoder is freed. dt_bcjr_stream_decoder is an opaque handle. Bits crossing
  * this boundary are dt_t symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  *
- * STUB: the forward-backward recursions are not yet implemented. The handle
- * is created and the channel model validated, but decode/flush currently emit
- * no bits.
+ * Decisions are committed on a sliding window: a bit is emitted only once the
+ * forward frontier is decision_depth steps past it, so output trails input and
+ * the first ~decision_depth decoded bits are unreliable warm-up.
  */
 /* clang-format on */
 typedef struct dt_bcjr_stream_decoder dt_bcjr_stream_decoder;

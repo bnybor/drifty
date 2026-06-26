@@ -30,6 +30,7 @@
 #include <drifty/ccode.h>
 #include <drifty/decoder.h>
 #include <drifty/encoder.h>
+#include <drifty/soft_decoder.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -91,6 +92,10 @@ void dt_hybrid_encoder_destroy(dt_encoder *enc);
 dt_decoder *dt_hybrid_decoder_create(const dt_ccode *code,
                                      const dt_hybrid_stream_params *params);
 void dt_hybrid_decoder_destroy(dt_decoder *dec);
+
+dt_soft_decoder *dt_hybrid_soft_decoder_create(
+    const dt_ccode *code, const dt_hybrid_stream_params *params);
+void dt_hybrid_soft_decoder_destroy(dt_soft_decoder *dec);
 
 #ifdef __cplusplus
 }

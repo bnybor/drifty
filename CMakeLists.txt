@@ -31,7 +31,8 @@ add_library(drifty_bare_obj OBJECT
     src/hybrid/decode.c
     src/hybrid/compare.c
     src/hybrid/multi_decode.c
-    src/hybrid/multi_encode.c)
+    src/hybrid/multi_encode.c
+    src/hybrid.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
@@ -52,6 +53,9 @@ set(_dt_public_symbols
     dt_ccode_encode dt_ccode_encode_flush dt_ccode_k dt_ccode_n
     dt_compare dt_compare_max_len dt_compare_min_len
     dt_detect dt_detect_max_len dt_detect_min_len dt_detect_sequential
+    dt_hybrid_encoder_create dt_hybrid_encoder_destroy
+    dt_hybrid_decoder_create dt_hybrid_decoder_destroy
+    dt_hybrid_soft_decoder_create dt_hybrid_soft_decoder_destroy
     dt_multi_create dt_multi_decode dt_multi_decode_flush dt_multi_destroy
     dt_multi_encode dt_multi_encode_create dt_multi_encode_destroy
     dt_multi_encode_flush

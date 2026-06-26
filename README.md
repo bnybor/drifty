@@ -36,7 +36,7 @@ Build one with its `dt_<codec>_*_create` factories — `dt_viterbi_*`,
 the code type and the encoder, so you can swap codecs without re-encoding. See
 [Choosing a codec](#choosing-a-codec).
 
-Bits are carried one per byte as `dt_t` symbols: `DT_FALSE`, `DT_TRUE`, or
+Bits are carried one per byte as `dt_bit` symbols: `DT_FALSE`, `DT_TRUE`, or
 `DT_ERASURE` to mark a received bit as lost (defined in `<drifty/bit.h>`).
 
 ## Choosing a codec
@@ -82,7 +82,7 @@ dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
 /* 2. Encode. Each interface is a vtable you call through: begin writes any
  *    preamble, encode appends coded bits, finalize flushes the tail. */
 dt_encoder *enc = dt_hybrid_encoder_create(code);
-dt_t coded[CAP];                  /* size ~ (n_bits + K) * dt_ccode_n(code) */
+dt_bit coded[CAP];                /* size ~ (n_bits + K) * dt_ccode_n(code) */
 int clen  = enc->begin(enc, coded, CAP);
 clen     += enc->encode(enc, coded + clen, CAP - clen, bits, n_bits);
 clen     += enc->finalize(enc, coded + clen, CAP - clen);
@@ -94,7 +94,7 @@ dt_decoder *dec = dt_hybrid_decoder_create(code, &(dt_hybrid_stream_params){
     .max_drift      = 4,    /* set 0 to correct flips only         */
     .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
 });
-dt_t out[OUT];
+dt_bit out[OUT];
 int n  = dec->begin(dec, out, OUT);
 n     += dec->decode(dec, out + n, OUT - n, received, n_received);
 /* ... call decode again as more bits arrive ... */

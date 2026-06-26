@@ -72,12 +72,12 @@ extern "C" {
 typedef struct dt_decoder_t dt_decoder;
 struct dt_decoder_t {
   // Initialise the decoder and write any preamble. Call once, before decode().
-  int (*begin)(dt_decoder *dec, dt_t *dst, size_t dst_len);
+  int (*begin)(dt_decoder *dec, dt_bit *dst, size_t dst_len);
   // Decode src_len received bits, writing recovered bits to dst.
-  int (*decode)(dt_decoder *dec, dt_t *dst, size_t dst_len, const dt_t *src,
+  int (*decode)(dt_decoder *dec, dt_bit *dst, size_t dst_len, const dt_bit *src,
                 size_t src_len);
   // Drain bits still in flight. Call once, at end of stream.
-  int (*finalize)(dt_decoder *dec, dt_t *dst, size_t dst_len);
+  int (*finalize)(dt_decoder *dec, dt_bit *dst, size_t dst_len);
 
   // implementation-private state; do not access
   void *data;

@@ -38,8 +38,8 @@
 #include "viterbi/decode.h" /* dt_viterbi_stream_decoder + dt_viterbi_stream_decode* */
 #include <drifty/stdlib.h>
 
-/* dt_t is uint8_t (bit.h), the same element type the engine's encode/decode
- * buffers use, so the dt_t* <-> uint8_t* hand-offs below need no conversion. */
+/* dt_bit is uint8_t (bit.h), the same element type the engine's encode/decode
+ * buffers use, so the dt_bit* <-> uint8_t* hand-offs below need no conversion. */
 
 /* -- encoder --------------------------------------------------------------- */
 
@@ -48,7 +48,7 @@ typedef struct {
   int state;            /* running shift-register state across encode calls */
 } viterbi_encoder;
 
-static int viterbi_encoder_begin(dt_encoder *enc, dt_t *dst, size_t dst_len) {
+static int viterbi_encoder_begin(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
   viterbi_encoder *st = enc->data;
   st->state = 0; /* fresh stream; the convolutional encoder needs no preamble */
   (void)dst;
@@ -56,8 +56,8 @@ static int viterbi_encoder_begin(dt_encoder *enc, dt_t *dst, size_t dst_len) {
   return 0;
 }
 
-static int viterbi_encoder_encode(dt_encoder *enc, dt_t *dst, size_t dst_len,
-                                  const dt_t *src, size_t src_len) {
+static int viterbi_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
+                                  const dt_bit *src, size_t src_len) {
   viterbi_encoder *st = enc->data;
   /* The engine writes src_len * n coded bits and does not bound-check, so gate
    * it on the caller's capacity here. */
@@ -67,7 +67,7 @@ static int viterbi_encoder_encode(dt_encoder *enc, dt_t *dst, size_t dst_len,
   return dt_viterbi_encode(st->code, src, (int)src_len, &st->state, dst);
 }
 
-static int viterbi_encoder_finalize(dt_encoder *enc, dt_t *dst, size_t dst_len) {
+static int viterbi_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
   viterbi_encoder *st = enc->data;
   /* Flush writes (K-1) * n trailing bits to drain the register back to state 0. */
   if ((size_t)(dt_ccode_k(st->code) - 1) * (size_t)dt_ccode_n(st->code) >
@@ -107,20 +107,20 @@ void dt_viterbi_encoder_destroy(dt_encoder *enc) {
 
 /* -- decoder --------------------------------------------------------------- */
 
-static int viterbi_decoder_begin(dt_decoder *dec, dt_t *dst, size_t dst_len) {
+static int viterbi_decoder_begin(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
   (void)dec;
   (void)dst;
   (void)dst_len;
   return 0; /* no preamble to emit */
 }
 
-static int viterbi_decoder_decode(dt_decoder *dec, dt_t *dst, size_t dst_len,
-                                  const dt_t *src, size_t src_len) {
+static int viterbi_decoder_decode(dt_decoder *dec, dt_bit *dst, size_t dst_len,
+                                  const dt_bit *src, size_t src_len) {
   dt_viterbi_stream_decoder *sd = dec->data;
   return dt_viterbi_stream_decode(sd, src, (int)src_len, dst, (int)dst_len);
 }
 
-static int viterbi_decoder_finalize(dt_decoder *dec, dt_t *dst, size_t dst_len) {
+static int viterbi_decoder_finalize(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
   dt_viterbi_stream_decoder *sd = dec->data;
   return dt_viterbi_stream_decode_flush(sd, dst, (int)dst_len);
 }

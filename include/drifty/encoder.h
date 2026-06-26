@@ -60,12 +60,12 @@ extern "C" {
 typedef struct dt_encoder_t dt_encoder;
 struct dt_encoder_t {
   // Initialise the encoder and write any preamble. Call once, before encode().
-  int (*begin)(dt_encoder *enc, dt_t *dst, size_t dst_len);
+  int (*begin)(dt_encoder *enc, dt_bit *dst, size_t dst_len);
   // Encode src_len input bits, appending the coded bits to dst.
-  int (*encode)(dt_encoder *enc, dt_t *dst, size_t dst_len, const dt_t *src,
+  int (*encode)(dt_encoder *enc, dt_bit *dst, size_t dst_len, const dt_bit *src,
                 size_t src_len);
   // Flush in-progress bits and write the trailer. Call once, at end of stream.
-  int (*finalize)(dt_encoder *enc, dt_t *dst, size_t dst_len);
+  int (*finalize)(dt_encoder *enc, dt_bit *dst, size_t dst_len);
 
   // implementation-private state; do not access
   void *data;

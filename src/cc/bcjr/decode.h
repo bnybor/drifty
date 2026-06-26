@@ -57,7 +57,7 @@ extern "C" {
  *
  * `code` must be the same one the sender used, and must stay alive until the
  * decoder is freed. dt_bcjr_stream_decoder is an opaque handle. Bits crossing
- * this boundary are dt_t symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
+ * this boundary are dt_bit symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  *
  * Decisions are committed on a sliding window: a bit is emitted only once the
  * forward frontier is decision_depth steps past it, so output trails input and

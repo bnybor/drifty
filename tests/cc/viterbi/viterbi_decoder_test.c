@@ -28,7 +28,7 @@
  * Tests for the viterbi codec - a plain Viterbi hard-decision decoder - through
  * its encoder (dt_viterbi_encode) and streaming decoder (dt_viterbi_stream_*):
  * chunked encoding, clean decoding, flip correction, erasure handling, the
- * standard presets, and argument handling. Bits crossing the API are dt_t
+ * standard presets, and argument handling. Bits crossing the API are dt_bit
  * symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  *
  * The decoder starts from the known encoder state 0, so it needs no

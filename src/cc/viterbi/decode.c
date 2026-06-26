@@ -67,9 +67,9 @@
  * cannot overflow. */
 #define VIT_INF INT_MAX
 
-/* viterbi speaks dt_t bit symbols at its boundary; decisions go out as the
+/* viterbi speaks dt_bit bit symbols at its boundary; decisions go out as the
  * two bound booleans (the decoder always commits a 0 or 1, never an erasure). */
-static dt_t vit_to_dt(unsigned int bit) { return bit ? DT_TRUE : DT_FALSE; }
+static dt_bit vit_to_dt(unsigned int bit) { return bit ? DT_TRUE : DT_FALSE; }
 
 /* Backpointer for one destination node: the predecessor state it came from and
  * the input bit of the winning edge, packed into one 16-bit word (layout
@@ -103,7 +103,7 @@ struct dt_viterbi_stream_decoder {
 
   /* Received-bit buffer: valid symbols live in received[0 .. received_length);
    * read_base is the index of the current step's first unconsumed bit. Symbols
-   * are stored as dt_t so erasures survive buffering and are interpreted (as
+   * are stored as dt_bit so erasures survive buffering and are interpreted (as
    * neutral) only in the branch metric. */
   uint8_t *received;
   int received_capacity, received_length, read_base;
@@ -144,7 +144,7 @@ static int vit_feed(dt_viterbi_stream_decoder *d, const uint8_t *in, int n_in) {
 /* -- forward pass ---------------------------------------------------------- */
 
 /* Branch metric for the edge whose expected codeword is `expected` (n raw 0/1
- * bits) against the received group `group` (n dt_t symbols): the Hamming
+ * bits) against the received group `group` (n dt_bit symbols): the Hamming
  * distance over the bits that carry a value. An erasure / non-boolean is
  * evidence-free and adds nothing, so it is neutral across every competing
  * edge. */

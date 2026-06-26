@@ -33,7 +33,7 @@
 
 #include "../ccode_internal.h"
 
-/* vindel speaks dt_t bit symbols (bit.h) at its public boundary, but the ported
+/* vindel speaks dt_bit bit symbols (bit.h) at its public boundary, but the ported
  * drift_viterbi engine works internally in that algorithm's 0 / 1 / 0xFF
  * convention (a coded/received bit is 0 or 1, an erasure is the 0xFF sentinel).
  * Convert at the two edges: received bits on the way in (decode_feed), decided
@@ -41,13 +41,13 @@
  * already raw 0/1, so the cost model is untouched. */
 #define VIN_ERASURE 0xFFu
 
-static uint8_t vin_from_dt(dt_t s) {
+static uint8_t vin_from_dt(dt_bit s) {
   /* DT_TRUE/DT_FALSE carry the value in their low bit; anything else (DT_ERASURE,
    * DT_INVALID, ...) is treated as a lost bit. */
   return DT_IS_BIT(s) ? (uint8_t)DT_BIT(s) : (uint8_t)VIN_ERASURE;
 }
 
-static dt_t vin_to_dt(unsigned char bit) { return bit ? DT_TRUE : DT_FALSE; }
+static dt_bit vin_to_dt(unsigned char bit) { return bit ? DT_TRUE : DT_FALSE; }
 
 /*
  * Opt-in internal assertions. The core is built -ffreestanding -fno-builtin
@@ -850,7 +850,7 @@ static int decode_feed(dt_vindel_stream_decoder *d, const uint8_t *in,
   if (status < 0) {
     return status;
   }
-  /* Normalise the dt_t received symbols into the engine's 0/1/0xFF convention. */
+  /* Normalise the dt_bit received symbols into the engine's 0/1/0xFF convention. */
   for (int i = 0; i < n_in; ++i) {
     d->received[d->received_length + i] = vin_from_dt(in[i]);
   }

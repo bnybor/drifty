@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 /*
- * dt_t - the bit symbol the whole drifty API speaks. Every input bit, coded
+ * dt_bit - the bit symbol the whole drifty API speaks. Every input bit, coded
  * bit, and decoded bit is one byte holding one of the DT_ symbols below (one
  * bit per byte, never a packed bitfield).
  *
@@ -51,8 +51,11 @@ extern "C" {
  * the predicates are plain mask tests. To recover a 0/1 from DT_FALSE/DT_TRUE,
  * guard with DT_IS_BIT() and take DT_BIT().
  */
-typedef uint8_t dt_t; /* disposition of one bit position; uint8_t for
-                         slot-struct footprint */
+/* disposition of one bit position; uint8_t for slot-struct footprint. dt_bit is
+ * the everyday spelling used throughout the codebase; dt_bit_t is its underlying
+ * typedef name. */
+typedef uint8_t dt_bit_t;
+typedef dt_bit_t dt_bit;
 
 /* --- structural flag bits: each is one axis from the model --- */
 

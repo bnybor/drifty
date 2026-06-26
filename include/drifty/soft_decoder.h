@@ -80,10 +80,10 @@ struct dt_soft_decoder_out_t {
 typedef struct dt_soft_decoder_t dt_soft_decoder;
 struct dt_soft_decoder_t {
   // Initialise the decoder and write any preamble. Call once, before decode().
-  int (*begin)(dt_soft_decoder *dec, dt_t *dst, size_t dst_len);
+  int (*begin)(dt_soft_decoder *dec, dt_bit *dst, size_t dst_len);
   // Decode src_len received bits, writing up to dst_len soft records to dst.
   int (*decode)(dt_soft_decoder *dec, dt_soft_decoder_out *dst, size_t dst_len,
-                const dt_t *src, size_t src_len);
+                const dt_bit *src, size_t src_len);
   // Drain records still in flight. Call once, at end of stream.
   int (*finalize)(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
                   size_t dst_len);

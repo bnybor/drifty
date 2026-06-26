@@ -29,7 +29,7 @@
  * through its encoder (dt_vindel_encode) and streaming decoder
  * (dt_vindel_stream_*): chunked encoding, clean and noisy stream decoding
  * (erasures, indels, re-anchoring, blind acquisition), the standard presets,
- * lock probability, and argument handling. Bits crossing the API are dt_t
+ * lock probability, and argument handling. Bits crossing the API are dt_bit
  * symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  */
 

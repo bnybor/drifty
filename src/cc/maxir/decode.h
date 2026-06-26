@@ -60,7 +60,7 @@ extern "C" {
  *
  * `code` must be the same one the sender used, and must stay alive until the
  * decoder is freed. dt_maxir_stream_decoder is an opaque handle. Bits crossing
- * this boundary are dt_t symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
+ * this boundary are dt_bit symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  *
  * STUB: the forward-backward recursions are not yet implemented. The handle
  * is created and the channel model validated, but decode/flush currently emit

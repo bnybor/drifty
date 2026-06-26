@@ -61,7 +61,7 @@ extern "C" {
  * `code` must be the same one the sender used, and must stay alive until the
  * decoder is freed. dt_vindel_stream_decoder is an opaque handle.
  *
- * Bits crossing this boundary are dt_t symbols (DT_FALSE / DT_TRUE, and
+ * Bits crossing this boundary are dt_bit symbols (DT_FALSE / DT_TRUE, and
  * DT_ERASURE on input to mark a lost bit); the engine converts to and from its
  * internal representation at the edges.
  */

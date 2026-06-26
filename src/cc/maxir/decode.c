@@ -107,11 +107,11 @@ struct dt_maxir_stream_decoder {
   long long committed;       /* decisions emitted to the FIFO (next step)    */
   long long received_origin; /* absolute stream offset of received[0]        */
 
-  /* Received-bit buffer, kept as raw dt_t symbols (so DT_INVALID stays distinct
+  /* Received-bit buffer, kept as raw dt_bit symbols (so DT_INVALID stays distinct
    * from DT_ERASURE, and c_invalid can be counted). read_base is the buffer
    * index of the next forward step's group; received_origin + read_base is the
    * absolute bit offset of that group, which (no indels) equals steps * n. */
-  dt_t *received;
+  dt_bit *received;
   int received_capacity, received_length, read_base;
 
   /* Forward trellis working state over the num_states nodes. */
@@ -131,7 +131,7 @@ struct dt_maxir_stream_decoder {
   /* Output FIFO: decisions a sweep produced but the caller has not taken yet.
    * A sweep only runs when this is empty, so it is filled in step order and
    * drained from the head. */
-  dt_t *fifo_sym;
+  dt_bit *fifo_sym;
   dt_maxir_decode_details *fifo_det;
   int fifo_head, fifo_count;
 };
@@ -142,7 +142,7 @@ struct dt_maxir_stream_decoder {
  * without favouring a value; anything else (DT_ERASURE, or a stray non-transmit
  * symbol) is the neutral but PENALISED erasure cost so a sustained burst reads
  * as a lost lock. (No cost_keep term: with no indels every bit is "kept".) */
-static float dt_bit_cost(const dt_maxir_stream_decoder *d, dt_t s, int expected) {
+static float dt_bit_cost(const dt_maxir_stream_decoder *d, dt_bit s, int expected) {
   if (s & DT_BOOLEAN) {
     return ((int)(s & DT_VALUE) == expected) ? d->cost_match : d->cost_miss;
   }
@@ -153,7 +153,7 @@ static float dt_bit_cost(const dt_maxir_stream_decoder *d, dt_t s, int expected)
 }
 
 /* True iff the received symbol is the encoder's DT_INVALID poison marker. */
-static int dt_is_invalid_sym(dt_t s) {
+static int dt_is_invalid_sym(dt_bit s) {
   return (s & DT_BOUND) && !(s & DT_BOOLEAN);
 }
 
@@ -214,7 +214,7 @@ static int reserve_received(dt_maxir_stream_decoder *d, int extra) {
     if (new_capacity < d->received_length + extra) {
       new_capacity = d->received_length + extra;
     }
-    dt_t *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
+    dt_bit *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
       return DT_ERR_ALLOC;
     }
@@ -401,7 +401,7 @@ static void finalize_emit(dt_maxir_stream_decoder *d, long long t, float m0,
    * downstream keeps clean parity elsewhere and resolves to its value. A strict
    * left-to-right reading of decode.h (test c_invalid before the tie) would
    * instead mark such downstream clean bits DT_INVALID and lose them. */
-  dt_t sym;
+  dt_bit sym;
   if (c_lock < DT_MAXIR_LOCK_MIN) {
     sym = DT_ABSENT;
   } else if (m0 != m1) {
@@ -613,7 +613,7 @@ static int decoder_init(dt_maxir_stream_decoder *d,
   d->branch = dt_malloc((size_t)edges * sizeof(float));
   d->alpha_ring = dt_malloc((size_t)rl * num_states * sizeof(float));
   d->lock_ring = dt_malloc((size_t)rl * sizeof(float));
-  d->fifo_sym = dt_malloc((size_t)rl * sizeof(dt_t));
+  d->fifo_sym = dt_malloc((size_t)rl * sizeof(dt_bit));
   d->fifo_det = dt_malloc((size_t)rl * sizeof(dt_maxir_decode_details));
   if (!d->received || !d->metric || !d->next_metric || !d->beta_tilde ||
       !d->beta_cur || !d->branch || !d->alpha_ring || !d->lock_ring ||

@@ -42,13 +42,13 @@ extern "C" {
  * into maxir (or vice versa), and do not assume the two stay in sync; evolve
  * maxir on its own terms.
  *
- * The maxir codec - a convolutional encoder and MAXIR (MAP / forward-backward)
- * decoder over a dt_ccode. Where the viterbi codec finds the single most likely
- * path, MAXIR computes the per-bit a-posteriori probability of each input bit,
- * which makes it a natural soft-output decoder. Like viterbi it corrects flipped
- * and erased bits and does not track drift (inserted or dropped bits - for that
- * use the vindel or hybrid codecs). This is the single header to include for its
- * public API.
+ * The maxir codec - a convolutional encoder and MAXIR (max-log-MAP /
+ * forward-backward) decoder over a dt_ccode. Where the viterbi codec finds the
+ * single most likely path, MAXIR computes the per-bit a-posteriori weight of each
+ * input bit, which makes it a natural soft-output decoder. It corrects flipped
+ * and erased bits, tracks drift (inserted or dropped bits) like the vindel and
+ * hybrid codecs, and re-acquires sync after a sustained loss of lock. This is the
+ * single header to include for its public API.
  *
  * Build a codec object over a dt_ccode with one of the factories below, drive it
  * through its vtable (see encoder.h / decoder.h / soft_decoder.h), and free it
@@ -65,13 +65,27 @@ extern "C" {
  *                    sliding window the backward recursion spans. Bigger is more
  *                    reliable but slower to emit. Try ~6 * dt_ccode_k().
  *                    Required (must be >= 1).
- *   max_drift      : the MAXIR codec does not track inserted or dropped bits, so
- *                    this must be 0 (the default); a nonzero value is rejected.
- *                    For drift tolerance use the vindel or hybrid codecs.
+ *   max_drift      : how far alignment may slip from inserted/dropped bits before
+ *                    the decoder loses track. 0 (the default) corrects flipped
+ *                    bits only; 4-8 also recovers from insertions and deletions.
  *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
- *                    0.01 for 1%). Sets the branch likelihoods. Required.
- *   p_erase        : how often a received bit is DT_ERASURE. 0 (the default) if
- *                    you never mark erasures.
+ *                    0.01 for 1%). Required.
+ *   p_ins_true,
+ *   p_ins_false,
+ *   p_ins_erase    : how often a spurious DT_TRUE / DT_FALSE / DT_ERASURE bit is
+ *                    inserted into the stream, per bit and at any position. Their
+ *                    sum is the overall insertion rate; it sets how readily the
+ *                    decoder realigns, while the split only biases which value it
+ *                    expects an inserted bit to carry. Required when max_drift > 0.
+ *   p_del          : how often a coded bit is dropped, per bit and at any position.
+ *                    The insertion rates and p_del together must sum to < 1, and
+ *                    are required when max_drift > 0; leave 0 otherwise.
+ *   p_ovr_true,
+ *   p_ovr_false,
+ *   p_ovr_erase    : how often a coded bit is overwritten with a fixed DT_TRUE /
+ *                    DT_FALSE / DT_ERASURE, regardless of what was sent. The three
+ *                    must sum to < 1. All 0 (the default) if there are no
+ *                    overwrites; p_ovr_erase doubles as the plain erasure rate.
  *
  * Rough probabilities are fine; only their relative sizes matter.
  */
@@ -80,7 +94,13 @@ typedef struct {
   int decision_depth;
   int max_drift;
   float p_flip;
-  float p_erase;
+  float p_ins_true;
+  float p_ins_false;
+  float p_ins_erase;
+  float p_del;
+  float p_ovr_true;
+  float p_ovr_false;
+  float p_ovr_erase;
 } dt_maxir_stream_params;
 
 /* Build an encoder over `code`. Returns NULL on a bad argument or out of

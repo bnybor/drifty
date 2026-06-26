@@ -46,14 +46,17 @@ extern "C" {
  *
  * The receiver's half of the maxir codec (the sender's half is in encode.h).
  *
- * A MAXIR (MAP / forward-backward) decoder: recover the original bits from a
- * received stream, correcting flipped and erased bits. Unlike the Viterbi
- * decoder, which returns the single most likely path, MAXIR weighs every path to
- * give each input bit's a-posteriori probability - so a soft decision falls out
- * of the same recursions. It does not track inserted or dropped bits.
+ * A MAXIR (max-log-MAP / forward-backward) decoder: recover the original bits
+ * from a received stream, correcting flipped and erased bits AND inserted/dropped
+ * bits (drift) over a (state x drift) super-trellis. Unlike the Viterbi decoder,
+ * which returns the single most likely path, MAXIR weighs every path to give each
+ * input bit's a-posteriori weight - so a soft decision falls out of the same
+ * recursions. It re-acquires sync after a sustained loss of lock.
  *
  *   dt_maxir_stream_decoder *d = dt_maxir_stream_decoder_create(code,
- *       &(dt_maxir_stream_params){ .decision_depth = 40, .p_flip = 0.01 });
+ *       &(dt_maxir_stream_params){ .decision_depth = 40, .p_flip = 0.01,
+ *           .max_drift = 4, .p_ins_true = 0.005, .p_ins_false = 0.005,
+ *           .p_del = 0.01 });
  *   int n = dt_maxir_stream_decode(d, in, n_in, out, NULL, out_cap);
  *   while (dt_maxir_stream_decode_flush(d, out, NULL, out_cap) > 0) { }
  *   dt_maxir_stream_decoder_destroy(d);
@@ -62,9 +65,9 @@ extern "C" {
  * decoder is freed. dt_maxir_stream_decoder is an opaque handle. Bits crossing
  * this boundary are dt_bit symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  *
- * STUB: the forward-backward recursions are not yet implemented. The handle
- * is created and the channel model validated, but decode/flush currently emit
- * no bits.
+ * Decisions are committed on a sliding window: a bit is emitted only once the
+ * forward frontier is decision_depth steps past it, so output trails input and
+ * the first ~decision_depth decoded bits are unreliable warm-up.
  */
 /* clang-format on */
 typedef struct dt_maxir_stream_decoder dt_maxir_stream_decoder;

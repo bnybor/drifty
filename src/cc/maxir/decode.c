@@ -26,52 +26,60 @@
 
 /* clang-format off */
 /*
- * MAXIR (max-log-MAP / forward-backward) decoder - no-drift core.
+ * DIVERGED FROM BCJR (2026-06-26): maxir is an independent fork of bcjr - do not
+ * port bcjr changes here. See include/drifty/cc/maxir.h.
  *
- * This is the synchronous-channel version of the decoder: it assumes the
- * received stream is bit-aligned with the encoder (no insertions or deletions),
- * so the trellis is just the encoder-state trellis and step t's coded group is
- * exactly the n received bits at offset t*n. Substitution noise and erasures are
- * handled; indels are NOT (max_drift must be 0). The drift-augmented version
- * layers a (state x drift) super-trellis, a per-edge bit-alignment DP, and
- * re-anchoring on top of this same forward/backward skeleton.
+ * MAXIR (max-log-MAP / forward-backward) decoder - drift-tolerant.
  *
- * It is the max-product (max-log-MAP) sibling of a Viterbi decoder: instead of a
- * single most-likely traceback it runs a forward (alpha) AND a backward (beta)
- * recursion and combines them per step to weigh each input bit. Both a hard
- * decision and a soft per-bit output fall out of the same arithmetic.
+ * The max-product (max-log-MAP) sibling of a Viterbi decoder: instead of a single
+ * most-likely traceback it runs a forward (alpha) AND a backward (beta) recursion
+ * and combines them per step to weigh each input bit. Both a hard decision and a
+ * soft per-bit output fall out of the same arithmetic.
  *
- * Windowing. The forward pass runs continuously, snapshotting the normalised
- * state metric (alpha_t) and the smoothed lock cost into rings. A bit is
- * committed once the frontier is at least decision_depth steps ahead of it.
- * Rather than sweep beta per bit, decisions are produced in BATCHES: once
- * decision_depth + batch steps have accumulated past the oldest uncommitted bit,
- * one backward sweep over that window emits batch bits at once (O(1) amortised
- * backward work per bit). Branch metrics (gamma) are NOT ringed - they are
- * recomputed from the retained received buffer during the sweep, trading a little
- * recompute for a lot less memory on a small target. batch == decision_depth here
- * (largest batch, least recompute); shrink it to trade memory for recompute.
+ * Drift (insertions / deletions). The trellis is a (state x drift) super-trellis:
+ * a node carries an encoder state and a running drift (net insertions - deletions)
+ * in [-max_drift, +max_drift] (drift index 0..drift_width-1, drift_width =
+ * 2*max_drift+1, centre = zero drift). Each step emits one input bit's n coded
+ * bits, scored by a per-edge bit-level alignment DP (align_fill_into) that may
+ * insert or delete individual received bits anywhere within the group: a branch
+ * consuming n + Delta received bits moves drift by Delta, so indels at arbitrary
+ * bit positions - not just group boundaries - are tracked exactly. Re-anchoring
+ * shifts the window by sigma in {-1,0,+1} each step (folded into the read cursor)
+ * so the net cumulative drift can grow without bound while each node's stored
+ * drift stays inside the window; the shift is recorded per step so the backward
+ * pass can translate the drift frame (dest = nd - sigma).
+ *
+ * Windowing. The forward pass runs continuously, snapshotting the normalised state
+ * metric (alpha_t), the per-(pattern, drift) branch rows, the re-anchor shift, the
+ * DT_INVALID-group count, and the smoothed lock cost into rings. Decisions are
+ * produced in BATCHES: once decision_depth + batch steps accumulate past the
+ * oldest uncommitted bit, one backward sweep over that window emits batch bits at
+ * once. Gammas are taken from the snapshot (NOT recomputed), so forward and
+ * backward agree exactly across re-anchors.
  *
  * Combine. For input bit b at step t, m_b is the cost of the best complete path
  * whose step-t edge carries bit b: alpha_t[src] + gamma_t(src,b -> dst) +
- * beta_{t+1}[dst], minimised over states. mmin = min(m0, m1) is the global best.
- * Then c_true = exp(mmin - m1), c_false = exp(mmin - m0): the winning value reads
- * exactly 1 and the loser exp(-gap), so c_lost = min(c_true, c_false) is exactly
- * 1 - |c_true - c_false|. The value is recoverable unless m0 == m1 exactly (a true
- * tie - all evidence of this bit's value is missing or symmetric); a sustained
- * erasure burst drives both costs together and reads as lost, while a single
- * erasure is corrected by the surrounding parity (m0 != m1).
+ * beta_{t+1}[dst], minimised over (state, drift, ending drift). mmin = min(m0, m1)
+ * is the global best. Then c_true = exp(mmin - m1), c_false = exp(mmin - m0): the
+ * winning value reads 1 and the loser exp(-gap), so c_lost = min(c_true, c_false)
+ * is 1 - |c_true - c_false|. The value is recoverable unless m0 == m1 exactly (a
+ * true tie - all evidence of this bit's value is missing or symmetric).
+ *
+ * Lock & re-acquisition. A code-specific lock consistency reads the smoothed
+ * per-step cost (lock_from); when it stays low for a sustained run after a prior
+ * lock, the forward metric is re-seeded (init_metric) so the decoder re-acquires
+ * sync downstream from wherever the stream now is. The unlocked stretch reads as
+ * DT_ABSENT via the cascade below.
  *
  * Symbol contract (see decode.h). Output is the argmax projection of the
  * consistencies via a value-recoverability-first cascade: DT_ABSENT while not
  * locked (c_lock low), else the resolved DT_TRUE/DT_FALSE when the value is
  * recoverable, else - for an unrecoverable position - DT_INVALID when the slot's
  * coded group was itself DT_INVALID (the encoder's poison marker) or DT_ERASURE
- * otherwise. This relies on a property of the encoder: a non-boolean input
- * poisons exactly the coded bits that carry its value, so the originating
- * poisoned step has no clean value evidence and is a genuine m0 == m1 tie (->
- * DT_INVALID), whereas a clean bit merely contaminated downstream keeps clean
- * parity elsewhere and resolves to its real value. See finalize_emit.
+ * otherwise. This relies on a property of the encoder: a non-boolean input poisons
+ * exactly the coded bits that carry its value, so the originating poisoned step has
+ * no clean value evidence and is a genuine m0 == m1 tie (-> DT_INVALID). See
+ * finalize_emit.
  */
 /* clang-format on */
 
@@ -89,44 +97,66 @@
 #define DT_MAXIR_INVALID_MIN 0.5f /* c_invalid above this -> DT_INVALID on a tie */
 
 /* ------------------------------------------------------------------------- */
-/* Streaming (sliding-window) max-log-MAP decoder, synchronous channel        */
+/* Streaming (sliding-window) drift-tolerant max-log-MAP decoder              */
 /* ------------------------------------------------------------------------- */
 
 struct dt_maxir_stream_decoder {
   const dt_ccode *code; /* borrowed; must outlive the decoder */
 
   int n, num_states, decision_depth;
-  int batch, ring_len; /* decisions emitted per sweep; ring depth */
+  int max_drift, drift_width; /* drift_width = 2*max_drift + 1               */
+  int batch, ring_len;        /* decisions per sweep; ring depth             */
+  int reacquire_after;        /* sustained-unlock steps before a re-seed     */
 
-  /* Branch-metric constants, in cost (negative-log-likelihood) units. */
-  float cost_match, cost_miss, cost_erase;
+  /* Channel model (NLL costs). cost_bit[expected][received] is the per-bit
+   * match/mismatch cost (overwrite-aware, so asymmetric); insertion cost depends
+   * on the consumed bit's value (cost_ins_t/f/e for a 1 / 0 / DT_ERASURE). */
+  float cost_bit[2][2];
+  float cost_erase, cost_keep, cost_del;
+  float cost_ins_t, cost_ins_f, cost_ins_e;
   /* Lock detection reference costs (channel-derived). */
   float expected_lock, expected_unlock;
 
-  long long steps;           /* forward trellis steps processed              */
-  long long committed;       /* decisions emitted to the FIFO (next step)    */
-  long long received_origin; /* absolute stream offset of received[0]        */
+  long long steps;     /* forward trellis steps processed                    */
+  long long committed; /* decisions emitted to the FIFO (next step)          */
 
   /* Received-bit buffer, kept as raw dt_bit symbols (so DT_INVALID stays distinct
-   * from DT_ERASURE, and c_invalid can be counted). read_base is the buffer
-   * index of the next forward step's group; received_origin + read_base is the
-   * absolute bit offset of that group, which (no indels) equals steps * n. */
+   * from DT_ERASURE). read_base is the buffer index of the current step's
+   * zero-drift read base; drift is measured relative to it. */
   dt_bit *received;
   int received_capacity, received_length, read_base;
 
-  /* Forward trellis working state over the num_states nodes. */
-  float *metric;       /* [num_states] node costs (alpha at the frontier)    */
-  float *next_metric;  /* [num_states] scratch                               */
+  /* Forward trellis working state over the num_states*drift_width nodes. */
+  float *metric;       /* [count] node costs (alpha at the frontier)         */
+  float *next_metric;  /* [count] scratch (also re-anchor scratch)           */
   float smoothed_cost; /* EWMA of best-path per-step cost (lock signal)      */
+  int unlock_run;      /* consecutive low-lock steps (re-acquisition)        */
+  int locked_once;     /* set after the first lock; gates re-acquisition     */
 
-  /* Backward sweep working vectors. */
-  float *beta_tilde; /* [num_states] beta of the next step                  */
-  float *beta_cur;   /* [num_states] beta of the current step (scratch)     */
-  float *branch;     /* [2*num_states] branch cost per edge, current step   */
+  /* Backward sweep working vectors [count]. */
+  float *beta_tilde; /* beta of the next (frontier-ward) step                */
+  float *beta_cur;   /* beta of the current step (scratch)                   */
+
+  /* Per-step alignment scratch. An edge's alignment depends only on its output
+   * pattern and source drift, so the per-(pattern, drift) final rows are computed
+   * once per step and indexed by pattern. */
+  uint8_t *pattern_bits; /* [n_patterns * n] distinct output rows            */
+  int n_patterns, pattern_cap;
+  int *group_of;       /* [2*num_states] edge -> pattern index               */
+  float *alignment;    /* [(n+1)*(max_consume+1)] alignment DP scratch       */
+  float *align_shared; /* [n_patterns*drift_width*stride] this step's rows    */
+  float *match_cost0;  /* [window] expected-0 per-position match cost         */
+  float *match_cost1;  /* [window] expected-1 per-position match cost         */
+  float *ins_cost;     /* [window] per-position insertion cost                */
+  signed char *in_range; /* [window] 1 if the position is buffered           */
+  int match_lo;          /* absolute received index of match position 0      */
 
   /* Per-step rings, indexed (step % ring_len). */
-  float *alpha_ring; /* [ring_len * num_states] alpha_t snapshots           */
-  float *lock_ring;  /* [ring_len] smoothed_cost snapshot per step          */
+  float *alpha_ring;  /* [ring_len * count] alpha_t snapshots                 */
+  float *branch_ring; /* [ring_len * n_patterns*drift_width*stride] gammas    */
+  int *shift;         /* [ring_len] re-anchor sigma per step                  */
+  float *lock_ring;   /* [ring_len] smoothed_cost snapshot per step           */
+  int *inv_ring;      /* [ring_len] DT_INVALID count in step's zero-drift grp */
 
   /* Output FIFO: decisions a sweep produced but the caller has not taken yet.
    * A sweep only runs when this is empty, so it is filled in step order and
@@ -136,66 +166,25 @@ struct dt_maxir_stream_decoder {
   int fifo_head, fifo_count;
 };
 
-/* Cost of one received symbol `s` against an expected 0/1 bit, in NLL units. A
- * clean boolean is scored match/miss; a DT_INVALID (bound, non-boolean - the
- * encoder's "no clean parity here" marker) is FREE so a poisoned run keeps lock
- * without favouring a value; anything else (DT_ERASURE, or a stray non-transmit
- * symbol) is the neutral but PENALISED erasure cost so a sustained burst reads
- * as a lost lock. (No cost_keep term: with no indels every bit is "kept".) */
-static float dt_bit_cost(const dt_maxir_stream_decoder *d, dt_bit s, int expected) {
-  if (s & DT_BOOLEAN) {
-    return ((int)(s & DT_VALUE) == expected) ? d->cost_match : d->cost_miss;
-  }
-  if (s & DT_BOUND) {
-    return 0.0f; /* DT_INVALID: neutral and free */
-  }
-  return d->cost_erase; /* DT_ERASURE / other: neutral, penalised */
-}
-
 /* True iff the received symbol is the encoder's DT_INVALID poison marker. */
 static int dt_is_invalid_sym(dt_bit s) {
   return (s & DT_BOUND) && !(s & DT_BOOLEAN);
 }
 
-/* Branch cost of edge (state*2+bit) reading the n received bits at buffer index
- * `base`; INFINITY if that group is not fully buffered (guards the stream ends).
- * This is the single definition of gamma used by BOTH the forward pass and the
- * backward sweep, so they agree exactly even at the boundaries. */
-static float branch_cost(const dt_maxir_stream_decoder *d, int edge, int base) {
-  if (base < 0 || base + d->n > d->received_length) {
-    return INFINITY;
-  }
-  const uint8_t *expected = &d->code->output[(size_t)edge * d->n];
-  float cost = 0.0f;
-  for (int j = 0; j < d->n; ++j) {
-    cost += dt_bit_cost(d, d->received[base + j], expected[j]);
-  }
-  return cost;
+/* Flat index of the node at encoder state `state` and drift index `drift_index`
+ * (0..drift_width-1; drift_index == max_drift means zero drift). */
+static size_t node_at(int state, int drift_index, int drift_width) {
+  return (size_t)state * drift_width + drift_index;
 }
 
 /* -- received buffer ------------------------------------------------------- */
 
-/* Buffer index of the oldest received bit any retained step still needs: the
- * group base of the oldest uncommitted step (committed * n, in absolute terms).
- * Once every step is committed, only the live forward cursor matters. */
-static int oldest_needed_index(const dt_maxir_stream_decoder *d) {
-  long long base;
-  if (d->committed < d->steps) {
-    base = d->committed * (long long)d->n - d->received_origin;
-  } else {
-    base = d->read_base; /* == steps * n - received_origin */
-  }
-  if (base < 0) {
-    return 0;
-  }
-  return (int)base;
-}
-
-/* Drop the dead prefix below the oldest still-needed bit, advancing the buffer
- * origin so absolute bit offsets stay consistent. Preserves the invariant
- * received_origin + read_base == steps * n. */
+/* Drop the dead prefix. Keep 2*max_drift bits of history below read_base so a
+ * re-anchor that steps the cursor back still has its window buffered. The
+ * backward sweep reads only the snapshot rings, never `received`, so nothing
+ * older is needed. */
 static void compact_received(dt_maxir_stream_decoder *d) {
-  const int keep_from = oldest_needed_index(d);
+  const int keep_from = d->read_base - 2 * d->max_drift;
   if (keep_from <= 0) {
     return;
   }
@@ -203,7 +192,6 @@ static void compact_received(dt_maxir_stream_decoder *d) {
              (size_t)(d->received_length - keep_from));
   d->received_length -= keep_from;
   d->read_base -= keep_from;
-  d->received_origin += keep_from;
 }
 
 /* Ensure room for `extra` more bits, compacting then growing as needed. */
@@ -226,14 +214,157 @@ static int reserve_received(dt_maxir_stream_decoder *d, int extra) {
 
 /* -- core trellis ---------------------------------------------------------- */
 
-/* Subtract the lowest node cost from every node so the best sits at 0, and
- * return the subtracted amount. Over an unbounded stream this keeps costs
- * bounded; adding a constant to a whole metric layer changes no min decision.
- * The returned min is the best path's per-step cost increment (the lock signal).
- */
-static float normalize(float *metric, int count) {
+/* Flat index of the lowest-cost node at the current frontier. */
+static int frontier(const dt_maxir_stream_decoder *d) {
+  const size_t count = (size_t)d->num_states * d->drift_width;
+  float best_cost = INFINITY;
+  int best = 0;
+  for (size_t i = 0; i < count; ++i) {
+    if (d->metric[i] < best_cost) {
+      best_cost = d->metric[i];
+      best = (int)i;
+    }
+  }
+  return best;
+}
+
+/* Choose this step's re-anchor shift: nudge the window one step toward centre
+ * when the best node's drift leaves a deadband, so its drift stays well inside
+ * the window even as cumulative drift grows. */
+static int pick_shift(const dt_maxir_stream_decoder *d) {
+  if (d->max_drift == 0) {
+    return 0;
+  }
+  const int best_drift_index = frontier(d) % d->drift_width;
+  const int drift = best_drift_index - d->max_drift;
+  const int deadband = (d->max_drift + 1) / 2;
+  if (drift >= deadband) {
+    return +1;
+  }
+  if (drift <= -deadband) {
+    return -1;
+  }
+  return 0;
+}
+
+/* clang-format off */
+/* Fill the alignment DP for one edge: align the `n` expected output bits against
+ * the received bits starting at buffer index `base`, allowing per-bit insertion,
+ * deletion, and substitution. cost_table[j][consumed] (row-major at
+ * j*(max_consume+1)+consumed) is the min cost to align the first j expected bits
+ * while consuming `consumed` received bits; max_consume = n + 2*max_drift. Reads
+ * outside the buffered region are infeasible, so only deletion is available there.
+ * The branch cost into ending drift di' is then cost_table[n][n + (di' - di)]. */
+/* clang-format on */
+static void align_fill_into(const dt_maxir_stream_decoder *d,
+                            const uint8_t *expected, int base, float *final_out) {
+  const int n = d->n, max_consume = d->n + 2 * d->max_drift,
+            stride = max_consume + 1;
+  const int off = base - d->match_lo;
+  const signed char *in_range = d->in_range;
+  const float *match_cost0 = d->match_cost0, *match_cost1 = d->match_cost1;
+  const float *ins_cost = d->ins_cost;
+  const float cost_del = d->cost_del;
+  float *scratch = d->alignment;
+
+  scratch[0] = 0.0f;
+  for (int consumed = 1; consumed <= max_consume; ++consumed) {
+    scratch[consumed] = in_range[off + consumed - 1]
+                            ? scratch[consumed - 1] + ins_cost[off + consumed - 1]
+                            : INFINITY;
+  }
+  for (int j = 1; j <= n; ++j) {
+    float *cost_row = (j == n) ? final_out : scratch + (size_t)j * stride;
+    const float *prev_row = scratch + (size_t)(j - 1) * stride;
+    const float *match_cost = expected[j - 1] ? match_cost1 : match_cost0;
+    cost_row[0] = prev_row[0] + cost_del; /* delete expected[j-1], consume 0 */
+    for (int consumed = 1; consumed <= max_consume; ++consumed) {
+      float best = prev_row[consumed] + cost_del; /* deletion always avail.  */
+      const int position = off + consumed - 1;
+      if (in_range[position]) {
+        const float align_cost =
+            prev_row[consumed - 1] + match_cost[position]; /* match / sub     */
+        const float insert_cost =
+            cost_row[consumed - 1] + ins_cost[position]; /* extra received bit */
+        if (align_cost < best) best = align_cost;
+        if (insert_cost < best) best = insert_cost;
+      }
+      cost_row[consumed] = best;
+    }
+  }
+}
+
+/* Precompute the step's received-window match costs once, shared by every
+ * align_fill this step. Position p maps to absolute received index match_lo + p.
+ * A DT_INVALID symbol (the encoder's poison marker) is value-FREE on both
+ * expected values (cost_keep only) so a poisoned group stays a value-symmetric
+ * tie; it is deliberately NOT folded into the erasure branch (which is +inf when
+ * p_ovr_erase == 0 and would make poisoned groups unalignable). */
+static void fill_match_costs(dt_maxir_stream_decoder *d) {
+  const int window = d->n + 4 * d->max_drift;
+  const float keep = d->cost_keep, erase = d->cost_erase;
+  d->match_lo = d->read_base - d->max_drift;
+  for (int p = 0; p < window; ++p) {
+    const int absolute = d->match_lo + p;
+    if (absolute >= 0 && absolute < d->received_length) {
+      const dt_bit received_bit = d->received[absolute];
+      if (received_bit == DT_ERASURE) {
+        d->match_cost0[p] = keep + erase;
+        d->match_cost1[p] = keep + erase;
+        d->ins_cost[p] = d->cost_ins_e;
+      } else if (dt_is_invalid_sym(received_bit)) {
+        d->match_cost0[p] = keep; /* value-free: poison favours no value */
+        d->match_cost1[p] = keep;
+        d->ins_cost[p] = d->cost_ins_e;
+      } else {
+        const int rv = DT_BIT(received_bit);
+        d->match_cost0[p] = keep + d->cost_bit[0][rv];
+        d->match_cost1[p] = keep + d->cost_bit[1][rv];
+        d->ins_cost[p] = rv ? d->cost_ins_t : d->cost_ins_f;
+      }
+      d->in_range[p] = 1;
+    } else {
+      d->in_range[p] = 0;
+    }
+  }
+}
+
+/* Compute the per-(pattern, source drift) alignment rows the forward pass and the
+ * branch snapshot then read. A drift is computed only when the trellis has a live
+ * node there. */
+static void align_precompute(dt_maxir_stream_decoder *d) {
+  const int n = d->n, max_drift = d->max_drift, num_states = d->num_states,
+            drift_width = d->drift_width;
+  const int stride = n + 2 * max_drift + 1;
+
+  fill_match_costs(d);
+
+  for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
+    int live = 0;
+    for (int state = 0; state < num_states; ++state) {
+      if (d->metric[node_at(state, drift_index, drift_width)] != INFINITY) {
+        live = 1;
+        break;
+      }
+    }
+    if (!live) {
+      continue;
+    }
+    const int base = d->read_base + (drift_index - max_drift);
+    for (int p = 0; p < d->n_patterns; ++p) {
+      align_fill_into(
+          d, &d->pattern_bits[(size_t)p * n], base,
+          d->align_shared + ((size_t)p * drift_width + drift_index) * stride);
+    }
+  }
+}
+
+/* Subtract the lowest node cost from every node so the best sits at 0, and return
+ * the subtracted amount (the best path's per-step cost increment - the lock
+ * signal). Adding a constant to a whole metric layer changes no min decision. */
+static float normalize(float *metric, size_t count) {
   float lowest = INFINITY;
-  for (int i = 0; i < count; ++i) {
+  for (size_t i = 0; i < count; ++i) {
     if (metric[i] < lowest) {
       lowest = metric[i];
     }
@@ -241,7 +372,7 @@ static float normalize(float *metric, int count) {
   if (lowest == INFINITY || lowest <= 0.0f) {
     return 0.0f;
   }
-  for (int i = 0; i < count; ++i) {
+  for (size_t i = 0; i < count; ++i) {
     if (metric[i] != INFINITY) {
       metric[i] -= lowest;
     }
@@ -249,37 +380,80 @@ static float normalize(float *metric, int count) {
   return lowest;
 }
 
-/* Forward pass: a plain Viterbi min-sum butterfly over the encoder states for
- * the group at buffer index `base`. No backpointers - the decision comes from
- * the alpha/beta combine, not a traceback. Folds the per-step cost increment
- * into the smoothed lock cost. */
-static void forward_pass(dt_maxir_stream_decoder *d, int base) {
-  const dt_ccode *code = d->code;
-  const int num_states = d->num_states;
+/* Branch cost of edge `edge`, source drift `di`, ending drift `nd`, read from a
+ * snapshotted (or live) per-step row block: final_row[n + (nd - di)]. */
+static float branch_at(const dt_maxir_stream_decoder *d, const float *block,
+                       int edge, int di, int nd) {
+  const int stride = d->n + 2 * d->max_drift + 1;
+  const float *final_row =
+      block + ((size_t)d->group_of[edge] * d->drift_width + di) * stride;
+  return final_row[d->n + (nd - di)];
+}
 
+/* Shift the drift window by `sigma` (each node's drift index drift_index ->
+ * drift_index - sigma); the read cursor is advanced once by forward_step to
+ * match. Nodes shifted out of the window are dropped (INFINITY). Uses
+ * next_metric as scratch. */
+static void reanchor_metric(dt_maxir_stream_decoder *d, int sigma) {
+  const int num_states = d->num_states, drift_width = d->drift_width;
   for (int state = 0; state < num_states; ++state) {
-    d->next_metric[state] = INFINITY;
+    for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
+      const int source = drift_index + sigma;
+      d->next_metric[node_at(state, drift_index, drift_width)] =
+          (source >= 0 && source < drift_width)
+              ? d->metric[node_at(state, source, drift_width)]
+              : INFINITY;
+    }
+  }
+  dt_memcpy(d->metric, d->next_metric,
+            (size_t)num_states * drift_width * sizeof(float));
+}
+
+/* The forward pass: scatter the alignment rows (align_precompute, already run
+ * this step) from metric into next_metric, then normalise, update the smoothed
+ * cost, and swap. */
+static void forward_pass(dt_maxir_stream_decoder *d) {
+  const dt_ccode *code = d->code;
+  const int n = d->n, num_states = d->num_states, drift_width = d->drift_width;
+  const size_t count = (size_t)num_states * drift_width;
+  const int stride = n + 2 * d->max_drift + 1;
+
+  for (size_t i = 0; i < count; ++i) {
+    d->next_metric[i] = INFINITY;
   }
   for (int state = 0; state < num_states; ++state) {
-    const float current = d->metric[state];
-    if (current == INFINITY) {
-      continue;
-    }
-    for (int bit = 0; bit <= 1; ++bit) {
-      const int edge = state * 2 + bit;
-      const float bc = branch_cost(d, edge, base);
-      if (bc == INFINITY) {
+    const size_t source_row = (size_t)state * drift_width;
+    for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
+      const float current_cost = d->metric[source_row + drift_index];
+      if (current_cost == INFINITY) {
         continue;
       }
-      const float cost = current + bc;
-      const int next_state = code->next_state[edge];
-      if (cost < d->next_metric[next_state]) {
-        d->next_metric[next_state] = cost;
+      int first = drift_index - n;
+      if (first < 0) {
+        first = 0;
+      }
+      for (int bit = 0; bit <= 1; ++bit) {
+        const int edge = state * 2 + bit;
+        const int next_state = code->next_state[edge];
+        const float *final_row =
+            d->align_shared +
+            ((size_t)d->group_of[edge] * drift_width + drift_index) * stride;
+        const size_t dest_row = (size_t)next_state * drift_width;
+        for (int nd = first; nd < drift_width; ++nd) {
+          const float bc = final_row[n + (nd - drift_index)];
+          if (bc == INFINITY) {
+            continue;
+          }
+          const float cost = current_cost + bc;
+          if (cost < d->next_metric[dest_row + nd]) {
+            d->next_metric[dest_row + nd] = cost;
+          }
+        }
       }
     }
   }
 
-  const float increment = normalize(d->next_metric, num_states);
+  const float increment = normalize(d->next_metric, count);
   const float alpha = 2.0f / (d->decision_depth + 1.0f);
   d->smoothed_cost += alpha * (increment - d->smoothed_cost);
 
@@ -288,28 +462,9 @@ static void forward_pass(dt_maxir_stream_decoder *d, int base) {
   d->next_metric = temp;
 }
 
-/* Advance one forward step: snapshot alpha_t (the state metric ENTERING step t)
- * and run the forward pass over step t's group, then snapshot the lock cost. */
-static void forward_step(dt_maxir_stream_decoder *d) {
-  const int slot = (int)(d->steps % d->ring_len);
-
-  dt_memcpy(d->alpha_ring + (size_t)slot * d->num_states, d->metric,
-            (size_t)d->num_states * sizeof(float));
-
-  forward_pass(d, d->read_base);
-  d->lock_ring[slot] = d->smoothed_cost;
-
-  d->steps++;
-  d->read_base += d->n;
-  if (d->read_base >= d->received_capacity / 2) {
-    compact_received(d);
-  }
-}
-
 /* Map a smoothed per-step cost to a lock consistency in [0, 1]: linear from
  * expected_lock (clean lock -> ~1) to expected_unlock (clearly not this code ->
- * ~0). A confidently decoded WRONG code is dominant but expensive, so it reads
- * as unlocked. */
+ * ~0). */
 static float lock_from(const dt_maxir_stream_decoder *d, float smoothed) {
   const float gap = d->expected_unlock - d->expected_lock;
   if (gap <= 0.0f) {
@@ -324,25 +479,80 @@ static float lock_from(const dt_maxir_stream_decoder *d, float smoothed) {
   return p;
 }
 
-/* Blind-acquisition init: every encoder state equally likely, so the decoder
- * locks whether it starts at the head of the stream or taps in mid-stream. */
+/* Blind-acquisition init: every encoder state equally likely at zero drift, so
+ * the decoder locks whether it starts at the head of the stream or taps in
+ * mid-stream. Also used to re-seed on a sustained loss of lock. */
 static void init_metric(dt_maxir_stream_decoder *d) {
+  const size_t count = (size_t)d->num_states * d->drift_width;
+  for (size_t i = 0; i < count; ++i) {
+    d->metric[i] = INFINITY;
+  }
   for (int state = 0; state < d->num_states; ++state) {
-    d->metric[state] = 0.0f;
+    d->metric[node_at(state, d->max_drift, d->drift_width)] = 0.0f;
+  }
+}
+
+/* Advance one forward step: re-anchor, record the shift, precompute alignments,
+ * snapshot alpha / branch / lock / invalid into the rings (before the forward
+ * pass overwrites metric), run the forward pass, then re-acquire if lock has
+ * been lost for a sustained run. */
+static void forward_step(dt_maxir_stream_decoder *d) {
+  const int slot = (int)(d->steps % d->ring_len);
+  const size_t count = (size_t)d->num_states * d->drift_width;
+  const size_t shared =
+      (size_t)d->n_patterns * d->drift_width * (size_t)(d->n + 2 * d->max_drift + 1);
+
+  const int sigma = pick_shift(d);
+  if (sigma != 0) {
+    reanchor_metric(d, sigma);
+    d->read_base += sigma;
+  }
+  d->shift[slot] = sigma;
+
+  align_precompute(d);
+
+  /* Snapshot this step (before forward_pass overwrites metric). */
+  dt_memcpy(d->alpha_ring + (size_t)slot * count, d->metric,
+            count * sizeof(float));
+  dt_memcpy(d->branch_ring + (size_t)slot * shared, d->align_shared,
+            shared * sizeof(float));
+  int inv = 0;
+  for (int j = 0; j < d->n; ++j) {
+    const int p = d->read_base + j;
+    if (p >= 0 && p < d->received_length && dt_is_invalid_sym(d->received[p])) {
+      ++inv;
+    }
+  }
+  d->inv_ring[slot] = inv;
+
+  forward_pass(d);
+  d->lock_ring[slot] = d->smoothed_cost;
+
+  /* Re-acquisition: after a prior lock, a sustained low-lock run (the decoder is
+   * tracking garbage - e.g. a long corruption burst or drift it could not follow)
+   * re-seeds the trellis at the current read position, so it re-acquires sync
+   * downstream instead of staying stuck on a wrong path. The unlocked stretch
+   * reads DT_ABSENT via the finalize cascade. */
+  if (lock_from(d, d->smoothed_cost) >= DT_MAXIR_LOCK_MIN) {
+    d->locked_once = 1;
+    d->unlock_run = 0;
+  } else if (d->locked_once) {
+    if (++d->unlock_run >= d->reacquire_after) {
+      init_metric(d);
+      d->smoothed_cost = d->expected_unlock;
+      d->unlock_run = 0;
+      d->locked_once = 0;
+    }
+  }
+
+  d->steps++;
+  d->read_base += d->n;
+  if (d->read_base - d->max_drift >= d->received_capacity / 2) {
+    compact_received(d);
   }
 }
 
 /* -- backward sweep -------------------------------------------------------- */
-
-/* Recompute step t's branch metrics (gamma) into d->branch from the retained
- * received buffer, using a LOCAL base - this must never touch d->read_base,
- * which is the live forward cursor. */
-static void compute_branches(dt_maxir_stream_decoder *d, int base) {
-  const int edges = d->num_states * 2;
-  for (int edge = 0; edge < edges; ++edge) {
-    d->branch[edge] = branch_cost(d, edge, base);
-  }
-}
 
 /* Project the combined costs (m0, m1) for step t into the six-field soft output
  * and the hard symbol, and push them onto the FIFO at this step's slot. */
@@ -354,17 +564,9 @@ static void finalize_emit(dt_maxir_stream_decoder *d, long long t, float m0,
 
   const float mmin = (m0 < m1) ? m0 : m1;
   const float c_lock = lock_from(d, d->lock_ring[slot]);
-
-  /* c_invalid: fraction of the step's coded group received as DT_INVALID. */
-  const int base = (int)(t * (long long)d->n - d->received_origin);
-  int inv = 0;
-  for (int j = 0; j < d->n; ++j) {
-    const int p = base + j;
-    if (p >= 0 && p < d->received_length && dt_is_invalid_sym(d->received[p])) {
-      ++inv;
-    }
-  }
-  const float c_invalid = (float)inv / (float)d->n;
+  /* c_invalid: fraction of the step's zero-drift coded group received as
+   * DT_INVALID (snapshotted at forward time; exact when local drift is 0). */
+  const float c_invalid = (float)d->inv_ring[slot] / (float)d->n;
 
   if (mmin == INFINITY) {
     /* No complete path through this step survived: nothing here is backed by a
@@ -391,16 +593,10 @@ static void finalize_emit(dt_maxir_stream_decoder *d, long long t, float m0,
   det.c_lock = c_lock;
   det.c_absent = 1.0f - c_lock;
 
-  /* Hard decision - value-recoverability-first cascade. Ordering note: decode.h
-   * lists DT_INVALID before DT_ERASURE for an unrecoverable slot; here a
-   * RECOVERABLE value is resolved first (DT_TRUE/DT_FALSE), and only an
-   * unrecoverable slot (an exact m0 == m1 tie - all of this bit's value evidence
-   * is missing or symmetric) splits into DT_INVALID (its group was the encoder's
-   * poison) vs DT_ERASURE. The originating poisoned step is a genuine tie (the
-   * poison masks its own value) -> DT_INVALID; a clean bit merely contaminated
-   * downstream keeps clean parity elsewhere and resolves to its value. A strict
-   * left-to-right reading of decode.h (test c_invalid before the tie) would
-   * instead mark such downstream clean bits DT_INVALID and lose them. */
+  /* Hard decision - value-recoverability-first cascade. A RECOVERABLE value is
+   * resolved first (DT_TRUE/DT_FALSE); only an unrecoverable slot (an exact
+   * m0 == m1 tie) splits into DT_INVALID (its group was the encoder's poison) vs
+   * DT_ERASURE. */
   dt_bit sym;
   if (c_lock < DT_MAXIR_LOCK_MIN) {
     sym = DT_ABSENT;
@@ -416,74 +612,95 @@ static void finalize_emit(dt_maxir_stream_decoder *d, long long t, float m0,
   d->fifo_det[idx] = det;
 }
 
-/* Compute beta for step t from beta_tilde (== beta of step t+1) and, when t is
- * in the emit range, the combined (m0, m1) for the decision. branch[] must hold
- * step t's gamma. Leaves beta_cur holding (normalised) beta_t. */
+/* Compute beta for step t from beta_tilde (== beta of step t+1, stored in the
+ * post-re-anchor frame of step t+1) and, when t is in the emit range, the
+ * combined (m0, m1). `sigma` is step t+1's re-anchor shift, so an ending drift
+ * nd produced at step t indexes beta_tilde at dest = nd - sigma. Leaves beta_cur
+ * holding (normalised) beta_t. */
 static void compute_beta_step(dt_maxir_stream_decoder *d, long long t,
-                              const float *alpha_t, long long emit_hi) {
+                              const float *alpha_t, const float *bslot, int sigma,
+                              long long emit_hi) {
   const dt_ccode *code = d->code;
-  const int num_states = d->num_states;
+  const int n = d->n, num_states = d->num_states, drift_width = d->drift_width;
+  const size_t count = (size_t)num_states * drift_width;
   const int emit = (t <= emit_hi);
   float m0 = INFINITY, m1 = INFINITY;
 
-  for (int state = 0; state < num_states; ++state) {
-    d->beta_cur[state] = INFINITY;
+  for (size_t i = 0; i < count; ++i) {
+    d->beta_cur[i] = INFINITY;
   }
   for (int state = 0; state < num_states; ++state) {
-    const float a = alpha_t[state];
-    for (int bit = 0; bit <= 1; ++bit) {
-      const int edge = state * 2 + bit;
-      const float g = d->branch[edge];
-      if (g == INFINITY) {
+    for (int di = 0; di < drift_width; ++di) {
+      const float a = alpha_t[(size_t)state * drift_width + di];
+      if (a == INFINITY) {
         continue;
       }
-      const float bt = d->beta_tilde[code->next_state[edge]];
-      if (bt == INFINITY) {
-        continue;
+      int first = di - n;
+      if (first < 0) {
+        first = 0;
       }
-      const float inner = g + bt;
-      if (inner < d->beta_cur[state]) {
-        d->beta_cur[state] = inner;
-      }
-      if (emit && a != INFINITY) {
-        const float cand = a + inner;
-        if (bit) {
-          if (cand < m1) m1 = cand;
-        } else {
-          if (cand < m0) m0 = cand;
+      float beta_src = INFINITY;
+      for (int bit = 0; bit <= 1; ++bit) {
+        const int edge = state * 2 + bit;
+        const size_t drow = (size_t)code->next_state[edge] * drift_width;
+        float best_edge = INFINITY;
+        for (int nd = first; nd < drift_width; ++nd) {
+          const float bc = branch_at(d, bslot, edge, di, nd);
+          const int dest = nd - sigma;
+          if (bc == INFINITY || dest < 0 || dest >= drift_width) {
+            continue;
+          }
+          const float cand = bc + d->beta_tilde[drow + dest];
+          if (cand < best_edge) {
+            best_edge = cand;
+          }
+        }
+        if (best_edge < beta_src) {
+          beta_src = best_edge;
+        }
+        if (emit && best_edge != INFINITY) {
+          const float total = a + best_edge;
+          if (bit) {
+            if (total < m1) m1 = total;
+          } else {
+            if (total < m0) m0 = total;
+          }
         }
       }
+      d->beta_cur[(size_t)state * drift_width + di] = beta_src;
     }
   }
 
-  normalize(d->beta_cur, num_states); /* bound beta; never changes a decision */
+  normalize(d->beta_cur, count); /* bound beta; never changes a decision */
 
   if (emit) {
     finalize_emit(d, t, m0, m1);
   }
 }
 
-/* One backward sweep over the window [committed, steps): beta open at the
- * frontier, sweep down recomputing gamma and beta, emit decisions for
- * [committed, emit_hi] into the FIFO, and advance committed. The FIFO is empty
- * on entry (the caller drains before sweeping). Never disturbs d->read_base. */
+/* One backward sweep over the window [committed, steps): beta seeded at the
+ * frontier (finite where the live metric is finite, else INF), sweep down reading
+ * snapshotted gammas, emit decisions for [committed, emit_hi] into the FIFO, and
+ * advance committed. The FIFO is empty on entry. Never disturbs read_base. */
 static void sweep_window(dt_maxir_stream_decoder *d, long long emit_hi) {
-  const int num_states = d->num_states;
+  const size_t count = (size_t)d->num_states * d->drift_width;
+  const size_t shared =
+      (size_t)d->n_patterns * d->drift_width * (size_t)(d->n + 2 * d->max_drift + 1);
   if (d->steps <= d->committed) {
     return;
   }
 
-  for (int state = 0; state < num_states; ++state) {
-    d->beta_tilde[state] = 0.0f; /* beta of the open frontier */
+  for (size_t i = 0; i < count; ++i) {
+    d->beta_tilde[i] = (d->metric[i] == INFINITY) ? INFINITY : 0.0f;
   }
 
   for (long long t = d->steps - 1; t >= d->committed; --t) {
-    const float *alpha_t = d->alpha_ring + (size_t)(t % d->ring_len) * num_states;
-    const int base = (int)(t * (long long)d->n - d->received_origin);
-    compute_branches(d, base);
-    compute_beta_step(d, t, alpha_t, emit_hi);
-    /* Hand beta_t to the next (older) step. No drift -> no frame shift, just
-     * swap the working vectors. */
+    const int slot = (int)(t % d->ring_len);
+    const float *alpha_t = d->alpha_ring + (size_t)slot * count;
+    const float *bslot = d->branch_ring + (size_t)slot * shared;
+    const int sigma =
+        (t + 1 == d->steps) ? 0 : d->shift[(int)((t + 1) % d->ring_len)];
+    compute_beta_step(d, t, alpha_t, bslot, sigma, emit_hi);
     float *temp = d->beta_tilde;
     d->beta_tilde = d->beta_cur;
     d->beta_cur = temp;
@@ -496,10 +713,14 @@ static void sweep_window(dt_maxir_stream_decoder *d, long long emit_hi) {
 
 /* -- forward pumping / output draining ------------------------------------- */
 
-/* Can the forward pass take another step? With no drift it just needs the next
- * group's n bits buffered; commit latency is enforced by the sweep trigger. */
-static int can_forward(const dt_maxir_stream_decoder *d) {
-  return d->received_length - d->read_base >= d->n;
+/* Can the forward pass take another step? Non-draining needs the next group plus
+ * drift headroom (+max_drift for an ending-drift branch, +1 for a pending
+ * re-anchor); draining needs only the next group's n bits. */
+static int can_forward(const dt_maxir_stream_decoder *d, int draining) {
+  if (draining) {
+    return d->received_length - d->read_base >= d->n;
+  }
+  return d->received_length >= d->read_base + d->n + d->max_drift + 1;
 }
 
 /* Drain the FIFO into the caller's buffers, then advance the forward pass and
@@ -527,7 +748,7 @@ static int produce(dt_maxir_stream_decoder *d, uint8_t *out,
       return written;
     }
     /* FIFO now empty. Make more decisions, or stop. */
-    if (can_forward(d)) {
+    if (can_forward(d, draining)) {
       forward_step(d);
       if (d->steps - d->committed >= span) {
         sweep_window(d, d->committed + d->batch - 1);
@@ -544,84 +765,45 @@ static int produce(dt_maxir_stream_decoder *d, uint8_t *out,
 
 /* -- lifecycle ------------------------------------------------------------- */
 
-static int decoder_init(dt_maxir_stream_decoder *d,
-                        const dt_maxir_stream_params *params,
-                        const dt_ccode *code) {
-  const int decision_depth = params->decision_depth;
-  const float p_flip = params->p_flip;
-  const float p_erase = params->p_erase;
-
-  if (decision_depth < 1) {
-    return DT_ERR_ARG;
+/* Register the code's output patterns (deduping) and fill group_of[edge] with
+ * each edge's pattern index, so the per-step alignment is computed once per
+ * distinct output pattern, not once per edge. */
+static int register_patterns(dt_maxir_stream_decoder *d) {
+  const int n = d->n, edges = d->num_states * 2;
+  d->n_patterns = 0;
+  for (int edge = 0; edge < edges; ++edge) {
+    const uint8_t *row = &d->code->output[(size_t)edge * n];
+    int idx = -1;
+    for (int p = 0; p < d->n_patterns; ++p) {
+      int same = 1;
+      for (int j = 0; j < n; ++j) {
+        if (d->pattern_bits[(size_t)p * n + j] != row[j]) {
+          same = 0;
+          break;
+        }
+      }
+      if (same) {
+        idx = p;
+        break;
+      }
+    }
+    if (idx < 0) {
+      if (d->n_patterns == d->pattern_cap) {
+        const int newcap = d->pattern_cap * 2;
+        uint8_t *grown = dt_realloc(d->pattern_bits, (size_t)newcap * n);
+        if (!grown) {
+          return DT_ERR_ALLOC;
+        }
+        d->pattern_bits = grown;
+        d->pattern_cap = newcap;
+      }
+      idx = d->n_patterns++;
+      for (int j = 0; j < n; ++j) {
+        d->pattern_bits[(size_t)idx * n + j] = row[j];
+      }
+    }
+    d->group_of[edge] = idx;
   }
-  /* This is the no-drift core: it cannot track insertions or deletions. */
-  if (params->max_drift != 0) {
-    return DT_ERR_ARG;
-  }
-  if (!(p_flip > 0.0f && p_flip < 1.0f) ||
-      !(p_erase >= 0.0f && p_erase < 1.0f)) {
-    return DT_ERR_ARG;
-  }
-
-  d->code = code;
-  d->n = code->n;
-  d->num_states = code->n_states;
-  d->decision_depth = decision_depth;
-
-  /* Channel model (NLL costs). The (1 - p_erase) factor is kept explicit so
-   * paths reading different erasure counts compare correctly. */
-  d->cost_match = -dt_log((1.0f - p_erase) * (1.0f - p_flip));
-  d->cost_miss = -dt_log((1.0f - p_erase) * p_flip);
-  d->cost_erase = -dt_log(p_erase); /* +inf when p_erase == 0 (never read) */
-
-  /* Lock anchors (per step = n coded bits); see lock_from. */
-  const float misfit_lock = p_flip;
-  const float misfit_unlock = 0.5f * (p_flip + 0.5f);
-  const float erase_term = p_erase > 0.0f ? p_erase * d->cost_erase : 0.0f;
-  const float kept = 1.0f - p_erase;
-  d->expected_lock =
-      d->n * (erase_term + kept * ((1.0f - misfit_lock) * d->cost_match +
-                                   misfit_lock * d->cost_miss));
-  d->expected_unlock =
-      d->n * (erase_term + kept * ((1.0f - misfit_unlock) * d->cost_match +
-                                   misfit_unlock * d->cost_miss));
-
-  /* Batched windowed MAP: emit `batch` decisions per sweep over a window of
-   * decision_depth (look-ahead) + batch (emitted). batch == decision_depth. */
-  d->batch = decision_depth;
-  d->ring_len = decision_depth + d->batch + 2;
-
-  d->steps = 0;
-  d->committed = 0;
-  d->received_origin = 0;
-  d->read_base = 0;
-  d->received_length = 0;
-  d->received_capacity = (decision_depth + d->batch + 4) * d->n + 64;
-  d->smoothed_cost = d->expected_unlock; /* assume unlocked until proven */
-  d->fifo_head = 0;
-  d->fifo_count = 0;
-
-  const int num_states = d->num_states;
-  const int edges = num_states * 2;
-  const int rl = d->ring_len;
-
-  d->received = dt_malloc((size_t)d->received_capacity);
-  d->metric = dt_malloc((size_t)num_states * sizeof(float));
-  d->next_metric = dt_malloc((size_t)num_states * sizeof(float));
-  d->beta_tilde = dt_malloc((size_t)num_states * sizeof(float));
-  d->beta_cur = dt_malloc((size_t)num_states * sizeof(float));
-  d->branch = dt_malloc((size_t)edges * sizeof(float));
-  d->alpha_ring = dt_malloc((size_t)rl * num_states * sizeof(float));
-  d->lock_ring = dt_malloc((size_t)rl * sizeof(float));
-  d->fifo_sym = dt_malloc((size_t)rl * sizeof(dt_bit));
-  d->fifo_det = dt_malloc((size_t)rl * sizeof(dt_maxir_decode_details));
-  if (!d->received || !d->metric || !d->next_metric || !d->beta_tilde ||
-      !d->beta_cur || !d->branch || !d->alpha_ring || !d->lock_ring ||
-      !d->fifo_sym || !d->fifo_det) {
-    return DT_ERR_ALLOC;
-  }
-
-  init_metric(d);
   return DT_OK;
 }
 
@@ -631,11 +813,166 @@ static void decoder_free(dt_maxir_stream_decoder *d) {
   dt_free(d->next_metric);
   dt_free(d->beta_tilde);
   dt_free(d->beta_cur);
-  dt_free(d->branch);
+  dt_free(d->pattern_bits);
+  dt_free(d->group_of);
+  dt_free(d->alignment);
+  dt_free(d->align_shared);
+  dt_free(d->match_cost0);
+  dt_free(d->match_cost1);
+  dt_free(d->ins_cost);
+  dt_free(d->in_range);
   dt_free(d->alpha_ring);
+  dt_free(d->branch_ring);
+  dt_free(d->shift);
   dt_free(d->lock_ring);
+  dt_free(d->inv_ring);
   dt_free(d->fifo_sym);
   dt_free(d->fifo_det);
+}
+
+static int decoder_init(dt_maxir_stream_decoder *d,
+                        const dt_maxir_stream_params *params,
+                        const dt_ccode *code) {
+  const int decision_depth = params->decision_depth;
+  const int max_drift = params->max_drift;
+  const float p_flip = params->p_flip;
+  const float p_ins_true = params->p_ins_true;
+  const float p_ins_false = params->p_ins_false;
+  const float p_ins_erase = params->p_ins_erase;
+  const float p_del = params->p_del;
+  const float p_ovr_true = params->p_ovr_true;
+  const float p_ovr_false = params->p_ovr_false;
+  const float p_ovr_erase = params->p_ovr_erase;
+  const float p_ins = p_ins_true + p_ins_false + p_ins_erase;
+  const float p_ovr = p_ovr_true + p_ovr_false + p_ovr_erase;
+
+  if (decision_depth < 1 || max_drift < 0) {
+    return DT_ERR_ARG;
+  }
+  if (!(p_flip > 0.0f && p_flip < 1.0f) || p_ins_true < 0.0f ||
+      p_ins_false < 0.0f || p_ins_erase < 0.0f || p_del < 0.0f ||
+      p_ovr_true < 0.0f || p_ovr_false < 0.0f || p_ovr_erase < 0.0f ||
+      !(p_ovr < 1.0f) || !(p_ins + p_del < 1.0f)) {
+    return DT_ERR_ARG;
+  }
+  /* Indel probabilities are only consulted when tracking drift; with
+   * max_drift == 0 they may be left 0 (correct flips only). */
+  if (max_drift > 0 && (p_ins <= 0.0f || p_del <= 0.0f)) {
+    return DT_ERR_ARG;
+  }
+
+  d->code = code;
+  d->n = code->n;
+  d->num_states = code->n_states;
+  d->decision_depth = decision_depth;
+  d->max_drift = max_drift;
+  d->drift_width = 2 * max_drift + 1;
+
+  /* Channel model: a coded bit is overwritten - DT_TRUE/DT_FALSE/DT_ERASURE at
+   * probs p_ovr_* regardless of what was sent - else transmitted (prob
+   * pn = 1 - p_ovr) and flipped with prob p_flip. p_ovr_erase doubles as the
+   * plain erasure rate. */
+  const float pn = 1.0f - p_ovr;
+  d->cost_bit[0][0] = -dt_log(p_ovr_false + pn * (1.0f - p_flip));
+  d->cost_bit[0][1] = -dt_log(p_ovr_true + pn * p_flip);
+  d->cost_bit[1][0] = -dt_log(p_ovr_false + pn * p_flip);
+  d->cost_bit[1][1] = -dt_log(p_ovr_true + pn * (1.0f - p_flip));
+  d->cost_erase = -dt_log(p_ovr_erase); /* +inf when 0 (never read) */
+  d->cost_keep = -dt_log(1.0f - p_ins - p_del);
+  /* An inserted data bit's value is scored against a uniform 0/1 prior (the 2x);
+   * an inserted erasure carries no value, taken at its own rate. */
+  d->cost_ins_t = -dt_log(2.0f * p_ins_true);
+  d->cost_ins_f = -dt_log(2.0f * p_ins_false);
+  d->cost_ins_e = -dt_log(p_ins_erase);
+  d->cost_del = -dt_log(p_del);
+
+  /* Lock anchors (per step = n coded bits); see lock_from. */
+  const float avg_match = 0.5f * (d->cost_bit[0][0] + d->cost_bit[1][1]);
+  const float avg_miss = 0.5f * (d->cost_bit[0][1] + d->cost_bit[1][0]);
+  const float misfit_lock =
+      (pn * p_flip + 0.5f * (p_ovr_true + p_ovr_false)) / (1.0f - p_ovr_erase);
+  const float misfit_unlock = 0.5f * (misfit_lock + 0.5f);
+  const float erase_term = p_ovr_erase > 0.0f ? p_ovr_erase * d->cost_erase : 0.0f;
+  const float kept = 1.0f - p_ovr_erase;
+  d->expected_lock =
+      d->n * (d->cost_keep + erase_term +
+              kept * ((1.0f - misfit_lock) * avg_match + misfit_lock * avg_miss));
+  d->expected_unlock =
+      d->n *
+      (d->cost_keep + erase_term +
+       kept * ((1.0f - misfit_unlock) * avg_match + misfit_unlock * avg_miss));
+
+  /* Batched windowed MAP: emit `batch` decisions per sweep over a window of
+   * decision_depth (look-ahead) + batch (emitted). batch == decision_depth. */
+  d->batch = decision_depth;
+  d->ring_len = 2 * decision_depth + 2;
+  d->reacquire_after = 2 * decision_depth;
+
+  d->steps = 0;
+  d->committed = 0;
+  d->read_base = 0;
+  d->received_length = 0;
+  d->received_capacity = (d->ring_len + 2) * d->n + 8 * d->max_drift + 64;
+  d->smoothed_cost = d->expected_unlock; /* assume unlocked until proven */
+  d->unlock_run = 0;
+  d->locked_once = 0;
+  d->fifo_head = 0;
+  d->fifo_count = 0;
+
+  const int num_states = d->num_states;
+  const int edges = num_states * 2;
+  const int rl = d->ring_len;
+  const int drift_width = d->drift_width;
+  const size_t count = (size_t)num_states * drift_width;
+  const int max_consume = d->n + 2 * d->max_drift;
+  const int window = d->n + 4 * d->max_drift;
+
+  d->n_patterns = 0;
+  d->pattern_cap = edges;
+  d->align_shared = NULL;
+  d->branch_ring = NULL;
+
+  d->received = dt_malloc((size_t)d->received_capacity);
+  d->metric = dt_malloc(count * sizeof(float));
+  d->next_metric = dt_malloc(count * sizeof(float));
+  d->beta_tilde = dt_malloc(count * sizeof(float));
+  d->beta_cur = dt_malloc(count * sizeof(float));
+  d->pattern_bits = dt_malloc((size_t)d->pattern_cap * d->n);
+  d->group_of = dt_malloc((size_t)edges * sizeof(int));
+  d->alignment = dt_malloc((size_t)(d->n + 1) * (max_consume + 1) * sizeof(float));
+  d->match_cost0 = dt_malloc((size_t)window * sizeof(float));
+  d->match_cost1 = dt_malloc((size_t)window * sizeof(float));
+  d->ins_cost = dt_malloc((size_t)window * sizeof(float));
+  d->in_range = dt_malloc((size_t)window * sizeof(signed char));
+  d->alpha_ring = dt_malloc((size_t)rl * count * sizeof(float));
+  d->shift = dt_malloc((size_t)rl * sizeof(int));
+  d->lock_ring = dt_malloc((size_t)rl * sizeof(float));
+  d->inv_ring = dt_malloc((size_t)rl * sizeof(int));
+  d->fifo_sym = dt_malloc((size_t)rl * sizeof(dt_bit));
+  d->fifo_det = dt_malloc((size_t)rl * sizeof(dt_maxir_decode_details));
+  if (!d->received || !d->metric || !d->next_metric || !d->beta_tilde ||
+      !d->beta_cur || !d->pattern_bits || !d->group_of || !d->alignment ||
+      !d->match_cost0 || !d->match_cost1 || !d->ins_cost || !d->in_range ||
+      !d->alpha_ring || !d->shift || !d->lock_ring || !d->inv_ring ||
+      !d->fifo_sym || !d->fifo_det) {
+    return DT_ERR_ALLOC;
+  }
+
+  if (register_patterns(d) < 0) {
+    return DT_ERR_ALLOC;
+  }
+
+  /* Now n_patterns is known, size the per-step alignment rows and their ring. */
+  const int stride = d->n + 2 * d->max_drift + 1;
+  const size_t shared = (size_t)d->n_patterns * drift_width * (size_t)stride;
+  d->align_shared = dt_malloc(shared * sizeof(float));
+  d->branch_ring = dt_malloc((size_t)rl * shared * sizeof(float));
+  if (!d->align_shared || !d->branch_ring) {
+    return DT_ERR_ALLOC;
+  }
+
+  init_metric(d);
+  return DT_OK;
 }
 
 static int decode_feed(dt_maxir_stream_decoder *d, const uint8_t *in, int n_in) {

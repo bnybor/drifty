@@ -27,11 +27,12 @@
 /*
  * Tests for the maxir codec. The encoder is exercised for real (length, chunked
  * == one-shot, flush, error paths, all presets, and the public encoder vtable).
- * The decoder is the no-drift max-log-MAP core, so it is tested end to end:
+ * The decoder is the drift-tolerant max-log-MAP core, tested end to end:
  * channel-model validation, clean round trip and flip correction across the
  * presets, the soft-output invariants, the DT_INVALID poison contract and
- * erasure handling, blind acquisition, and the hard and soft decoder vtables.
- * The no-drift build must also reject a drift request (max_drift > 0).
+ * erasure handling, blind acquisition, the hard and soft decoder vtables, and -
+ * with max_drift > 0 - re-anchoring through cumulative and mid-group indels,
+ * blind acquisition under drift, and re-acquisition after a sustained loss.
  */
 
 #include "dt_test_util.h"
@@ -48,7 +49,7 @@ static const char *PRESET_NAMES[] = {"K3_R1_2", "K7_R1_2", "K7_R1_3",
                                      "K5_R1_5"};
 #define NUM_PRESETS ((int)(sizeof(PRESETS) / sizeof(PRESETS[0])))
 
-/* A valid channel model for the decoder stubs. */
+/* A valid channel model for the decoder (synchronous: no drift). */
 static dt_maxir_stream_params good_params(void) {
   return (dt_maxir_stream_params){.decision_depth = 40, .p_flip = 0.01f};
 }
@@ -207,8 +208,9 @@ static int maxir_decode_all(const dt_ccode *code, const dt_maxir_stream_params *
   return total;
 }
 
-/* The engine validates its channel model and rejects bad settings with NULL.
- * The no-drift core also rejects a request to track drift. */
+/* The engine validates its channel model and rejects bad settings with NULL. A
+ * drift request (max_drift > 0) is accepted with indel rates and rejected
+ * without. */
 static void test_decoder_param_validation(void) {
   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
@@ -232,13 +234,27 @@ static void test_decoder_param_validation(void) {
   check("create rejects p_flip == 1",
         dt_maxir_stream_decoder_create(code, &bad) == NULL);
   bad = p;
-  bad.p_erase = 1.0f;
-  check("create rejects p_erase == 1",
+  bad.p_ovr_erase = 1.0f;
+  check("create rejects p_ovr_erase == 1",
         dt_maxir_stream_decoder_create(code, &bad) == NULL);
   bad = p;
-  bad.max_drift = 1;
-  check("no-drift build rejects max_drift > 0",
+  bad.max_drift = -1;
+  check("create rejects max_drift < 0",
         dt_maxir_stream_decoder_create(code, &bad) == NULL);
+
+  /* Drift tracking needs both an insertion mass and a deletion rate. */
+  bad = p;
+  bad.max_drift = 4;
+  check("create rejects max_drift > 0 without indel rates",
+        dt_maxir_stream_decoder_create(code, &bad) == NULL);
+  dt_maxir_stream_params drift =
+      make_params(40, 4, 0.01, 0.01, 0.01, 0.0);
+  dt_maxir_stream_decoder *sd = dt_maxir_stream_decoder_create(code, &drift);
+  check("create accepts max_drift > 0 with indel rates", sd != NULL);
+  dt_maxir_stream_decoder_destroy(sd);
+  drift.p_del = 1.0f; /* p_ins + p_del >= 1 */
+  check("create rejects p_ins + p_del >= 1",
+        dt_maxir_stream_decoder_create(code, &drift) == NULL);
 
   dt_ccode_destroy(code);
 }
@@ -335,7 +351,7 @@ static void test_decoder_soft_invariants(void) {
   uint8_t *sym = malloc((size_t)outc);
   dt_maxir_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
   dt_maxir_stream_params p = {.decision_depth = 40, .p_flip = 0.02f,
-                             .p_erase = 0.03f};
+                             .p_ovr_erase = 0.03f};
   int got = maxir_decode_all(code, &p, rx, clen, sym, det, outc);
   REQUIRE("decode produced output", got > 0);
 
@@ -346,6 +362,11 @@ static void test_decoder_soft_invariants(void) {
                         q->c_invalid, q->c_lock,  q->c_absent};
     for (int k = 0; k < 6; ++k) {
       if (!(v[k] >= -1e-5f && v[k] <= 1.0f + 1e-5f)) range_ok = 0;
+    }
+    /* Skip starvation positions (no surviving path -> all value fields 0), where
+     * the sum/argmax invariants do not apply. */
+    if (q->c_true == 0.0f && q->c_false == 0.0f && q->c_lost == 0.0f) {
+      continue;
     }
     if (fabsf((q->c_true + q->c_false) - (1.0f + q->c_lost)) > 1e-3f) sum_ok = 0;
     const float mn = q->c_true < q->c_false ? q->c_true : q->c_false;
@@ -412,7 +433,7 @@ static void test_decoder_invalid_and_erasure(void) {
   memcpy(rx, coded, (size_t)clen);
   for (int i = 150 * n; i < 168 * n && i < clen; ++i) rx[i] = DT_ERASURE;
   dt_maxir_stream_params pe = {.decision_depth = depth, .p_flip = 0.01f,
-                              .p_erase = 0.05f};
+                              .p_ovr_erase = 0.05f};
   got = maxir_decode_all(code, &pe, rx, clen, sym, det, outc);
   int lost = 0, span = 0;
   for (int i = 155; i < 165; ++i) {
@@ -578,6 +599,248 @@ static void test_soft_decoder_vtable(void) {
   dt_ccode_destroy(code);
 }
 
+/* -- drift (max_drift > 0) ------------------------------------------------- */
+
+/* Count mismatches of out[lo, hi) against msg[off + (i-lo)], over the available
+ * output. Returns the comparison count via *counted. */
+static int region_errors(const uint8_t *out, int got, const uint8_t *msg,
+                         int lo, int hi, int off, int *counted) {
+  int err = 0, n = 0;
+  for (int i = lo; i < hi && i < got; ++i) {
+    ++n;
+    if (out[i] != msg[off + (i - lo)]) {
+      ++err;
+    }
+  }
+  *counted = n;
+  return err;
+}
+
+/* Cumulative deletions (one coded bit every 100) push drift steadily negative;
+ * re-anchoring keeps the window centred and recovers the message exactly. */
+static void test_decoder_reanchor(void) {
+  uint64_t rng = 0x5EED01u;
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 600, depth = 48, warmup = depth + 6 * K;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + K) * (size_t)n);
+  int clen = maxir_encode_all(code, msg, info_bits, coded);
+
+  uint8_t *rx = malloc((size_t)clen);
+  int rl = 0, ndel = 0;
+  for (int i = 0; i < clen; ++i) {
+    if ((i + 1) % 100 == 0) {
+      ++ndel;
+      continue;
+    }
+    rx[rl++] = coded[i];
+  }
+
+  const int outc = info_bits + K + 8;
+  uint8_t *out = malloc((size_t)outc);
+  dt_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
+  int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
+
+  int counted = 0;
+  int err = region_errors(out, got, msg, warmup, info_bits, warmup, &counted);
+  check("reanchor: cumulative deletions recovered", counted > 200 && err == 0);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(out);
+  dt_ccode_destroy(code);
+}
+
+/* An insertion and a deletion off the group boundary (phase 2 and 62 of every
+ * 120 coded bits) exercise the bit-level alignment, not just group-aligned
+ * indels; the message recovers exactly. */
+static void test_decoder_midgroup_indel(void) {
+  uint64_t rng = 0x71D6A0u;
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 600, depth = 48, warmup = depth + 6 * K;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + K) * (size_t)n);
+  int clen = maxir_encode_all(code, msg, info_bits, coded);
+
+  uint8_t *rx = malloc((size_t)clen + 64);
+  int rl = 0, ndel = 0, nins = 0;
+  for (int i = 0; i < clen; ++i) {
+    const int phase = i % 120;
+    if (phase == 2) {
+      ++ndel;
+      continue;
+    }
+    if (phase == 62) {
+      rx[rl++] = bit_sym((unsigned int)(i >> 1));
+      ++nins;
+    }
+    rx[rl++] = coded[i];
+  }
+
+  const int outc = info_bits + K + 8;
+  uint8_t *out = malloc((size_t)outc);
+  dt_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
+  int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
+
+  int counted = 0;
+  int err = region_errors(out, got, msg, warmup, info_bits, warmup, &counted);
+  check("mid-group indels recovered", counted > 200 && err == 0);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(out);
+  dt_ccode_destroy(code);
+}
+
+/* Random insertions and deletions PLUS substitution noise together: the codec
+ * tracks the drift and corrects the flips, recovering the message (a handful of
+ * residual errors tolerated). */
+static void test_decoder_drift_plus_flip(void) {
+  uint64_t rng = 0xD81F11Fu;
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_3);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 600, depth = 48, warmup = depth + 6 * K;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + K) * (size_t)n);
+  int clen = maxir_encode_all(code, msg, info_bits, coded);
+
+  uint8_t *ins = malloc((size_t)(2 * clen + 64));
+  int il = insert_channel(coded, clen, 0.01, &rng, ins);
+  uint8_t *rx = malloc((size_t)il);
+  int rl = delete_channel(ins, il, 0.01, &rng, rx);
+  flip_channel(rx, rl, 0.01, &rng);
+
+  const int outc = info_bits + K + 16;
+  uint8_t *out = malloc((size_t)outc);
+  dt_maxir_stream_params p = make_params(depth, 8, 0.02, 0.02, 0.02, 0.0);
+  int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
+
+  int counted = 0;
+  int err = region_errors(out, got, msg, warmup, info_bits, warmup, &counted);
+  check("drift + flips recovered", counted > 200 && err <= counted / 50);
+
+  free(msg);
+  free(coded);
+  free(ins);
+  free(rx);
+  free(out);
+  dt_ccode_destroy(code);
+}
+
+/* Blind acquisition under drift: tap the stream mid-flight (no leading sync) on a
+ * channel that also drops bits, and recover the message past warm-up. */
+static void test_decoder_blind_acquisition_under_drift(void) {
+  uint64_t rng = 0xB11D04u;
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 700, depth = 48, warmup = depth + 6 * K;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + K) * (size_t)n);
+  int clen = maxir_encode_all(code, msg, info_bits, coded);
+
+  /* Tap at a clean group boundary, then drop bits over the tail. */
+  const int skip_groups = 100, skip = skip_groups * n;
+  uint8_t *rx = malloc((size_t)clen);
+  int rl = delete_channel(coded + skip, clen - skip, 0.01, &rng, rx);
+
+  const int outc = info_bits + K + 8;
+  uint8_t *out = malloc((size_t)outc);
+  dt_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
+  int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
+
+  int counted = 0;
+  int err = region_errors(out, got, msg, warmup, info_bits - skip_groups,
+                          skip_groups + warmup, &counted);
+  check("blind acquisition under drift recovers", counted > 200 && err == 0);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(out);
+  dt_ccode_destroy(code);
+}
+
+/* Re-acquisition after a sustained loss: a long mid-stream burst of substitution
+ * noise wrecks decoding over its span, but the decoder re-locks - via the drift
+ * re-anchoring and trellis forgetting, backed by a trellis re-seed if the lock
+ * fully collapses - and recovers the post-burst message downstream. The burst can
+ * leave a small residual drift, so the recovered run sits at a shifted output
+ * index (found by search). */
+static void test_decoder_reacquire(void) {
+  uint64_t rng = 0x9EACFEu;
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 1000, depth = 40, warmup = depth + 4 * K;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + K) * (size_t)n);
+  int clen = maxir_encode_all(code, msg, info_bits, coded);
+
+  /* Overwrite a 160-group stretch with random noise (>> 2*decision_depth). */
+  const int burst_lo = 400, burst_hi = 560;
+  uint8_t *rx = malloc((size_t)clen);
+  memcpy(rx, coded, (size_t)clen);
+  for (int i = burst_lo * n; i < burst_hi * n; ++i) {
+    rx[i] = bit_sym((unsigned int)rng_next(&rng));
+  }
+
+  const int outc = info_bits + K + 8;
+  uint8_t *out = malloc((size_t)outc);
+  dt_maxir_stream_params p = make_params(depth, 4, 0.01, 0.01, 0.01, 0.0);
+  int got = maxir_decode_all(code, &p, rx, clen, out, NULL, outc);
+
+  /* Pre-burst recovers exactly (stop a look-ahead short of the burst). */
+  int pre_n = 0;
+  int pre_err =
+      region_errors(out, got, msg, warmup, burst_lo - depth, warmup, &pre_n);
+  check("re-acquire: pre-burst region clean", pre_n > 100 && pre_err == 0);
+
+  /* The burst wrecks decoding over its span (straight against the message). */
+  int burst_err = 0, burst_n = 0;
+  for (int i = burst_lo + 20; i < burst_hi - 20 && i < got; ++i) {
+    ++burst_n;
+    if (out[i] != msg[i]) ++burst_err;
+  }
+  check("re-acquire: burst disrupts decoding",
+        burst_n > 50 && burst_err > burst_n / 4);
+
+  /* After the burst the decoder re-locks: a 200-bit run of the post-burst
+   * message (msg[700, 900)) reappears in the output tail. */
+  int reacq_ok = 0;
+  for (int o = burst_hi - 10; o + 200 <= got && !reacq_ok; ++o) {
+    int run_err = 0;
+    for (int k = 0; k < 200; ++k) {
+      if (out[o + k] != msg[700 + k]) ++run_err;
+    }
+    if (run_err <= 4) reacq_ok = 1;
+  }
+  check("re-acquire: re-locks and recovers after the burst", reacq_ok);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(out);
+  dt_ccode_destroy(code);
+}
+
 int main(void) {
   printf("maxir encoder:\n");
   test_encode_length_and_chunked();
@@ -591,5 +854,11 @@ int main(void) {
   test_decoder_blind_acquisition();
   test_decoder_vtable();
   test_soft_decoder_vtable();
+  printf("maxir drift:\n");
+  test_decoder_reanchor();
+  test_decoder_midgroup_indel();
+  test_decoder_drift_plus_flip();
+  test_decoder_blind_acquisition_under_drift();
+  test_decoder_reacquire();
   return test_summary("maxir");
 }

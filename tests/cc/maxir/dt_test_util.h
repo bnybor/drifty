@@ -26,11 +26,9 @@
 
 /*
  * Shared test utilities for the maxir suite: a small soft-assertion framework
- * plus the PRNG and encode helpers the test files have in common. The encoder is
- * fully implemented; the decoders are stubs, so the helpers here cover the
- * encoder and leave decode exercising to the test bodies. Header-only; every
- * helper is `static inline` so a test file that does not use one draws no
- * -Wunused warning.
+ * plus the PRNG, encode, channel, and decoder-param helpers the test files have
+ * in common. Header-only; every helper is `static inline` so a test file that
+ * does not use one draws no -Wunused warning.
  */
 
 #ifndef DT_MAXIR_TEST_UTIL_H
@@ -108,6 +106,83 @@ static inline int maxir_encode_all(const dt_ccode *code, const uint8_t *msg,
   int len = dt_maxir_encode(code, msg, info_bits, &state, &unknown, out);
   len += dt_maxir_encode_flush(code, &state, &unknown, out + len);
   return len;
+}
+
+/* -- channels (model the impairments the decoder corrects) ----------------- */
+
+static inline double rng_unit(uint64_t *state) {
+  return (double)(rng_next(state) >> 11) * (1.0 / 9007199254740992.0);
+}
+
+/* Drop each coded bit with probability p_del; cumulative drift grows with
+ * position. Returns the received length. */
+static inline int delete_channel(const uint8_t *in, int len, double p_del,
+                                 uint64_t *rng, uint8_t *out) {
+  int o = 0;
+  for (int i = 0; i < len; ++i) {
+    if (rng_unit(rng) < p_del) {
+      continue;
+    }
+    out[o++] = in[i];
+  }
+  return o;
+}
+
+/* Insert a spurious random bit before each coded bit with probability p_ins;
+ * cumulative drift grows with position. out[] must hold up to 2*len bits.
+ * Returns the received length. */
+static inline int insert_channel(const uint8_t *in, int len, double p_ins,
+                                 uint64_t *rng, uint8_t *out) {
+  int o = 0;
+  for (int i = 0; i < len; ++i) {
+    if (rng_unit(rng) < p_ins) {
+      out[o++] = bit_sym((unsigned int)rng_next(rng));
+    }
+    out[o++] = in[i];
+  }
+  return o;
+}
+
+/* Flip each bit with probability p_flip, in place (run before erase_channel so a
+ * flip never lands on a DT_ERASURE marker). */
+static inline void flip_channel(uint8_t *buf, int len, double p_flip,
+                                uint64_t *rng) {
+  for (int i = 0; i < len; ++i) {
+    if (rng_unit(rng) < p_flip) {
+      buf[i] ^= DT_VALUE; /* toggle the value bit: DT_TRUE <-> DT_FALSE */
+    }
+  }
+}
+
+/* Mark each bit DT_ERASURE with probability p_erase, in place. */
+static inline void erase_channel(uint8_t *buf, int len, double p_erase,
+                                 uint64_t *rng) {
+  for (int i = 0; i < len; ++i) {
+    if (rng_unit(rng) < p_erase) {
+      buf[i] = DT_ERASURE;
+    }
+  }
+}
+
+/* -- decoder params -------------------------------------------------------- */
+
+/* Build channel-model params from positional settings (keeps tests concise).
+ * insert_channel inserts uniformly-random 0/1 bits, so the total insertion rate
+ * is split evenly between the true/false components; p_erase maps onto the
+ * overwrite-to-erasure rate. */
+static inline dt_maxir_stream_params make_params(int depth, int drift,
+                                                 double p_flip, double p_ins,
+                                                 double p_del, double p_erase) {
+  dt_maxir_stream_params params = {
+      .decision_depth = depth,
+      .max_drift = drift,
+      .p_flip = (float)p_flip,
+      .p_ins_true = (float)(p_ins * 0.5),
+      .p_ins_false = (float)(p_ins * 0.5),
+      .p_del = (float)p_del,
+      .p_ovr_erase = (float)p_erase,
+  };
+  return params;
 }
 
 #endif /* DT_MAXIR_TEST_UTIL_H */

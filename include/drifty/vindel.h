@@ -53,30 +53,16 @@ extern "C" {
  *   decision_depth : output delay, in bits, before each bit is committed. Bigger
  *                    is more reliable but slower to emit. Try ~6 * dt_ccode_k().
  *                    Required (must be >= 1).
- *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
+ *   p_sub          : how often a received bit is flipped, 0 < p_sub < 1 (e.g.
  *                    0.01 for 1%). Required.
  *   max_drift      : how far alignment may slip from inserted/dropped bits before
  *                    the decoder loses track. 0 (the default) corrects flipped
  *                    bits only; 4-8 also recovers from insertions and deletions.
- *   p_ins_true,
- *   p_ins_false,
- *   p_ins_erase    : how often a spurious DT_TRUE / DT_FALSE / DT_ERASURE bit is
- *                    inserted into the stream, per bit and at any position. Their
- *                    sum is the overall insertion rate; it sets how readily the
- *                    decoder realigns, while the split only biases which value it
- *                    expects an inserted bit to carry. So an even true/false split
- *                    behaves the same as one combined rate - set them unequal only
- *                    to favour one inserted value.
- *   p_del          : how often a coded bit is dropped, per bit and at any position.
- *                    The insertion rates and p_del together must sum to < 1, and
- *                    are required when max_drift > 0; leave 0 otherwise.
- *   p_ovr_true,
- *   p_ovr_false,
- *   p_ovr_erase    : how often a coded bit is overwritten with a fixed DT_TRUE /
- *                    DT_FALSE / DT_ERASURE, regardless of what was sent. The three
- *                    must sum to < 1 (the remainder is the chance the bit arrives
- *                    normally). All 0 (the default) if there are no overwrites;
- *                    p_ovr_erase doubles as the plain erasure rate.
+ *   p_ins, p_del   : how often a coded bit is inserted / dropped, per bit and at
+ *                    any position (p_ins + p_del < 1). Required when
+ *                    max_drift > 0; leave 0 otherwise.
+ *   p_erase        : how often a received bit is DT_ERASURE. 0 (the default) if
+ *                    you never mark erasures.
  *
  * Rough probabilities are fine; only their relative sizes matter.
  */
@@ -84,14 +70,10 @@ extern "C" {
 typedef struct {
   int decision_depth;
   int max_drift;
-  double p_flip;
-  double p_ins_true;
-  double p_ins_false;
-  double p_ins_erase;
+  double p_sub;
+  double p_ins;
   double p_del;
-  double p_ovr_true;
-  double p_ovr_false;
-  double p_ovr_erase;
+  double p_erase;
 } dt_vindel_stream_params;
 
 /* Build an encoder over `code`. Returns NULL on a bad argument or out of

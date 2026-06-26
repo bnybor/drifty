@@ -114,12 +114,13 @@ static int vindel_decoder_begin(dt_decoder *dec, dt_t *dst, size_t dst_len) {
 static int vindel_decoder_decode(dt_decoder *dec, dt_t *dst, size_t dst_len,
                                  const dt_t *src, size_t src_len) {
   dt_vindel_stream_decoder *sd = dec->data;
+  /* The hard decoder ignores the per-bit lock probability (pass NULL). */
   return dt_vindel_stream_decode(sd, src, (int)src_len, dst, NULL, (int)dst_len);
 }
 
 static int vindel_decoder_finalize(dt_decoder *dec, dt_t *dst, size_t dst_len) {
   dt_vindel_stream_decoder *sd = dec->data;
-  return dt_vindel_stream_decode_flush(sd, dst, NULL, (int)dst_len);
+  return dt_vindel_stream_decode_flush(sd, dst, (int)dst_len);
 }
 
 dt_decoder *dt_vindel_decoder_create(const dt_ccode *code,

@@ -27,11 +27,14 @@
 #ifndef DRIFTY_VINDEL_DECODE_H
 #define DRIFTY_VINDEL_DECODE_H
 
-/* The decoder is built from a dt_ccode, and shares the result codes and bit
- * values defined alongside the encoder. dt_vindel_stream_decoder_create takes the
- * dt_vindel_stream_params channel model, which lives in <drifty/vindel.h>. */
+/* The vindel decoder is the ported drift_viterbi algorithm. It is built from a
+ * dt_ccode and shares the result codes defined alongside the encoder;
+ * dt_vindel_stream_decoder_create takes the dt_vindel_stream_params channel
+ * model, which lives in <drifty/vindel.h>. */
 #include <drifty/vindel.h>
 #include "encode.h"
+
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,17 +42,17 @@ extern "C" {
 
 /* clang-format off */
 /*
- * The receiver's half of drifty (the sender's half is in encode.h).
+ * The receiver's half of the vindel codec (the sender's half is in encode.h).
  *
- * Recover your original bits from a received stream: feed received bits to a
- * decoder and read your bits back, with flipped, inserted and dropped bits
+ * Recover the original bits from a received stream: feed received bits to a
+ * decoder and read the bits back, with flipped, inserted and dropped bits
  * corrected.
  *
- *   dt_vindel_stream_decoder *d = dt_vindel_stream_decoder_create(code, &(dt_vindel_stream_params){
- *       .decision_depth = 40,
- *       .max_drift      = 4,
- *       .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
- *   });
+ *   dt_vindel_stream_decoder *d = dt_vindel_stream_decoder_create(code,
+ *       &(dt_vindel_stream_params){
+ *           .decision_depth = 40, .max_drift = 4,
+ *           .p_sub = 0.01, .p_ins = 0.01, .p_del = 0.01,
+ *       });
  *   int n = dt_vindel_stream_decode(d, in, n_in, out, NULL, out_cap);
  *   while (dt_vindel_stream_decode_flush(d, out, out_cap) > 0) { }
  *
@@ -57,63 +60,24 @@ extern "C" {
  *
  * `code` must be the same one the sender used, and must stay alive until the
  * decoder is freed. dt_vindel_stream_decoder is an opaque handle.
+ *
+ * Bits crossing this boundary are dt_t symbols (DT_FALSE / DT_TRUE, and
+ * DT_ERASURE on input to mark a lost bit); the engine converts to and from its
+ * internal representation at the edges.
  */
 /* clang-format on */
-
-/*
- * In received data you may mark a bit DT_ERASURE to say "this one was lost";
- * the decoder then treats it as unknown instead of guessing 0 or 1. Ordinary
- * bits are DT_FALSE or DT_TRUE. All three bit values are defined in bit.h.
- */
-
-/* ------------------------------------------------------------------------- */
-/* Decoder                                                                   */
-/* ------------------------------------------------------------------------- */
-
-/*
- * Recovers your original bits from a received stream: corrects flipped bits and
- * keeps its place through inserted or dropped ones. Push received bits in, pull
- * decoded bits out, with a fixed delay.
- *
- * You may start at the beginning of a stream or join one mid-flight; either way
- * the first ~decision_depth decoded bits come out while the decoder is still
- * locking on, so discard them (or send a known preamble you can skip). Opaque
- * handle.
- */
 typedef struct dt_vindel_stream_decoder dt_vindel_stream_decoder;
 
 /* dt_vindel_stream_params (the decoder channel-model settings) is defined in
  * <drifty/vindel.h>, included above. */
 
 /*
- * Details about how an info-bit position was decoded.
- */
-typedef struct {
-  /*
-   * All fields are consistencies, not probabilities, ranging 0...1.
-   *
-   * In the presence of information loss, c_true and c_false may sum
-   * to more than 1.  Information loss includes erasures, deletions,
-   * and stuck bits.
-   */
-
-  // Consistency of the proposition that the encoded bit was true
-  double c_true;
-  // Consistency of the proposition that the encoded bit was false
-  double c_false;
-  // Consistency of the proposition that the encoded bit is unrecoverable
-  double c_lost;
-  // Consistency of the proposition that the `dt_ccode` is correct.
-  double c_lock;
-} dt_vindel_decode_details;
-
-/*
  * Make a decoder for `code` (which must stay alive until the decoder is freed)
  * using `params`. Returns NULL on invalid settings or out of memory; free it
  * with dt_vindel_stream_decoder_destroy().
  */
-dt_vindel_stream_decoder *dt_vindel_stream_decoder_create(const dt_ccode *code,
-                                            const dt_vindel_stream_params *params);
+dt_vindel_stream_decoder *dt_vindel_stream_decoder_create(
+    const dt_ccode *code, const dt_vindel_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
 void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d);
@@ -127,16 +91,13 @@ void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d);
  * fills up (return value == max_out), call again to collect more before feeding
  * more input.
  *
- * `out` and `details` may both be NULL.  If supplied, they must be arrays
- * of length max_out.
- *
- * Elements of `out` are one of DT_TRUE, DT_FALSE, or DT_ERASURE, whichever is
- * most consistent.
- *
- * `details` returns the inner state of the decoder at each decoded position.
+ * `lock_probability`, which may be NULL, stores the probability at each bit
+ * position that the decoder is locked onto a valid coded bit stream. Same size
+ * as `out`.
  */
-int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in, int n_in,
-                     uint8_t *out, dt_vindel_decode_details *details, int max_out);
+int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in,
+                            int n_in, uint8_t *out, double *lock_probability,
+                            int max_out);
 
 /*
  * Call at the end of the stream to get the last decoded bits still in flight.
@@ -144,7 +105,7 @@ int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in, int 
  * returns 0, after which every bit has been decoded.
  */
 int dt_vindel_stream_decode_flush(dt_vindel_stream_decoder *d, uint8_t *out,
-                           dt_vindel_decode_details *details, int max_out);
+                                  int max_out);
 
 #ifdef __cplusplus
 }

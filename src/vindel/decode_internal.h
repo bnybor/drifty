@@ -1,0 +1,179 @@
+/* clang-format off */
+/*
+ * MIT License
+ *
+ * Copyright (c) 2026 Robyn Kirkman
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+/* clang-format on */
+
+#ifndef DRIFTY_VINDEL_DECODE_INTERNAL_H
+#define DRIFTY_VINDEL_DECODE_INTERNAL_H
+
+/*
+ * Private decoder internals shared by the single-stream decoder (decode.c) and
+ * the multi-decoder (multi.c). Not installed.
+ *
+ * The sliding-window Viterbi state splits in two: a `vin_decode_ctx` holds
+ * everything identical across codes decoded over the same stream - the received
+ * buffer, the cadence (read_base/steps/decided and the shared re-anchor history),
+ * the channel-derived cost constants, and the trellis dimensions - while a
+ * `vin_trellis` holds one code's per-step working state. The single decoder is one
+ * ctx + one trellis; the multi-decoder is one ctx + an array of trellises stepped
+ * in lockstep, so a single received buffer and a single re-anchor decision serve
+ * them all.
+ */
+
+#include "decode.h" /* dt_vindel_stream_params, dt_ccode (opaque), uint8_t */
+
+#include <stddef.h>
+#include <stdint.h>
+
+/*
+ * Opt-in internal assertions. The core is built -ffreestanding -fno-builtin
+ * -nostdlib, so it cannot use <assert.h> (that would pull in __assert_fail /
+ * abort from libc). __builtin_trap is a compiler intrinsic - not a libc symbol
+ * and not suppressed by -fno-builtin - so it traps without breaking the
+ * freestanding link. Off by default (zero cost); define VIN_DEBUG_ASSERT to arm
+ * the load-bearing invariants in the decoder (see vin_trellis_trace). */
+#if defined(VIN_DEBUG_ASSERT)
+#define VIN_ASSERT(cond) \
+  do {                  \
+    if (!(cond)) {      \
+      __builtin_trap(); \
+    }                   \
+  } while (0)
+#else
+#define VIN_ASSERT(cond) ((void)0)
+#endif
+
+/* Backpointer for one node: where it came from (prev_state, prev_drift_index)
+ * and the input bit that got there, packed into one 32-bit word to shrink the
+ * backpointer ring (~3x vs a struct) and make each forward-pass write a single
+ * store. Layout: bit:1 | prev_drift_index:15 | prev_state:16. The field widths
+ * dwarf the validated ranges (dt_ccode_create caps K <= 9, so prev_state < 256;
+ * vin_trellis_init guards prev_drift_index/prev_state against overflow). */
+typedef uint32_t vin_backpointer;
+
+static inline vin_backpointer vin_bp_pack(int prev_state, int prev_drift_index,
+                                        unsigned int bit) {
+  return (bit & 1u) | ((unsigned int)prev_drift_index << 1) |
+         ((unsigned int)prev_state << 16);
+}
+static inline unsigned int vin_bp_bit(vin_backpointer b) { return b & 1u; }
+static inline int vin_bp_drift(vin_backpointer b) {
+  return (int)((b >> 1) & 0x7FFFu);
+}
+static inline int vin_bp_state(vin_backpointer b) { return (int)(b >> 16); }
+
+/* Field capacities for the packing above (used by vin_trellis_init's guard). */
+#define VIN_BP_MAX_STATE 0xFFFF
+#define VIN_BP_MAX_DRIFT 0x7FFF
+
+/* Shared decode context: received buffer, cadence, channel constants, and
+ * trellis dimensions - all identical across codes decoded together. */
+typedef struct {
+  int n, max_drift, num_states, drift_width, decision_depth;
+  /* Branch-metric constants, in cost (negative-log-likelihood) units. */
+  double cost_match, cost_miss, cost_erase, cost_keep, cost_ins, cost_del;
+  /* Lock detection reference costs (channel-derived, code-independent). */
+  double expected_lock, expected_unlock;
+
+  int *shift; /* [decision_depth] shared re-anchor sigma per step */
+
+  long long steps;   /* trellis steps processed                      */
+  long long decided; /* decisions emitted (next step index to emit)  */
+
+  /* Received-bit buffer: valid bits live in received[0 .. received_length).
+   * read_base is the buffer index of the current step's zero-drift read base. */
+  uint8_t *received;
+  int received_capacity, received_length, read_base;
+
+  /* Shared per-step scratch for the fused forward pass. An edge's alignment DP
+   * depends only on its n-bit output pattern and source drift, not on the code
+   * (fused codes share n / K / trellis geometry), so the per-(pattern, drift)
+   * final rows are computed once per step here and every trellis's scatter
+   * indexes them by pattern. Decoding N codes thus recomputes the alignment once
+   * per step, not N times - the multi-decoder's chief redundancy. patterns are
+   * the union of the codes' distinct output rows (group_of maps edges to them). */
+  uint8_t *pattern_bits;   /* [n_patterns * n] distinct output rows (union)     */
+  int n_patterns;          /* distinct output patterns across all fused codes   */
+  int pattern_cap;         /* allocated capacity of pattern_bits, in patterns   */
+  double *alignment;       /* [(n+1)*(max_consume+1)] alignment DP scratch      */
+  double *align_shared;    /* [n_patterns*drift_width*(max_consume+1)] final rows */
+  /* Per-step received-window match costs (shared), indexed by position-match_lo:
+   * cost of aligning an expected 0/1 bit there, with in_range gating the ends. */
+  double *match_cost0;     /* [n+4*max_drift] expected-bit-0 costs              */
+  double *match_cost1;     /* [n+4*max_drift] expected-bit-1 costs              */
+  signed char *in_range;   /* [n+4*max_drift] 1 if position buffered            */
+  int match_lo;            /* absolute received index of match table position 0 */
+} vin_decode_ctx;
+
+/* One code's trellis working state. The alignment scratch lives in the shared
+ * ctx now (it is computed once per step for all codes); a trellis carries only
+ * its own metric/backpointers and the map from each edge to its output pattern's
+ * index in ctx->pattern_bits / ctx->align_shared. */
+typedef struct {
+  const dt_ccode *code;          /* borrowed                                  */
+  double *metric;               /* [num_states*drift_width] node costs       */
+  double *next_metric;          /* [num_states*drift_width] scratch          */
+  vin_backpointer *backpointers; /* [decision_depth*num_states*drift_width]   */
+  double smoothed_cost;         /* EWMA of best-path per-step cost           */
+  int *group_of;                /* [2*num_states] (state*2+bit)->pattern idx */
+} vin_trellis;
+
+/* Validate `params`, take dimensions from `code`, allocate the shared buffers,
+ * and zero the cadence. Returns DT_OK or a negative VIN_ERR_*. A ctx that failed
+ * (or was zero-initialised) is safe to pass to vin_decode_ctx_free. */
+int vin_decode_ctx_init(vin_decode_ctx *ctx, const dt_vindel_stream_params *params,
+                       const dt_ccode *code);
+void vin_decode_ctx_free(vin_decode_ctx *ctx);
+
+/* Allocate the shared per-step alignment table now that every trellis sharing
+ * this ctx has been initialised (so the union of output patterns is known). Call
+ * once after the last vin_trellis_init. Returns DT_OK or negative. */
+int vin_decode_ctx_finalize(vin_decode_ctx *ctx);
+
+/* Allocate one trellis's per-code arrays (sized from `ctx`), initialise its
+ * metric and smoothed cost for blind acquisition, and register its output
+ * patterns into the shared `ctx` (so `ctx` is mutated). Returns DT_OK or
+ * negative; a failed/zeroed trellis is safe to vin_trellis_free. */
+int vin_trellis_init(vin_trellis *tr, vin_decode_ctx *ctx, const dt_ccode *code);
+void vin_trellis_free(vin_trellis *tr);
+
+/* Append `n_in` received bits to the shared buffer. Returns DT_OK or negative. */
+int vin_decode_feed(vin_decode_ctx *ctx, const uint8_t *in, int n_in);
+
+/* Advance every trellis one fused step: one re-anchor sigma (picked from the
+ * best-fitting trellis) is applied to all, then each runs its forward pass, then
+ * the shared cadence advances. With n == 1 this is the plain single-decoder step. */
+void vin_decode_step(vin_decode_ctx *ctx, vin_trellis *trs, size_t n);
+
+/* Lowest-cost node at a trellis's current frontier. */
+int vin_trellis_frontier(const vin_decode_ctx *ctx, const vin_trellis *tr);
+
+/* Input bit a trellis decided at step `target`, traced from node `frontier`. */
+unsigned char vin_trellis_trace(const vin_decode_ctx *ctx, const vin_trellis *tr,
+                               int frontier, long long target);
+
+/* Probability the trellis is locked onto this code's stream (0..1). */
+double vin_trellis_lock(const vin_decode_ctx *ctx, const vin_trellis *tr);
+
+#endif /* DRIFTY_VINDEL_DECODE_INTERNAL_H */

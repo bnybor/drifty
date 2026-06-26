@@ -185,7 +185,10 @@ static int hybrid_soft_decode(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
   dt_decode_details chunk[HYBRID_SOFT_CHUNK];
   size_t written = 0;
   int fed = 0; /* feed src on the first collect only; drain on later ones */
-  while (written < dst_len) {
+  /* do/while, not while: src must be handed to the engine even when dst_len is
+   * 0 (a feed-only "pump" call), matching the hard decoder, which buffers the
+   * input regardless of how much output is collected. */
+  do {
     const size_t remain = dst_len - written;
     const int want =
         remain > HYBRID_SOFT_CHUNK ? HYBRID_SOFT_CHUNK : (int)remain;
@@ -202,7 +205,7 @@ static int hybrid_soft_decode(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
     if (got < want) {
       break; /* nothing more decodable from what is buffered */
     }
-  }
+  } while (written < dst_len);
   return (int)written;
 }
 

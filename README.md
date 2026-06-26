@@ -70,6 +70,11 @@ number of bits it wrote into the output buffer, or a negative value on a bad
 argument (such as too little room). `dt_ccode_n()` gives output-bits-per-input-bit
 for sizing buffers.
 
+A decoder buffers internally: it keeps any decoded bits that don't fit in the
+output buffer you gave it, rather than dropping them. When a `decode` call returns
+exactly the capacity you passed (`out` filled), call `decode` again with a fresh
+buffer — and no new input (`src_len` 0) — to drain the rest before feeding more.
+
 The decoder produces output after a short delay (`decision_depth` bits) and locks
 on whether you start at the beginning of a stream or join one mid-flight — so
 discard the first ~`decision_depth` decoded bits (or send a known preamble you can

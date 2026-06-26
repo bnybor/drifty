@@ -54,12 +54,12 @@ extern "C" {
 typedef struct dt_decoder_t dt_decoder;
 struct dt_decoder_t {
   // Initialize the decoder, and write any preamble
-  int (*begin)(dt_decoder *enc, dt_t *dst, size_t dst_len);
+  int (*begin)(dt_decoder *dec, dt_t *dst, size_t dst_len);
   // Decode bits
-  int (*decode)(dt_decoder *enc, dt_t *dst, size_t dst_len, const dt_t *src,
+  int (*decode)(dt_decoder *dec, dt_t *dst, size_t dst_len, const dt_t *src,
                 size_t src_len);
-  // Finish encoding any in-progress bits and write any trailer.
-  int (*finalize)(dt_decoder *enc, dt_t *dst, size_t dst_len);
+  // Finish decoding any in-progress bits and write any trailer.
+  int (*finalize)(dt_decoder *dec, dt_t *dst, size_t dst_len);
 
   // implementation-specific state
   void *data;

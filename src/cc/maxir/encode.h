@@ -80,9 +80,11 @@ enum {
 /*
  * Encode `n_bits` input bits into `out`, which needs room for
  * n_bits * dt_ccode_n(code) bits. Each input is normally DT_FALSE or DT_TRUE; a
- * non-boolean input (DT_ERASURE / DT_INVALID) has no recoverable value and is
- * poisoned - the coded bits that would carry it are emitted as DT_INVALID, which
- * the MAXIR decoder reads back as a deliberate erasure at that position.
+ * non-boolean input has no boolean value to encode, and the coded bits that
+ * would carry it are marked per kind: a DT_INVALID input emits DT_INVALID
+ * (structural poison the decoder reads as a deliberate tie at that position),
+ * while a DT_ERASURE input emits DT_ERASURE (an unbound value deferred to the
+ * channel, which may concretize it - encoder output is not decoder input).
  *
  * Encoding is one continuous stream: keep an `int state` and an
  * `unsigned int unknown` (the in-flight poison register), set both to 0 before

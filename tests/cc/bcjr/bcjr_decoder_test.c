@@ -360,9 +360,13 @@ static void test_decoder_soft_invariants(void) {
   dt_ccode_destroy(code);
 }
 
-/* The encoder marks a non-boolean input by poisoning exactly the coded bits that
- * carry its value, so the originating slot is a true tie and must decode to
- * DT_INVALID (with c_invalid == 1), while clean bits on either side recover. A
+/* The encoder marks a non-boolean input on exactly the coded bits that would
+ * carry its value, per kind. A DT_INVALID input is structural poison: those bits
+ * are emitted DT_INVALID, the originating slot is a true tie and decodes to
+ * DT_INVALID (c_invalid == 1), with no erasure channel model needed. A DT_ERASURE
+ * input is an unbound value deferred to the channel: those bits are emitted
+ * DT_ERASURE, and with an erasure channel model (p_erase) the slot decodes back
+ * to DT_ERASURE, not poison. Clean bits on either side recover in both cases. A
  * long erasure burst destroys the value over its span (DT_ERASURE / DT_ABSENT,
  * never a confident bit), and bits away from it still decode. */
 static void test_decoder_invalid_and_erasure(void) {
@@ -378,20 +382,22 @@ static void test_decoder_invalid_and_erasure(void) {
   uint8_t *msg = malloc((size_t)info_bits);
   rand_bits(msg, info_bits, &rng);
   const int poison_at = 120;
-  msg[poison_at] = DT_ERASURE; /* non-boolean input -> encoder poisons it */
 
   uint8_t *coded = malloc((size_t)cap);
-  int clen = bcjr_encode_all(code, msg, info_bits, coded);
-
   const int outc = info_bits + K + 8;
   uint8_t *sym = malloc((size_t)outc);
   dt_bcjr_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
-  dt_bcjr_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
-  int got = bcjr_decode_all(code, &p, coded, clen, sym, det, outc);
+
+  /* (a) DT_INVALID input: structural poison -> a DT_INVALID tie, no erasure
+   * channel model needed. */
+  msg[poison_at] = DT_INVALID;
+  int clen = bcjr_encode_all(code, msg, info_bits, coded);
+  dt_bcjr_stream_params pi = {.decision_depth = depth, .p_flip = 0.01f};
+  int got = bcjr_decode_all(code, &pi, coded, clen, sym, det, outc);
   REQUIRE("decode produced output", got > info_bits);
 
-  check("poisoned slot decodes DT_INVALID", sym[poison_at] == DT_INVALID);
-  check("poisoned slot c_invalid == 1", det[poison_at].c_invalid > 0.99f);
+  check("invalid input decodes DT_INVALID", sym[poison_at] == DT_INVALID);
+  check("invalid slot c_invalid == 1", det[poison_at].c_invalid > 0.99f);
   int around_ok = 1;
   for (int i = warmup; i < poison_at - 1; ++i) {
     if (sym[i] != msg[i]) around_ok = 0;
@@ -399,7 +405,29 @@ static void test_decoder_invalid_and_erasure(void) {
   for (int i = poison_at + K; i < info_bits; ++i) {
     if (sym[i] != msg[i]) around_ok = 0;
   }
-  check("clean bits around the poison recover", around_ok);
+  check("clean bits around the invalid recover", around_ok);
+
+  /* (b) DT_ERASURE input: an unbound value deferred to the channel. The coded
+   * bits carrying it are emitted DT_ERASURE; told to expect erased coded bits
+   * (p_erase), the decoder reads the slot back as DT_ERASURE, not poison. */
+  msg[poison_at] = DT_ERASURE;
+  clen = bcjr_encode_all(code, msg, info_bits, coded);
+  dt_bcjr_stream_params px = {.decision_depth = depth, .p_flip = 0.01f,
+                             .p_erase = 0.05f};
+  got = bcjr_decode_all(code, &px, coded, clen, sym, det, outc);
+  REQUIRE("erasure decode produced output", got > info_bits);
+
+  check("erasure input decodes DT_ERASURE", sym[poison_at] == DT_ERASURE);
+  check("erasure slot is not poison", det[poison_at].c_invalid < 0.5f);
+  around_ok = 1;
+  for (int i = warmup; i < poison_at - 1; ++i) {
+    if (sym[i] != msg[i]) around_ok = 0;
+  }
+  for (int i = poison_at + K; i < info_bits; ++i) {
+    if (sym[i] != msg[i]) around_ok = 0;
+  }
+  check("clean bits around the erasure recover", around_ok);
+
 
   /* Now an erasure burst in the coded stream over info slots [150, 168). */
   uint8_t *rx = malloc((size_t)clen);

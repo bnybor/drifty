@@ -30,8 +30,127 @@
 
 #include <math.h>
 
-#include "decode_internal.h"
 #include "dt_internal.h"
+
+/*
+ * Opt-in internal assertions. The core is built -ffreestanding -fno-builtin
+ * -nostdlib, so it cannot use <assert.h> (that would pull in __assert_fail /
+ * abort from libc). __builtin_trap is a compiler intrinsic - not a libc symbol
+ * and not suppressed by -fno-builtin - so it traps without breaking the
+ * freestanding link. Off by default (zero cost); define DT_DEBUG_ASSERT to arm
+ * the load-bearing invariants in the decoder. */
+#if defined(DT_DEBUG_ASSERT)
+#define DT_ASSERT(cond) \
+  do {                  \
+    if (!(cond)) {      \
+      __builtin_trap(); \
+    }                   \
+  } while (0)
+#else
+#define DT_ASSERT(cond) ((void)0)
+#endif
+
+/* The streaming decoder's state splits in two: a `dt_decode_ctx` holds the
+ * received buffer, the cadence (read_base/steps/decided and the re-anchor
+ * history), the channel-derived cost constants, the trellis dimensions, and the
+ * per-step alignment scratch; a `dt_trellis` holds the per-step Viterbi working
+ * state (the node metric and the BCJR soft-output rings). There is one of each. */
+typedef struct {
+  int n, max_drift, num_states, drift_width, decision_depth;
+  /* Snapshot-ring length for the BCJR soft output. The decoder emits in batches:
+   * it steps up to (decision_depth + batch) ahead of the last decided bit, then
+   * one backward sweep serves the whole batch (the warmup overlap is re-swept, so
+   * cost is ~2 backward steps per bit instead of one full window per bit). The
+   * alpha/branch/shift/smoothed rings must outlast that, so ring_len =
+   * 2*decision_depth + slack. */
+  int ring_len;
+  /* Branch-metric constants, in cost (negative-log-likelihood) units.
+   * cost_bit[expected][received] is the per-bit match/mismatch cost for an
+   * expected 0/1 against a received 0/1 (asymmetric: overwrites bias the two
+   * directions differently). Insertion cost depends on the inserted bit's value:
+   * cost_ins_t / cost_ins_f / cost_ins_e for a consumed 1 / 0 / DT_ERASURE. */
+  double cost_bit[2][2];
+  double cost_erase, cost_keep, cost_del;
+  double cost_ins_t, cost_ins_f, cost_ins_e;
+  /* Lock detection reference costs (channel-derived, code-independent). */
+  double expected_lock, expected_unlock;
+
+  int *shift; /* [ring_len] re-anchor sigma per step */
+
+  long long steps;   /* trellis steps processed                      */
+  long long decided; /* decisions emitted (next step index to emit)  */
+
+  /* Received-bit buffer: valid bits live in received[0 .. received_length).
+   * read_base is the buffer index of the current step's zero-drift read base. */
+  uint8_t *received;
+  int received_capacity, received_length, read_base;
+
+  /* Per-step scratch for the forward pass. An edge's alignment DP depends only on
+   * its n-bit output pattern and source drift, so the per-(pattern, drift) final
+   * rows are computed once per step here and the forward pass indexes them by
+   * pattern. patterns are the code's distinct output rows (group_of maps edges to
+   * them). */
+  uint8_t *pattern_bits;   /* [n_patterns * n] distinct output rows             */
+  int n_patterns;          /* distinct output patterns in the code              */
+  int pattern_cap;         /* allocated capacity of pattern_bits, in patterns   */
+  double *alignment;       /* [(n+1)*(max_consume+1)] alignment DP scratch      */
+  double *align_shared;    /* [n_patterns*drift_width*(max_consume+1)] final rows */
+  /* Per-step received-window match costs, indexed by position-match_lo: cost of
+   * aligning an expected 0/1 bit there, with in_range gating the ends. */
+  double *match_cost0;     /* [n+4*max_drift] expected-bit-0 costs              */
+  double *match_cost1;     /* [n+4*max_drift] expected-bit-1 costs              */
+  double *ins_cost;        /* [n+4*max_drift] cost to consume position as insert */
+  signed char *in_range;   /* [n+4*max_drift] 1 if position buffered            */
+  int match_lo;            /* absolute received index of match table position 0 */
+
+  /* Per-step branch-cost snapshots for the forward-backward (BCJR) soft output: a
+   * ring of the per-(pattern, source drift) final rows (== align_shared, the rows
+   * forward_pass scatters), indexed by step % ring_len. The backward beta pass
+   * (dt_trellis_soft_batch) reads these to recover the cost of the best complete
+   * path for each bit value at the target step - which plain traceback cannot,
+   * since compare-select discards the losing hypothesis. Sized [decision_depth *
+   * n_patterns * drift_width * (n+2*max_drift+1)], allocated in
+   * dt_decode_ctx_finalize once n_patterns is known. */
+  double *branch_ring;
+  /* Two [num_states*drift_width] scratch buffers for the backward beta pass
+   * (only beta[t+1] is needed to form beta[t]). */
+  double *beta_a, *beta_b;
+} dt_decode_ctx;
+
+/* The decoder's per-step Viterbi working state. */
+typedef struct {
+  const dt_ccode *code;          /* borrowed                                  */
+  double *metric;               /* [num_states*drift_width] node costs       */
+  double *next_metric;          /* [num_states*drift_width] scratch          */
+  double smoothed_cost;         /* EWMA of best-path per-step cost           */
+  int *group_of;                /* [2*num_states] (state*2+bit)->pattern idx */
+  /* Per-step forward-metric (alpha) snapshots for the BCJR backward pass: the
+   * metric fed into each step's forward_pass (post re-anchor), ringed by
+   * step % ring_len. [ring_len*num_states*drift_width]. */
+  double *alpha_ring;
+  /* Per-frontier smoothed-cost snapshots [ring_len]: smoothed_ring[s % ring_len]
+   * is smoothed_cost when the frontier was at step s, so a batched decision for
+   * target t reads the lock consistency at t's own decision time (frontier
+   * t+decision_depth), not the later batch frontier. */
+  double *smoothed_ring;
+} dt_trellis;
+
+/* Internal decoder routines (defined below); the decoder is a single TU. */
+static int dt_decode_ctx_init(dt_decode_ctx *ctx,
+                              const dt_hybrid_stream_params *params,
+                              const dt_ccode *code);
+static void dt_decode_ctx_free(dt_decode_ctx *ctx);
+static int dt_decode_ctx_finalize(dt_decode_ctx *ctx);
+static int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx,
+                           const dt_ccode *code);
+static void dt_trellis_free(dt_trellis *tr);
+static int dt_decode_feed(dt_decode_ctx *ctx, const uint8_t *in, int n_in);
+static void dt_decode_step(dt_decode_ctx *ctx, dt_trellis *tr);
+static int dt_trellis_frontier(const dt_decode_ctx *ctx, const dt_trellis *tr);
+static double dt_lock_from_cost(const dt_decode_ctx *ctx, double cost);
+static void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr,
+                                  long long base, int n, uint8_t *bits_out,
+                                  dt_decode_details *details_out);
 
 /* ------------------------------------------------------------------------- */
 /* Streaming (sliding-window) decoder                                        */
@@ -40,10 +159,10 @@
 /* clang-format off */
 /*
  * Runs the forward add-compare-select pass continuously over a buffer of
- * received bits, keeping only `decision_depth` steps of backpointers. A bit is
- * committed decision_depth steps after it is first seen, by which point the
- * candidate paths have merged. Output emerges at fixed latency decision_depth
- * with bounded memory and no frame boundaries.
+ * received bits, retaining only a bounded window of per-step soft-output
+ * snapshots. A bit is committed decision_depth steps after it is first seen, by
+ * which point the candidate paths have merged. Output emerges at fixed latency
+ * decision_depth with bounded memory and no frame boundaries.
  *
  * Each step emits one input bit's group of n coded bits, scored by a per-edge
  * bit-level alignment (see align_fill) that may insert or delete individual
@@ -58,15 +177,15 @@
  * stored drift stays inside +/- max_drift. The shift is recorded per step so
  * traceback can translate node indices across the moving coordinate frame.
  *
- * The state splits into a shared dt_decode_ctx (received buffer, cadence, cost
- * constants, dimensions) and a per-code dt_trellis (metric/backpointers/etc).
- * Every step function takes (ctx, trellis); the shared dt_decode_step() advances
- * one or many trellises in lockstep over the one buffer with one re-anchor.
+ * The state splits into a dt_decode_ctx (received buffer, cadence, cost
+ * constants, dimensions, per-step alignment scratch) and a dt_trellis (the
+ * per-step Viterbi node metric and the BCJR soft-output rings). dt_decode_step()
+ * advances the trellis one step over the buffer with one re-anchor.
  */
 /* clang-format on */
 
-/* Flat index into the [num_states][drift_width] metric and backpointer arrays
- * for the node at encoder state `state` and drift index `drift_index`
+/* Flat index into the [num_states][drift_width] metric array for the node at
+ * encoder state `state` and drift index `drift_index`
  * (0..drift_width-1; drift_index == max_drift means zero drift). */
 static size_t node_at(int state, int drift_index, int drift_width) {
   return (size_t)state * drift_width + drift_index;
@@ -109,7 +228,7 @@ static int reserve_received(dt_decode_ctx *ctx, int extra) {
 
 /* Flat index of the lowest-cost node at the current frontier (the node states
  * one step past the last one processed). */
-int dt_trellis_frontier(const dt_decode_ctx *ctx, const dt_trellis *tr) {
+static int dt_trellis_frontier(const dt_decode_ctx *ctx, const dt_trellis *tr) {
   const size_t count = (size_t)ctx->num_states * ctx->drift_width;
   double best_cost = INFINITY;
   int best = 0;
@@ -166,7 +285,7 @@ static void align_fill_into(const dt_decode_ctx *ctx, const uint8_t *expected,
    * `off` maps this edge's read base into that table. The arithmetic is identical
    * to deriving them per cell. Rows 0..n-1 use ctx->alignment as scratch; the
    * final row (row n - the branch cost by total consumption) is written straight
-   * into final_out, which the fused decoder shares across codes by pattern. */
+   * into final_out, indexed by pattern in the shared per-step table. */
   const int off = base - ctx->match_lo;
   const signed char *in_range = ctx->in_range;
   const double *match_cost0 = ctx->match_cost0, *match_cost1 = ctx->match_cost1;
@@ -264,9 +383,9 @@ static double normalize(double *metric, size_t count) {
  *
  * The dropped edge slot is set to INFINITY (sigma > 0 empties the top slot,
  * sigma < 0 the bottom). forward_pass then skips those slots as sources, so the
- * emptied edge can never be recorded as a backpointer's prev_drift_index - which
- * is exactly what keeps dt_trellis_trace's `prev_drift_index + sigma` inside
- * [0, drift_width) when it steps back across this re-anchor. */
+ * emptied edge is never a live predecessor - which is exactly what keeps the
+ * backward beta pass's `nd - sigma` index inside [0, drift_width) when it steps
+ * across this re-anchor. */
 static void reanchor_metric(const dt_decode_ctx *ctx, dt_trellis *tr,
                             int sigma) {
   const int num_states = ctx->num_states, drift_width = ctx->drift_width;
@@ -283,19 +402,12 @@ static void reanchor_metric(const dt_decode_ctx *ctx, dt_trellis *tr,
          (size_t)num_states * drift_width * sizeof(double));
 }
 
-/* One trellis's forward pass for the current step: run the add-compare-select
- * from tr->metric into tr->next_metric (recording backpointers in this step's
- * layer), normalise, update the smoothed cost, and swap. Reads ctx->read_base
- * (already re-anchored for this step) and the shared received buffer. Branches
- * that would read outside the buffered window are skipped. */
-/* Compute, once per fused step, the per-(pattern, source drift) alignment rows
- * that every trellis's scatter then reads. Alignment depends only on the output
- * pattern and drift - not the code - so the fused decoder computes it once over
- * the union of the codes' patterns instead of once per code. A drift is computed
- * only when some fused trellis has a live node there (union liveness); dead-drift
- * rows are never read by the scatter (it skips dead nodes). */
-static void align_precompute(dt_decode_ctx *ctx, const dt_trellis *trs,
-                             size_t n_tr) {
+/* Compute the per-(pattern, source drift) alignment rows the forward pass then
+ * reads. Alignment depends only on the output pattern and drift, so the rows are
+ * computed once per step over the code's distinct patterns. A drift is computed
+ * only when the trellis has a live node there; dead-drift rows are never read by
+ * the scatter (it skips dead nodes). */
+static void align_precompute(dt_decode_ctx *ctx, const dt_trellis *tr) {
   const int n = ctx->n, max_drift = ctx->max_drift, num_states = ctx->num_states,
             drift_width = ctx->drift_width;
   const int stride = ctx->n + 2 * ctx->max_drift + 1;
@@ -304,13 +416,10 @@ static void align_precompute(dt_decode_ctx *ctx, const dt_trellis *trs,
 
   for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
     int live = 0;
-    for (size_t t = 0; t < n_tr && !live; ++t) {
-      const double *metric = trs[t].metric;
-      for (int state = 0; state < num_states; ++state) {
-        if (metric[(size_t)state * drift_width + drift_index] != INFINITY) {
-          live = 1;
-          break;
-        }
+    for (int state = 0; state < num_states; ++state) {
+      if (tr->metric[(size_t)state * drift_width + drift_index] != INFINITY) {
+        live = 1;
+        break;
       }
     }
     if (!live) {
@@ -325,11 +434,11 @@ static void align_precompute(dt_decode_ctx *ctx, const dt_trellis *trs,
   }
 }
 
-/* One trellis's forward pass: scatter the shared alignment rows (align_precompute,
- * already run this step) from tr->metric into tr->next_metric, recording this
- * step's backpointers, then normalise, update the smoothed cost, and swap. The
- * node/edge order (state, drift, bit, ending drift) matches the per-edge form, so
- * the `<` tie-break - and the decoded bits - are identical. */
+/* The forward pass: scatter the alignment rows (align_precompute, already run
+ * this step) from tr->metric into tr->next_metric, then normalise, update the
+ * smoothed cost, and swap. The node/edge order (state, drift, bit, ending drift)
+ * matches the per-edge form, so the `<` tie-break - and the decoded bits - are
+ * deterministic. */
 static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
   const dt_ccode *code = tr->code;
   const int n = ctx->n, num_states = ctx->num_states,
@@ -340,8 +449,6 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
   for (size_t i = 0; i < count; ++i) {
     tr->next_metric[i] = INFINITY;
   }
-  dt_backpointer *layer =
-      tr->backpointers + (size_t)(ctx->steps % ctx->ring_len) * count;
 
   for (int state = 0; state < num_states; ++state) {
     const size_t source_row = (size_t)state * drift_width;
@@ -376,8 +483,6 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
           const size_t destination = dest_row + next_drift_index;
           if (cost < tr->next_metric[destination]) {
             tr->next_metric[destination] = cost;
-            layer[destination] =
-                dt_bp_pack(state, drift_index, (unsigned int)bit);
           }
         }
       }
@@ -409,9 +514,6 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
   for (int state = 0; state < num_states; ++state) {
     tr->next_metric[state] = INFINITY;
   }
-  dt_backpointer *layer =
-      tr->backpointers +
-      (size_t)(ctx->steps % ctx->ring_len) * (size_t)num_states;
 
   for (int state = 0; state < num_states; ++state) {
     const double current_cost = tr->metric[state];
@@ -438,7 +540,6 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
       const int next_state = code->next_state[edge];
       if (cost < tr->next_metric[next_state]) {
         tr->next_metric[next_state] = cost;
-        layer[next_state] = dt_bp_pack(state, 0, (unsigned int)bit);
       }
     }
   }
@@ -454,22 +555,19 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
 
 /* Snapshot this step's forward metrics (alpha) and branch costs into the BCJR
  * rings before the forward pass overwrites them, so a later decision can run the
- * backward recursion (dt_trellis_soft_batch) over the retained window. alpha is each
- * trellis's metric in this step's re-anchored frame (the input to forward_pass);
- * the branch costs are the shared per-(pattern, drift) rows align_precompute just
+ * backward recursion (dt_trellis_soft_batch) over the retained window. alpha is
+ * the trellis's metric in this step's re-anchored frame (the input to
+ * forward_pass); the branch costs are the per-(pattern, drift) rows
+ * align_precompute just
  * produced (drift path), or the per-pattern group costs the nodrift butterfly
- * uses, computed once here for all fused trellises. */
-static void snapshot_step(dt_decode_ctx *ctx, dt_trellis *trs, size_t n,
-                          int nodrift) {
+ * uses, computed once here. */
+static void snapshot_step(dt_decode_ctx *ctx, dt_trellis *tr, int nodrift) {
   const int stride = ctx->n + 2 * ctx->max_drift + 1;
   const size_t shared = (size_t)ctx->n_patterns * ctx->drift_width * stride;
   const size_t slot = (size_t)(ctx->steps % ctx->ring_len);
   const size_t count = (size_t)ctx->num_states * ctx->drift_width;
 
-  for (size_t j = 0; j < n; ++j) {
-    dt_memcpy(trs[j].alpha_ring + slot * count, trs[j].metric,
-              count * sizeof(double));
-  }
+  dt_memcpy(tr->alpha_ring + slot * count, tr->metric, count * sizeof(double));
 
   double *bslot = ctx->branch_ring + slot * shared;
   if (nodrift) {
@@ -496,94 +594,39 @@ static void snapshot_step(dt_decode_ctx *ctx, dt_trellis *trs, size_t n,
   }
 }
 
-/* Advance every trellis one fused step. The re-anchor sigma is decided once -
- * from the best-fitting trellis (lowest smoothed cost), so a non-matching code
- * never steers the shared timing - and applied to every trellis's window plus
- * the one shared read cursor, after which each runs its own forward pass. With
- * a single trellis this is the ordinary per-code step. */
-void dt_decode_step(dt_decode_ctx *ctx, dt_trellis *trs, size_t n) {
-  size_t lead = 0;
-  for (size_t j = 1; j < n; ++j) {
-    if (trs[j].smoothed_cost < trs[lead].smoothed_cost) {
-      lead = j;
-    }
-  }
-
-  const int sigma = pick_shift(ctx, &trs[lead]);
+/* Advance the trellis one step: pick the re-anchor sigma, apply it to the window
+ * and the shared read cursor, run the forward pass, then advance the cadence. */
+static void dt_decode_step(dt_decode_ctx *ctx, dt_trellis *tr) {
+  const int sigma = pick_shift(ctx, tr);
   if (sigma != 0) {
-    for (size_t j = 0; j < n; ++j) {
-      reanchor_metric(ctx, &trs[j], sigma);
-    }
+    reanchor_metric(ctx, tr, sigma);
     ctx->read_base += sigma;
   }
   ctx->shift[ctx->steps % ctx->ring_len] = sigma;
 
-  /* With no drift window and indels disabled the alignment is forced diagonal;
-   * a dedicated butterfly skips the DP entirely (identical result). Otherwise the
-   * per-(pattern, drift) alignment rows are computed once for all fused trellises,
-   * then each scatters them - so decoding N codes runs the DP once, not N times. */
+  /* With no drift window and indels disabled the alignment is forced diagonal; a
+   * dedicated butterfly skips the DP entirely (identical result). */
   const int nodrift = ctx->max_drift == 0 && ctx->cost_ins_t == INFINITY &&
                       ctx->cost_ins_f == INFINITY && ctx->cost_ins_e == INFINITY &&
                       ctx->cost_del == INFINITY;
   if (!nodrift) {
-    align_precompute(ctx, trs, n);
+    align_precompute(ctx, tr);
   }
-  snapshot_step(ctx, trs, n, nodrift); /* before forward_pass overwrites metric */
+  snapshot_step(ctx, tr, nodrift); /* before forward_pass overwrites metric */
   if (nodrift) {
-    for (size_t j = 0; j < n; ++j) {
-      forward_pass_nodrift(ctx, &trs[j]);
-    }
+    forward_pass_nodrift(ctx, tr);
   } else {
-    for (size_t j = 0; j < n; ++j) {
-      forward_pass(ctx, &trs[j]);
-    }
+    forward_pass(ctx, tr);
   }
 
   ctx->steps++;
   ctx->read_base += ctx->n;
-  /* Snapshot each trellis's smoothed cost and best frontier node at the new
-   * frontier, so a batched decision reads the lock and traces the vote bit at
-   * the bit's own (earlier) decision time. */
-  for (size_t j = 0; j < n; ++j) {
-    trs[j].smoothed_ring[ctx->steps % ctx->ring_len] = trs[j].smoothed_cost;
-    trs[j].frontier_ring[ctx->steps % ctx->ring_len] =
-        dt_trellis_frontier(ctx, &trs[j]);
-  }
+  /* Snapshot the smoothed cost at the new frontier, so a batched decision reads
+   * the lock at the bit's own (earlier) decision time. */
+  tr->smoothed_ring[ctx->steps % ctx->ring_len] = tr->smoothed_cost;
   if (ctx->read_base - ctx->max_drift >= ctx->received_capacity / 2) {
     compact_received(ctx);
   }
-}
-
-/* Walk the backpointers from frontier node `frontier` back to step `target` and
- * return the input bit decided there. Each step's backpointer is stored in that
- * step's drift frame, so when stepping back across a re-anchor we shift the
- * predecessor's drift index by that step's recorded sigma. */
-unsigned char dt_trellis_trace(const dt_decode_ctx *ctx, const dt_trellis *tr,
-                               long long from_step, int frontier,
-                               long long target) {
-  const size_t count = (size_t)ctx->num_states * ctx->drift_width;
-  /* Traceback only reaches back through retained ring layers; a deeper target
-   * would read a backpointer/shift slot the next step has already overwritten.
-   * The batched multi vote traces up to a full ring_len behind the frontier. */
-  DT_ASSERT(from_step - target <= ctx->ring_len);
-  int node = frontier;
-  unsigned char bit = 0;
-  for (long long i = from_step - 1; i >= target; --i) {
-    const dt_backpointer *layer =
-        tr->backpointers + (size_t)(i % ctx->ring_len) * count;
-    const dt_backpointer entry = layer[node];
-    if (i == target) {
-      bit = (unsigned char)dt_bp_bit(entry);
-      break;
-    }
-    const int prev_drift_index =
-        dt_bp_drift(entry) + ctx->shift[i % ctx->ring_len];
-    /* In-bounds by construction: reanchor_metric empties the slot that would
-     * translate out of the window, so it is never a recorded predecessor. */
-    DT_ASSERT(prev_drift_index >= 0 && prev_drift_index < ctx->drift_width);
-    node = dt_bp_state(entry) * ctx->drift_width + prev_drift_index;
-  }
-  return bit;
 }
 
 /* Probability that the decoder is locked onto a valid stream of THIS specific
@@ -598,7 +641,7 @@ unsigned char dt_trellis_trace(const dt_decode_ctx *ctx, const dt_trellis *tr,
  * path dominant?" confidence: a confidently decoded WRONG code is dominant but
  * expensive, so it reads as unlocked. (Two encoders for the SAME code are not
  * "wrong" - they share codewords - and correctly read as locked.) */
-double dt_lock_from_cost(const dt_decode_ctx *ctx, double cost) {
+static double dt_lock_from_cost(const dt_decode_ctx *ctx, double cost) {
   const double gap = ctx->expected_unlock - ctx->expected_lock;
   if (gap <= 0.0) {
     return 0.0;
@@ -691,13 +734,13 @@ static uint8_t finalize_soft(const dt_decode_ctx *ctx, double m0, double m1,
  * reachable frontier node, so beta[steps]=0). Per-step re-anchoring shifts the
  * drift frame; a dest produced at step t (frame t = frame t+1 pre-anchor) indexes
  * beta[t+1] (stored post-anchor) at nd - sigma, sigma = the step t+1 shift (0 at
- * the frontier) - the mirror of dt_trellis_trace's `+ shift`. Only finite-alpha
+ * the frontier) - the mirror of the per-step re-anchor shift. Only finite-alpha
  * nodes are visited; any edge out of a reachable node lands on a reachable node,
  * so the restriction is exact. Per-step normalisation subtracts a path-independent
  * constant from every alpha, cancelling in the m0/m1 differences. */
-void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr,
-                           long long base, int n, uint8_t *bits_out,
-                           dt_decode_details *details_out, int detail_stride) {
+static void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr,
+                                  long long base, int n, uint8_t *bits_out,
+                                  dt_decode_details *details_out) {
   const dt_ccode *code = tr->code;
   const int nn = ctx->n, num_states = ctx->num_states,
             drift_width = ctx->drift_width, rl = ctx->ring_len,
@@ -765,7 +808,7 @@ void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr,
       if (s > ctx->steps) s = ctx->steps;
       const uint8_t bit = finalize_soft(
           ctx, m0, m1, tr->smoothed_ring[s % rl],
-          details_out ? &details_out[(size_t)k * detail_stride] : NULL);
+          details_out ? &details_out[k] : NULL);
       if (bits_out) bits_out[k] = bit;
     }
     if (need_beta) {
@@ -801,7 +844,7 @@ static int run(dt_decode_ctx *ctx, dt_trellis *tr, uint8_t *out,
       } else if (ctx->received_length - ctx->read_base < ctx->n) {
         break;
       }
-      dt_decode_step(ctx, tr, 1);
+      dt_decode_step(ctx, tr);
     }
 
     /* Decidable targets: up to steps - decision_depth normally (each keeps its
@@ -818,7 +861,7 @@ static int run(dt_decode_ctx *ctx, dt_trellis *tr, uint8_t *out,
     if (out || details) {
       dt_trellis_soft_batch(ctx, tr, ctx->decided, n_emit,
                             out ? out + output_count : NULL,
-                            details ? details + output_count : NULL, 1);
+                            details ? details + output_count : NULL);
     }
     output_count += n_emit;
     ctx->decided += n_emit;
@@ -845,7 +888,7 @@ static void init_metric(const dt_decode_ctx *ctx, dt_trellis *tr) {
 
 /* -- internal context / trellis lifecycle ---------------------------------- */
 
-int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params *params,
+static int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params *params,
                        const dt_ccode *code) {
   if (!ctx || !params || !code) {
     return DT_ERR_ARG;
@@ -944,10 +987,10 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params *params
   ctx->received_capacity =
       (ctx->ring_len + 2) * ctx->n + 8 * ctx->max_drift + 64;
 
-  /* Shared per-step alignment scratch. align_shared is sized later, once every
-   * fused trellis has registered its output patterns (dt_decode_ctx_finalize),
-   * so the union of patterns is known; the pattern list starts empty and grows
-   * as trellises register (one code's edge count is a fine initial capacity). */
+  /* Per-step alignment scratch. align_shared is sized later, once the trellis has
+   * registered its output patterns (dt_decode_ctx_finalize) so the pattern count
+   * is known; the pattern list starts empty and grows as the trellis registers
+   * (the code's edge count is a fine initial capacity). */
   const int max_consume = ctx->n + 2 * ctx->max_drift;
   const int window = ctx->n + 4 * ctx->max_drift;
   ctx->n_patterns = 0;
@@ -975,9 +1018,9 @@ int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params *params
   return DT_OK;
 }
 
-/* Allocate the shared alignment table now that the union of every fused trellis's
- * output patterns is known. Call once after the last dt_trellis_init. */
-int dt_decode_ctx_finalize(dt_decode_ctx *ctx) {
+/* Allocate the per-step alignment table now that the trellis's output patterns
+ * are known. Call once after dt_trellis_init. */
+static int dt_decode_ctx_finalize(dt_decode_ctx *ctx) {
   if (!ctx) {
     return DT_ERR_ARG;
   }
@@ -993,7 +1036,7 @@ int dt_decode_ctx_finalize(dt_decode_ctx *ctx) {
   return ctx->align_shared && ctx->branch_ring ? DT_OK : DT_ERR_ALLOC;
 }
 
-void dt_decode_ctx_free(dt_decode_ctx *ctx) {
+static void dt_decode_ctx_free(dt_decode_ctx *ctx) {
   if (!ctx) {
     return;
   }
@@ -1023,10 +1066,9 @@ void dt_decode_ctx_free(dt_decode_ctx *ctx) {
   ctx->beta_b = NULL;
 }
 
-/* Register a code's output patterns into the shared ctx (deduping against those
- * already there) and fill group_of[edge] with each edge's pattern index. The
- * fused decoder thus builds one union pattern list across all its codes, so the
- * per-step alignment is computed once per distinct pattern, not once per code. */
+/* Register the code's output patterns into the ctx (deduping) and fill
+ * group_of[edge] with each edge's pattern index, so the per-step alignment is
+ * computed once per distinct output pattern, not once per edge. */
 static int register_patterns(dt_decode_ctx *ctx, const dt_ccode *code,
                              int *group_of) {
   const int n = ctx->n, edges = ctx->num_states * 2;
@@ -1066,16 +1108,8 @@ static int register_patterns(dt_decode_ctx *ctx, const dt_ccode *code,
   return DT_OK;
 }
 
-int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_ccode *code) {
+static int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_ccode *code) {
   if (!tr || !ctx || !code) {
-    return DT_ERR_ARG;
-  }
-  /* The packed backpointer (decode_internal.h) carries prev_state in 16 bits and
-   * prev_drift_index in 15. dt_ccode_create caps K (num_states <= 256) and real
-   * max_drift is tiny, but guard the packing invariant rather than silently
-   * truncating. */
-  if (ctx->num_states - 1 > DT_BP_MAX_STATE ||
-      ctx->drift_width - 1 > DT_BP_MAX_DRIFT) {
     return DT_ERR_ARG;
   }
   tr->code = code;
@@ -1086,14 +1120,11 @@ int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_ccode *code) {
   const int edges = ctx->num_states * 2;
   tr->metric = dt_malloc(count * sizeof(double));
   tr->next_metric = dt_malloc(count * sizeof(double));
-  tr->backpointers =
-      dt_malloc((size_t)ctx->ring_len * count * sizeof(dt_backpointer));
   tr->group_of = dt_malloc((size_t)edges * sizeof(int));
   tr->alpha_ring = dt_malloc((size_t)ctx->ring_len * count * sizeof(double));
   tr->smoothed_ring = dt_malloc((size_t)ctx->ring_len * sizeof(double));
-  tr->frontier_ring = dt_malloc((size_t)ctx->ring_len * sizeof(int));
-  if (!tr->metric || !tr->next_metric || !tr->backpointers || !tr->group_of ||
-      !tr->alpha_ring || !tr->smoothed_ring || !tr->frontier_ring) {
+  if (!tr->metric || !tr->next_metric || !tr->group_of || !tr->alpha_ring ||
+      !tr->smoothed_ring) {
     dt_trellis_free(tr);
     return DT_ERR_ALLOC;
   }
@@ -1106,27 +1137,23 @@ int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_ccode *code) {
   return DT_OK;
 }
 
-void dt_trellis_free(dt_trellis *tr) {
+static void dt_trellis_free(dt_trellis *tr) {
   if (!tr) {
     return;
   }
   dt_free(tr->metric);
   dt_free(tr->next_metric);
-  dt_free(tr->backpointers);
   dt_free(tr->group_of);
   dt_free(tr->alpha_ring);
   dt_free(tr->smoothed_ring);
-  dt_free(tr->frontier_ring);
   tr->metric = NULL;
   tr->next_metric = NULL;
-  tr->backpointers = NULL;
   tr->group_of = NULL;
   tr->alpha_ring = NULL;
   tr->smoothed_ring = NULL;
-  tr->frontier_ring = NULL;
 }
 
-int dt_decode_feed(dt_decode_ctx *ctx, const uint8_t *in, int n_in) {
+static int dt_decode_feed(dt_decode_ctx *ctx, const uint8_t *in, int n_in) {
   int status = reserve_received(ctx, n_in);
   if (status < 0) {
     return status;
@@ -1138,8 +1165,7 @@ int dt_decode_feed(dt_decode_ctx *ctx, const uint8_t *in, int n_in) {
 
 /* -- public single-stream decoder ------------------------------------------ */
 
-/* The public decoder is one shared context plus one trellis: the N == 1 case of
- * the fused machinery above. */
+/* The decoder is one context plus one trellis. */
 struct dt_stream_decoder {
   dt_decode_ctx ctx;
   dt_trellis trellis;

@@ -39,6 +39,9 @@ extern "C" {
 
 /* clang-format off */
 /*
+ * DIVERGED FROM BCJR (2026-06-26): maxir is an independent fork of bcjr - do not
+ * port bcjr changes here. See include/drifty/cc/maxir.h.
+ *
  * maxir - forward error correction for a stream of bits sent over a noisy
  * channel, using a convolutional code and MAXIR (MAP / forward-backward)
  * decoding. It corrects flipped bits (it does not track inserted or dropped

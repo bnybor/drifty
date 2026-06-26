@@ -29,9 +29,9 @@
  * interfaces over the convolutional encode and MAXIR decode engine. The code
  * handle is dt_ccode throughout.
  *
- * The encoder is complete; the decode engine is a stub (see maxir/decode.c) - the
- * vtable plumbing here is wired but produces no output until the forward-backward
- * algorithm lands.
+ * DIVERGED FROM BCJR (2026-06-26): maxir started as a copy of the bcjr codec but
+ * is now independent. Do NOT port bcjr changes into maxir; the two evolve
+ * separately. See include/drifty/cc/maxir.h.
  */
 
 #include <drifty/cc/maxir.h>

@@ -41,6 +41,9 @@ extern "C" {
 
 /* clang-format off */
 /*
+ * DIVERGED FROM BCJR (2026-06-26): maxir is an independent fork of bcjr - do not
+ * port bcjr changes here. See include/drifty/cc/maxir.h.
+ *
  * The receiver's half of the maxir codec (the sender's half is in encode.h).
  *
  * A MAXIR (MAP / forward-backward) decoder: recover the original bits from a

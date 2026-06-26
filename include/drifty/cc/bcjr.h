@@ -49,6 +49,9 @@ extern "C" {
  * through its vtable (see encoder.h / decoder.h / soft_decoder.h), and free it
  * with the matching _destroy(). The code must outlive everything built from it.
  *
+ * NOTE: the maxir codec (cc/maxir.h) began as a copy of this one but diverged on
+ * 2026-06-26 and is now independent - do not propagate bcjr changes to it.
+ *
  * NOTE: the encoder is the standard convolutional encoder and is fully
  * implemented; the hard and soft decoders are stubs (the vtable plumbing is
  * wired and the channel model validated, but no bits come out until the

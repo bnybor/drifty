@@ -29,6 +29,9 @@
  * interfaces over the convolutional encode and BCJR decode engine. The code
  * handle is dt_ccode throughout.
  *
+ * The maxir codec (src/cc/maxir.c) forked from this one on 2026-06-26 and is now
+ * independent - do not propagate bcjr changes to it.
+ *
  * The encoder is complete; the decode engine is a stub (see bcjr/decode.c) - the
  * vtable plumbing here is wired but produces no output until the forward-backward
  * algorithm lands.

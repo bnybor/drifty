@@ -27,9 +27,13 @@ target_include_directories(drifty_interface INTERFACE include)
 # can be archived into both libraries below (the bare core, and the public core +
 # stdlib) without compiling twice.
 add_library(drifty_bare_obj OBJECT
+    src/ccode.c
     src/hybrid/encode.c
     src/hybrid/decode.c
-    src/hybrid.c)
+    src/hybrid.c
+    src/vindel/encode.c
+    src/vindel/decode.c
+    src/vindel.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
@@ -45,16 +49,19 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # alone, so the bare archive still asks the consumer to supply the shims and the
 # full archive still resolves libc at the consumer's final link.
 # The public API is the abstract surface in include/: the dt_ccode descriptor
-# (ccode.h) plus the dt_hybrid_* factories (hybrid.h). The engine functions
-# (dt_stream_*, dt_ccode_encode*) are private - their headers live under
-# src/hybrid/ - so they are localized, not exported.
+# (ccode.h, implemented in src/ccode.c) plus the per-codec dt_hybrid_* / dt_vindel_*
+# factories (hybrid.h, vindel.h). Each codec's engine functions (dt_stream_* /
+# dt_vindel_stream_*, dt_ccode_encode* / dt_vindel_encode*) are private - their
+# headers live under src/<codec>/ - so they are localized, not exported.
 set(_dt_public_symbols
-    drifty_version
     dt_ccode_create dt_ccode_create_standard dt_ccode_destroy
     dt_ccode_k dt_ccode_n
     dt_hybrid_encoder_create dt_hybrid_encoder_destroy
     dt_hybrid_decoder_create dt_hybrid_decoder_destroy
-    dt_hybrid_soft_decoder_create dt_hybrid_soft_decoder_destroy)
+    dt_hybrid_soft_decoder_create dt_hybrid_soft_decoder_destroy
+    dt_vindel_encoder_create dt_vindel_encoder_destroy
+    dt_vindel_decoder_create dt_vindel_decoder_destroy
+    dt_vindel_soft_decoder_create dt_vindel_soft_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

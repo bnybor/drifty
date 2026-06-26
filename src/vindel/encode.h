@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_HYBRID_ENCODE_H
-#define DRIFTY_HYBRID_ENCODE_H
+#ifndef DRIFTY_VINDEL_ENCODE_H
+#define DRIFTY_VINDEL_ENCODE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -53,8 +53,8 @@ extern "C" {
  *
  *   // encode (in one or more chunks)
  *   int state = 0;
- *   int len  = dt_ccode_encode(code, bits, n_bits, &state, out);
- *   len     += dt_ccode_encode_flush(code, &state, out + len);
+ *   int len  = dt_vindel_encode(code, bits, n_bits, &state, out);
+ *   len     += dt_vindel_encode_flush(code, &state, out + len);
  *
  *   dt_ccode_destroy(code);
  *
@@ -81,22 +81,22 @@ enum {
  * Encoding is one continuous stream: keep an `int state`, set it to 0 before
  * the first call, and pass the same variable to every call - so you can encode
  * in as many chunks as you like. When the whole message is encoded, call
- * dt_ccode_encode_flush() once to finish it.
+ * dt_vindel_encode_flush() once to finish it.
  *
  * Returns the number of bits written, or DT_ERR_ARG.
  */
-int dt_ccode_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
+int dt_vindel_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
                    int *state, uint8_t *out);
 
 /*
  * Finish an encoded stream: writes (K-1) * dt_ccode_n(code) trailing bits so the
  * decoder can recover the last input bits cleanly. Pass the same `state` you
- * gave dt_ccode_encode(). Returns the number of bits written, or DT_ERR_ARG.
+ * gave dt_vindel_encode(). Returns the number of bits written, or DT_ERR_ARG.
  */
-int dt_ccode_encode_flush(const dt_ccode *code, int *state, uint8_t *out);
+int dt_vindel_encode_flush(const dt_ccode *code, int *state, uint8_t *out);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DRIFTY_HYBRID_ENCODE_H */
+#endif /* DRIFTY_VINDEL_ENCODE_H */

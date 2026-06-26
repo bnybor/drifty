@@ -45,7 +45,7 @@ static int emit_group(const dt_ccode *code, int *state, int bit, uint8_t *out) {
   return code->n;
 }
 
-int dt_ccode_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
+int dt_vindel_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
                    int *state, uint8_t *out) {
   if (!code || !state || n_bits < 0 || (n_bits > 0 && !bits) || !out) {
     return DT_ERR_ARG;
@@ -62,7 +62,7 @@ int dt_ccode_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
   return written;
 }
 
-int dt_ccode_encode_flush(const dt_ccode *code, int *state, uint8_t *out) {
+int dt_vindel_encode_flush(const dt_ccode *code, int *state, uint8_t *out) {
   if (!code || !state || !out) {
     return DT_ERR_ARG;
   }

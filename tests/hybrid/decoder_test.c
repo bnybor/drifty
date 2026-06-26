@@ -37,14 +37,6 @@ static const unsigned int GENERATORS[] = {037, 033, 025, 027, 035};
 #define K 5
 #define N_GEN ((int)(sizeof(GENERATORS) / sizeof(GENERATORS[0])))
 
-static void test_version(void) {
-  printf("test_version\n");
-  const char *v = drifty_version();
-  REQUIRE("version non-null", v != NULL);
-  check("version non-empty", strlen(v) > 0);
-  printf("  drifty version: %s\n", v);
-}
-
 /* The streaming encoder is stateful: encoding in chunks (plus a final flush)
  * must match encoding the whole message in one call, and end in state 0. */
 static void test_encode_stream(void) {
@@ -730,7 +722,6 @@ static void test_error_paths(void) {
 }
 
 int main(void) {
-  test_version();
   test_encode_stream();
   test_stream_clean();
   test_stream_erasures();

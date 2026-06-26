@@ -28,7 +28,7 @@
 
 #include <drifty/stdlib.h>
 
-#include "dt_internal.h"
+#include "../ccode_internal.h"
 
 const char *drifty_version(void) { return "0.1.0"; }
 

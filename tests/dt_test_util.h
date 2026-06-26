@@ -34,7 +34,8 @@
 #ifndef DT_TEST_UTIL_H
 #define DT_TEST_UTIL_H
 
-#include <hybrid/drifty.h>
+#include <hybrid/decode.h>
+#include <hybrid/encode.h>
 
 #include <assert.h>
 #include <stdint.h>

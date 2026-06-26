@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_DT_INTERNAL_H
-#define DRIFTY_DT_INTERNAL_H
+#ifndef DRIFTY_CCODE_INTERNAL_H
+#define DRIFTY_CCODE_INTERNAL_H
 
 #include <stdint.h>
 
@@ -43,4 +43,4 @@ struct dt_ccode {
   uint8_t *output;          /* [n_states*2*n], [((s*2)+b)*n + j]   */
 };
 
-#endif /* DRIFTY_DT_INTERNAL_H */
+#endif /* DRIFTY_CCODE_INTERNAL_H */

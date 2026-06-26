@@ -30,7 +30,7 @@
 
 #include <math.h>
 
-#include "dt_internal.h"
+#include "../ccode_internal.h"
 
 /*
  * Opt-in internal assertions. The core is built -ffreestanding -fno-builtin

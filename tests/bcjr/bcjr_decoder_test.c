@@ -25,17 +25,20 @@
 /* clang-format on */
 
 /*
- * Tests for the bcjr codec. The encoder is fully implemented, so it is tested
- * for real (length, chunked == one-shot, flush, error paths, all presets, and
- * the public encoder vtable). The hard and soft decoders are stubs, so they are
- * smoke-tested only: the handle and channel-model validation are exercised, and
- * decode/flush are checked to be well-behaved (no error, no output yet). Update
- * these once the forward-backward algorithm lands.
+ * Tests for the bcjr codec. The encoder is exercised for real (length, chunked
+ * == one-shot, flush, error paths, all presets, and the public encoder vtable).
+ * The decoder is the no-drift max-log-MAP core, so it is tested end to end:
+ * channel-model validation, clean round trip and flip correction across the
+ * presets, the soft-output invariants, the DT_INVALID poison contract and
+ * erasure handling, blind acquisition, and the hard and soft decoder vtables.
+ * The no-drift build must also reject a drift request (max_drift > 0).
  */
 
 #include "dt_test_util.h"
 
 #include <drifty/bcjr.h>
+
+#include <math.h>
 
 /* The four default standard codes, spanning n = 2, 3, 5 and K = 3, 5, 7. */
 static const dt_standard_code PRESETS[] = {
@@ -158,9 +161,50 @@ static void test_encoder_vtable(void) {
   dt_ccode_destroy(code);
 }
 
-/* -- decoder (stub) -------------------------------------------------------- */
+/* -- decoder --------------------------------------------------------------- */
 
-/* The engine validates its channel model and rejects bad settings with NULL. */
+/* Decode an entire received buffer, feeding it in two chunks and then flushing,
+ * to exercise the streaming pump. Fills out[]/details[] (details may be NULL)
+ * and returns the number of decisions produced. */
+static int bcjr_decode_all(const dt_ccode *code, const dt_bcjr_stream_params *p,
+                           const uint8_t *rx, int rx_len, uint8_t *out,
+                           dt_bcjr_decode_details *details, int out_cap) {
+  dt_bcjr_stream_decoder *d = dt_bcjr_stream_decoder_create(code, p);
+  if (!d) {
+    return -1;
+  }
+  int total = 0;
+  const int split = rx_len / 2;
+  const int chunks[2] = {split, rx_len - split};
+  int off = 0;
+  for (int c = 0; c < 2 && total < out_cap; ++c) {
+    int got = dt_bcjr_stream_decode(
+        d, rx + off, chunks[c], out + total,
+        details ? details + total : NULL, out_cap - total);
+    if (got < 0) {
+      dt_bcjr_stream_decoder_destroy(d);
+      return got;
+    }
+    total += got;
+    off += chunks[c];
+  }
+  for (;;) {
+    int got = dt_bcjr_stream_decode_flush(
+        d, out + total, details ? details + total : NULL, out_cap - total);
+    if (got <= 0) {
+      break;
+    }
+    total += got;
+    if (total >= out_cap) {
+      break;
+    }
+  }
+  dt_bcjr_stream_decoder_destroy(d);
+  return total;
+}
+
+/* The engine validates its channel model and rejects bad settings with NULL.
+ * The no-drift core also rejects a request to track drift. */
 static void test_decoder_param_validation(void) {
   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
@@ -187,41 +231,248 @@ static void test_decoder_param_validation(void) {
   bad.p_erase = 1.0f;
   check("create rejects p_erase == 1",
         dt_bcjr_stream_decoder_create(code, &bad) == NULL);
+  bad = p;
+  bad.max_drift = 1;
+  check("no-drift build rejects max_drift > 0",
+        dt_bcjr_stream_decoder_create(code, &bad) == NULL);
 
   dt_ccode_destroy(code);
 }
 
-/* The stub engine decodes without error and (for now) emits no bits. */
-static void test_decoder_stub_smoke(void) {
+/* Clean channel: one decision per coded group, the warm-up prefix reads as
+ * DT_ABSENT, and every committed bit past warm-up matches the message. Then a
+ * light flip rate is corrected back to the message. */
+static void test_decoder_roundtrip(void) {
+  uint64_t rng = 0xD0D0CACAu;
+  const int info_bits = 500;
+
+  for (int pi = 0; pi < NUM_PRESETS; ++pi) {
+    dt_ccode *code = dt_ccode_create_standard(PRESETS[pi]);
+    REQUIRE("code created", code != NULL);
+    const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+    const int depth = 40;
+    const int warmup = depth + 4 * K; /* unreliable left-context region */
+    const int cap = (info_bits + K) * n;
+
+    uint8_t *msg = malloc((size_t)info_bits);
+    uint8_t *coded = malloc((size_t)cap);
+    uint8_t *out = malloc((size_t)(info_bits + K + 8));
+    rand_bits(msg, info_bits, &rng);
+    int clen = bcjr_encode_all(code, msg, info_bits, coded);
+
+    dt_bcjr_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
+    int got = bcjr_decode_all(code, &p, coded, clen, out, NULL, info_bits + K + 8);
+
+    check(PRESET_NAMES[pi], 1);
+    /* one decision per group: info_bits + (K-1) flush groups */
+    check("decision count == groups", got == info_bits + (K - 1));
+    int absent = 0;
+    for (int i = 0; i < warmup; ++i) {
+      if (out[i] == DT_ABSENT) ++absent;
+    }
+    check("warm-up emits DT_ABSENT", absent > 0);
+    int mism = 0;
+    for (int i = warmup; i < info_bits; ++i) {
+      if (out[i] != msg[i]) ++mism;
+    }
+    check("clean round trip recovers the message", mism == 0);
+
+    /* ~1.5% flips: a good convolutional code corrects them all here. */
+    uint8_t *rx = malloc((size_t)clen);
+    memcpy(rx, coded, (size_t)clen);
+    for (int i = 0; i < clen; ++i) {
+      if ((rng_next(&rng) % 1000u) < 15u) {
+        rx[i] = (rx[i] == DT_TRUE) ? DT_FALSE : DT_TRUE;
+      }
+    }
+    dt_bcjr_stream_params pf = {.decision_depth = depth, .p_flip = 0.02f};
+    got = bcjr_decode_all(code, &pf, rx, clen, out, NULL, info_bits + K + 8);
+    int err = 0;
+    for (int i = warmup; i < info_bits; ++i) {
+      if (out[i] != msg[i]) ++err;
+    }
+    check("flip correction recovers the message", err <= 2);
+
+    free(msg);
+    free(coded);
+    free(out);
+    free(rx);
+    dt_ccode_destroy(code);
+  }
+}
+
+/* The soft output is internally consistent at every step: all six consistencies
+ * lie in [0, 1], the winning value reads 1 while the loser reads c_lost (so
+ * c_true + c_false == 1 + c_lost and c_lost == min(c_true, c_false)), and a
+ * resolved hard symbol agrees with argmax(c_true, c_false). */
+static void test_decoder_soft_invariants(void) {
+  uint64_t rng = 0x50F750F7u;
   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  dt_bcjr_stream_params p = good_params();
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 300;
+  const int cap = (info_bits + K) * n;
 
-  dt_bcjr_stream_decoder *d = dt_bcjr_stream_decoder_create(code, &p);
-  REQUIRE("decoder created", d != NULL);
+  uint8_t *msg = malloc((size_t)info_bits);
+  uint8_t *coded = malloc((size_t)cap);
+  rand_bits(msg, info_bits, &rng);
+  int clen = bcjr_encode_all(code, msg, info_bits, coded);
 
-  uint8_t in[128];
-  for (int i = 0; i < 128; ++i) in[i] = (i & 1) ? DT_TRUE : DT_FALSE;
-  uint8_t out[128];
-  dt_bcjr_decode_details details[128];
+  /* a mix of flips and erasures so c_lost actually varies */
+  uint8_t *rx = malloc((size_t)clen);
+  memcpy(rx, coded, (size_t)clen);
+  for (int i = 0; i < clen; ++i) {
+    unsigned int u = (unsigned int)(rng_next(&rng) % 1000u);
+    if (u < 20u) rx[i] = (rx[i] == DT_TRUE) ? DT_FALSE : DT_TRUE;
+    else if (u < 50u) rx[i] = DT_ERASURE;
+  }
 
-  int got = dt_bcjr_stream_decode(d, in, 128, out, details, 128);
-  check("stub decode returns no error", got >= 0);
-  check("stub decode emits nothing yet", got == 0);
-  int drained = dt_bcjr_stream_decode_flush(d, out, details, 128);
-  check("stub flush returns no error", drained >= 0);
-  check("stub flush emits nothing yet", drained == 0);
+  const int outc = info_bits + K + 8;
+  uint8_t *sym = malloc((size_t)outc);
+  dt_bcjr_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
+  dt_bcjr_stream_params p = {.decision_depth = 40, .p_flip = 0.02f,
+                             .p_erase = 0.03f};
+  int got = bcjr_decode_all(code, &p, rx, clen, sym, det, outc);
+  REQUIRE("decode produced output", got > 0);
 
-  check("decode rejects NULL decoder",
-        dt_bcjr_stream_decode(NULL, in, 128, out, NULL, 128) == DT_ERR_ARG);
+  int range_ok = 1, sum_ok = 1, lost_ok = 1, argmax_ok = 1;
+  for (int i = 0; i < got; ++i) {
+    const dt_bcjr_decode_details *q = &det[i];
+    const float v[6] = {q->c_true,    q->c_false, q->c_lost,
+                        q->c_invalid, q->c_lock,  q->c_absent};
+    for (int k = 0; k < 6; ++k) {
+      if (!(v[k] >= -1e-5f && v[k] <= 1.0f + 1e-5f)) range_ok = 0;
+    }
+    if (fabsf((q->c_true + q->c_false) - (1.0f + q->c_lost)) > 1e-3f) sum_ok = 0;
+    const float mn = q->c_true < q->c_false ? q->c_true : q->c_false;
+    if (fabsf(mn - q->c_lost) > 1e-4f) lost_ok = 0;
+    if (sym[i] == DT_TRUE && !(q->c_true >= q->c_false)) argmax_ok = 0;
+    if (sym[i] == DT_FALSE && !(q->c_false >= q->c_true)) argmax_ok = 0;
+  }
+  check("soft fields all in [0, 1]", range_ok);
+  check("c_true + c_false == 1 + c_lost", sum_ok);
+  check("c_lost == min(c_true, c_false)", lost_ok);
+  check("hard T/F matches argmax(c_true, c_false)", argmax_ok);
 
-  dt_bcjr_stream_decoder_destroy(d);
-  dt_bcjr_stream_decoder_destroy(NULL); /* NULL is a no-op */
+  free(msg);
+  free(coded);
+  free(rx);
+  free(sym);
+  free(det);
   dt_ccode_destroy(code);
 }
 
-/* The public hard-decision decoder vtable is wired over the stub engine. */
+/* The encoder marks a non-boolean input by poisoning exactly the coded bits that
+ * carry its value, so the originating slot is a true tie and must decode to
+ * DT_INVALID (with c_invalid == 1), while clean bits on either side recover. A
+ * long erasure burst destroys the value over its span (DT_ERASURE / DT_ABSENT,
+ * never a confident bit), and bits away from it still decode. */
+static void test_decoder_invalid_and_erasure(void) {
+  uint64_t rng = 0x12345678u;
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 240;
+  const int depth = 40;
+  const int warmup = depth + 4 * K;
+  const int cap = (info_bits + K) * n;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  const int poison_at = 120;
+  msg[poison_at] = DT_ERASURE; /* non-boolean input -> encoder poisons it */
+
+  uint8_t *coded = malloc((size_t)cap);
+  int clen = bcjr_encode_all(code, msg, info_bits, coded);
+
+  const int outc = info_bits + K + 8;
+  uint8_t *sym = malloc((size_t)outc);
+  dt_bcjr_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
+  dt_bcjr_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
+  int got = bcjr_decode_all(code, &p, coded, clen, sym, det, outc);
+  REQUIRE("decode produced output", got > info_bits);
+
+  check("poisoned slot decodes DT_INVALID", sym[poison_at] == DT_INVALID);
+  check("poisoned slot c_invalid == 1", det[poison_at].c_invalid > 0.99f);
+  int around_ok = 1;
+  for (int i = warmup; i < poison_at - 1; ++i) {
+    if (sym[i] != msg[i]) around_ok = 0;
+  }
+  for (int i = poison_at + K; i < info_bits; ++i) {
+    if (sym[i] != msg[i]) around_ok = 0;
+  }
+  check("clean bits around the poison recover", around_ok);
+
+  /* Now an erasure burst in the coded stream over info slots [150, 168). */
+  uint8_t *rx = malloc((size_t)clen);
+  memcpy(rx, coded, (size_t)clen);
+  for (int i = 150 * n; i < 168 * n && i < clen; ++i) rx[i] = DT_ERASURE;
+  dt_bcjr_stream_params pe = {.decision_depth = depth, .p_flip = 0.01f,
+                              .p_erase = 0.05f};
+  got = bcjr_decode_all(code, &pe, rx, clen, sym, det, outc);
+  int lost = 0, span = 0;
+  for (int i = 155; i < 165; ++i) {
+    ++span;
+    if (sym[i] == DT_ERASURE || sym[i] == DT_ABSENT) ++lost;
+  }
+  check("erasure burst reads as lost", lost >= span - 2);
+  int far_ok = 1;
+  /* a window clear of both the poison span [poison_at, poison_at+K) and the
+   * burst [150, 168) */
+  for (int i = poison_at + K; i < 145; ++i) {
+    if (sym[i] != msg[i]) far_ok = 0;
+  }
+  check("bits away from the burst still decode", far_ok);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(sym);
+  free(det);
+  dt_ccode_destroy(code);
+}
+
+/* Tapping into the middle of a coded stream (no leading sync) still locks and
+ * recovers: decoded position j corresponds to original info bit skip + j. */
+static void test_decoder_blind_acquisition(void) {
+  uint64_t rng = 0xACAC99u;
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 500;
+  const int depth = 40;
+  const int warmup = depth + 4 * K;
+  const int cap = (info_bits + K) * n;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  uint8_t *coded = malloc((size_t)cap);
+  rand_bits(msg, info_bits, &rng);
+  int clen = bcjr_encode_all(code, msg, info_bits, coded);
+
+  const int skip_groups = 80;
+  const int skip = skip_groups * n;
+  const int outc = info_bits + K + 8;
+  uint8_t *out = malloc((size_t)outc);
+  dt_bcjr_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
+  int got = bcjr_decode_all(code, &p, coded + skip, clen - skip, out, NULL, outc);
+  REQUIRE("decode produced output", got > 0);
+
+  int err = 0, checked = 0;
+  for (int j = warmup; j + skip_groups < info_bits; ++j) {
+    ++checked;
+    if (out[j] != msg[skip_groups + j]) ++err;
+  }
+  check("blind acquisition recovers after lock", checked > 0 && err == 0);
+
+  free(msg);
+  free(coded);
+  free(out);
+  dt_ccode_destroy(code);
+}
+
+/* The public hard-decision decoder vtable decodes end to end. */
 static void test_decoder_vtable(void) {
+  uint64_t rng = 0x4242u;
   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
   dt_bcjr_stream_params p = good_params();
@@ -231,23 +482,48 @@ static void test_decoder_vtable(void) {
   check("decoder_create rejects NULL params",
         dt_bcjr_decoder_create(code, NULL) == NULL);
 
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 200;
+  const int warmup = 40 + 4 * K;
+  const int cap = (info_bits + K) * n;
+  uint8_t *msg = malloc((size_t)info_bits);
+  uint8_t *coded = malloc((size_t)cap);
+  uint8_t *out = malloc((size_t)(info_bits + K + 8));
+  rand_bits(msg, info_bits, &rng);
+  int clen = bcjr_encode_all(code, msg, info_bits, coded);
+
   dt_decoder *dec = dt_bcjr_decoder_create(code, &p);
   REQUIRE("decoder created", dec != NULL);
-
-  uint8_t in[64], out[64];
-  for (int i = 0; i < 64; ++i) in[i] = DT_FALSE;
-  check("vtable begin ok", dec->begin(dec, out, 64) >= 0);
-  check("vtable decode returns no error",
-        dec->decode(dec, out, 64, in, 64) == 0);
-  check("vtable finalize returns no error", dec->finalize(dec, out, 64) == 0);
+  REQUIRE("vtable begin ok", dec->begin(dec, out, info_bits + K + 8) >= 0);
+  int total = 0;
+  int got = dec->decode(dec, out + total, (size_t)(info_bits + K + 8 - total),
+                        coded, (size_t)clen);
+  REQUIRE("vtable decode ok", got >= 0);
+  total += got;
+  for (;;) {
+    int g = dec->finalize(dec, out + total, (size_t)(info_bits + K + 8 - total));
+    if (g <= 0) break;
+    total += g;
+  }
+  int mism = 0;
+  for (int i = warmup; i < info_bits; ++i) {
+    if (out[i] != msg[i]) ++mism;
+  }
+  check("vtable hard round trip recovers the message",
+        total == info_bits + (K - 1) && mism == 0);
 
   dt_bcjr_decoder_destroy(dec);
   dt_bcjr_decoder_destroy(NULL); /* NULL is a no-op */
+  free(msg);
+  free(coded);
+  free(out);
   dt_ccode_destroy(code);
 }
 
-/* The public soft-output decoder vtable is wired over the stub engine. */
+/* The public soft-output decoder vtable decodes end to end and the resolved bit
+ * (argmax of the soft pair) recovers the message past warm-up. */
 static void test_soft_decoder_vtable(void) {
+  uint64_t rng = 0x9001u;
   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
   dt_bcjr_stream_params p = good_params();
@@ -257,18 +533,44 @@ static void test_soft_decoder_vtable(void) {
   check("soft_decoder_create rejects NULL params",
         dt_bcjr_soft_decoder_create(code, NULL) == NULL);
 
+  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int info_bits = 200;
+  const int warmup = 40 + 4 * K;
+  const int cap = (info_bits + K) * n;
+  uint8_t *msg = malloc((size_t)info_bits);
+  uint8_t *coded = malloc((size_t)cap);
+  dt_soft_decoder_out *soft = malloc(sizeof(*soft) * (size_t)(info_bits + K + 8));
+  rand_bits(msg, info_bits, &rng);
+  int clen = bcjr_encode_all(code, msg, info_bits, coded);
+
   dt_soft_decoder *sd = dt_bcjr_soft_decoder_create(code, &p);
   REQUIRE("soft decoder created", sd != NULL);
-
-  uint8_t in[64];
-  for (int i = 0; i < 64; ++i) in[i] = DT_TRUE;
-  dt_soft_decoder_out soft[64];
-  check("soft begin ok", sd->begin(sd, NULL, 0) >= 0);
-  check("soft decode returns no error", sd->decode(sd, soft, 64, in, 64) == 0);
-  check("soft finalize returns no error", sd->finalize(sd, soft, 64) == 0);
+  REQUIRE("soft begin ok", sd->begin(sd, NULL, 0) >= 0);
+  int total = 0;
+  int got = sd->decode(sd, soft + total, (size_t)(info_bits + K + 8 - total),
+                       coded, (size_t)clen);
+  REQUIRE("soft decode ok", got >= 0);
+  total += got;
+  for (;;) {
+    int g = sd->finalize(sd, soft + total, (size_t)(info_bits + K + 8 - total));
+    if (g <= 0) break;
+    total += g;
+  }
+  int mism = 0, locked_ok = 1;
+  for (int i = warmup; i < info_bits; ++i) {
+    uint8_t bit = soft[i].c_true >= soft[i].c_false ? DT_TRUE : DT_FALSE;
+    if (bit != msg[i]) ++mism;
+    if (soft[i].c_locked < 0.0f || soft[i].c_locked > 1.0001f) locked_ok = 0;
+  }
+  check("soft vtable round trip recovers the message",
+        total == info_bits + (K - 1) && mism == 0);
+  check("soft vtable populates c_locked", locked_ok);
 
   dt_bcjr_soft_decoder_destroy(sd);
   dt_bcjr_soft_decoder_destroy(NULL); /* NULL is a no-op */
+  free(msg);
+  free(coded);
+  free(soft);
   dt_ccode_destroy(code);
 }
 
@@ -277,9 +579,12 @@ int main(void) {
   test_encode_length_and_chunked();
   test_encode_error_paths();
   test_encoder_vtable();
-  printf("bcjr decoder (stub):\n");
+  printf("bcjr decoder:\n");
   test_decoder_param_validation();
-  test_decoder_stub_smoke();
+  test_decoder_roundtrip();
+  test_decoder_soft_invariants();
+  test_decoder_invalid_and_erasure();
+  test_decoder_blind_acquisition();
   test_decoder_vtable();
   test_soft_decoder_vtable();
   return test_summary("bcjr");

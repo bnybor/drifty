@@ -158,18 +158,18 @@ void dt_bcjr_decoder_destroy(dt_decoder *dec) {
 
 /* -- soft decoder ---------------------------------------------------------- */
 
-/* Map the engine's per-bit soft output onto a dt_soft_decoder_out. The BCJR
- * engine folds all information loss into c_lost (and decodes the bit as
- * DT_ERASURE when it wins), so c_lost is the "erasure / unknowable value"
- * consistency; it does not separately model a stuck non-truth value or a
- * per-position deletion, so c_invalid and c_absent are left 0. */
+/* Map the engine's per-bit soft output onto a dt_soft_decoder_out. The fields
+ * line up one-to-one: c_lost is the "erasure / unknowable value" consistency,
+ * and the engine also reports c_invalid (the slot's coded group was the
+ * encoder's DT_INVALID poison marker) and c_absent (1 - c_lock; the slot is not
+ * backed by a tracked codeword stream), so both pass straight through. */
 static void details_to_soft(const dt_bcjr_decode_details *d,
                             dt_soft_decoder_out *o) {
   o->c_false = d->c_false;
   o->c_true = d->c_true;
   o->c_erasure = d->c_lost;
-  o->c_invalid = 0.0f;
-  o->c_absent = 0.0f;
+  o->c_invalid = d->c_invalid;
+  o->c_absent = d->c_absent;
   o->c_locked = d->c_lock;
 }
 

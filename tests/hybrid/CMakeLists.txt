@@ -8,7 +8,7 @@ find_package(OpenMP COMPONENTS C QUIET)
 # archive) and reach the private headers under src/ via -Isrc. drifty_bare_obj
 # propagates the public include dir; drifty_stdlib supplies the freestanding shims
 # and propagates libm.
-foreach(t decoder_test)
+foreach(t decoder_test soft_decoder_test)
     add_executable(${t} ${t}.c)
     target_link_libraries(${t} PRIVATE drifty_bare_obj drifty_stdlib)
     target_include_directories(${t} PRIVATE ${PROJECT_SOURCE_DIR}/src)

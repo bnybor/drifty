@@ -96,7 +96,7 @@ void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d);
  * as `out`.
  */
 int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in,
-                            int n_in, uint8_t *out, double *lock_probability,
+                            int n_in, uint8_t *out, float *lock_probability,
                             int max_out);
 
 /*

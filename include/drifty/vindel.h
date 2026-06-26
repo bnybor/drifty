@@ -70,10 +70,10 @@ extern "C" {
 typedef struct {
   int decision_depth;
   int max_drift;
-  double p_sub;
-  double p_ins;
-  double p_del;
-  double p_erase;
+  float p_sub;
+  float p_ins;
+  float p_del;
+  float p_erase;
 } dt_vindel_stream_params;
 
 /* Build an encoder over `code`. Returns NULL on a bad argument or out of

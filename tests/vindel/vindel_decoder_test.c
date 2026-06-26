@@ -496,7 +496,7 @@ static void test_lock_probability(void) {
 
   int cap = n_info + 32;
   uint8_t *out = malloc((size_t)cap);
-  double *lock = malloc((size_t)cap * sizeof(double));
+  float *lock = malloc((size_t)cap * sizeof(float));
 
   /* Clean coded stream: feed it all at once, capturing per-bit lock prob. */
   dt_vindel_stream_decoder *sd =

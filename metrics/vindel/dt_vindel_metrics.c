@@ -509,9 +509,9 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
    * which has none). */
   const int decoded_cap = info_bits + 256;
   uint8_t *decoded = xmalloc((size_t)decoded_cap);
-  double *lock = which_metric == METRIC_LOCK
-                     ? xmalloc((size_t)decoded_cap * sizeof(double))
-                     : NULL;
+  float *lock = which_metric == METRIC_LOCK
+                    ? xmalloc((size_t)decoded_cap * sizeof(float))
+                    : NULL;
   int n_stream = 0, n_decoded;
   dt_vindel_stream_decoder *dec =
       dt_vindel_stream_decoder_create(code, &m.params);

@@ -48,19 +48,19 @@ extern "C" {
 typedef struct dt_soft_decoder_out_t dt_soft_decoder_out;
 struct dt_soft_decoder_out_t {
   // Consistency that the bit position holds false (DT_FALSE)
-  double c_false;
+  float c_false;
   // Consistency that the bit position holds true (DT_TRUE)
-  double c_true;
+  float c_true;
   // Consistency that the value is unrecoverable (DT_ERASURE)
-  double c_erasure;
+  float c_erasure;
   // Consistency of a bound, non-boolean value (DT_INVALID)
-  double c_invalid;
+  float c_invalid;
   // Consistency that the position was deleted (DT_ABSENT)
-  double c_absent;
+  float c_absent;
 
   // Consistency that the decoder is correctly tracking this stream - low during
   // warm-up or after losing sync. Independent of the value fields above.
-  double c_locked;
+  float c_locked;
 };
 
 /*

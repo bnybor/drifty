@@ -204,7 +204,7 @@ static inline double decoder_lock_mean(const dt_ccode *enc, const dt_ccode *dec,
   assert(sd != NULL);
   int cap = info_bits + 64;
   uint8_t *out = malloc((size_t)cap);
-  double *lock = malloc((size_t)cap * sizeof(double));
+  float *lock = malloc((size_t)cap * sizeof(float));
   int got = dt_vindel_stream_decode(sd, coded, clen, out, lock, cap);
   assert(got > 0);
 

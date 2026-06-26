@@ -98,13 +98,13 @@ typedef struct {
    */
 
   // Consistency of the proposition that the encoded bit was true
-  double c_true;
+  float c_true;
   // Consistency of the proposition that the encoded bit was false
-  double c_false;
+  float c_false;
   // Consistency of the proposition that the encoded bit is unrecoverable
-  double c_lost;
+  float c_lost;
   // Consistency of the proposition that the `dt_ccode` is correct.
-  double c_lock;
+  float c_lock;
 } dt_decode_details;
 
 /*

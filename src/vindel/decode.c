@@ -132,9 +132,9 @@ struct dt_vindel_stream_decoder {
 
   int n, max_drift, num_states, drift_width, decision_depth;
   /* Branch-metric constants, in cost (negative-log-likelihood) units. */
-  double cost_match, cost_miss, cost_erase, cost_keep, cost_ins, cost_del;
+  float cost_match, cost_miss, cost_erase, cost_keep, cost_ins, cost_del;
   /* Lock detection reference costs (channel-derived). */
-  double expected_lock, expected_unlock;
+  float expected_lock, expected_unlock;
 
   long long steps;   /* trellis steps processed                      */
   long long decided; /* decisions emitted (next step index to emit)  */
@@ -147,10 +147,10 @@ struct dt_vindel_stream_decoder {
   int *shift; /* [decision_depth] re-anchor sigma per step */
 
   /* Trellis working state over the [num_states][drift_width] node grid. */
-  double *metric;                /* [num_states*drift_width] node costs      */
-  double *next_metric;           /* [num_states*drift_width] scratch         */
+  float *metric;                /* [num_states*drift_width] node costs      */
+  float *next_metric;           /* [num_states*drift_width] scratch         */
   vin_backpointer *backpointers; /* [decision_depth*num_states*drift_width]  */
-  double smoothed_cost;          /* EWMA of best-path per-step cost          */
+  float smoothed_cost;          /* EWMA of best-path per-step cost          */
 
   /* The code's distinct output patterns. Each edge emits an n-bit output row,
    * but many edges share a row (at most 2^n distinct rows over 2*num_states
@@ -163,12 +163,12 @@ struct dt_vindel_stream_decoder {
   int *group_of;         /* [2*num_states] (state*2+bit) -> pattern index    */
 
   /* Per-step alignment scratch, recomputed each step. */
-  double *alignment;     /* [(n+1)*(max_consume+1)] rows 0..n-1 scratch      */
-  double *align_shared;  /* [n_patterns*drift_width*(max_consume+1)] final rows */
+  float *alignment;     /* [(n+1)*(max_consume+1)] rows 0..n-1 scratch      */
+  float *align_shared;  /* [n_patterns*drift_width*(max_consume+1)] final rows */
   /* Per-step received-window match costs, indexed by position - match_lo:
    * cost of aligning an expected 0/1 bit there, with in_range gating the ends. */
-  double *match_cost0;   /* [n+4*max_drift] expected-bit-0 costs             */
-  double *match_cost1;   /* [n+4*max_drift] expected-bit-1 costs             */
+  float *match_cost0;   /* [n+4*max_drift] expected-bit-0 costs             */
+  float *match_cost1;   /* [n+4*max_drift] expected-bit-1 costs             */
   signed char *in_range; /* [n+4*max_drift] 1 if position buffered           */
   int match_lo;          /* absolute received index of match table position 0 */
 };
@@ -219,7 +219,7 @@ static int reserve_received(dt_vindel_stream_decoder *d, int extra) {
  * one step past the last one processed). */
 static int frontier(const dt_vindel_stream_decoder *d) {
   const size_t count = (size_t)d->num_states * d->drift_width;
-  double best_cost = INFINITY;
+  float best_cost = INFINITY;
   int best = 0;
   for (size_t i = 0; i < count; ++i) {
     if (d->metric[i] < best_cost) {
@@ -267,7 +267,7 @@ static int pick_shift(const dt_vindel_stream_decoder *d) {
 /* clang-format on */
 static void align_fill_into(const dt_vindel_stream_decoder *d,
                             const uint8_t *expected, int base,
-                            double *final_out) {
+                            float *final_out) {
   const int n = d->n, max_consume = d->n + 2 * d->max_drift,
             stride = max_consume + 1;
   /* The per-bit match cost and in-range gate for each received position are
@@ -278,29 +278,29 @@ static void align_fill_into(const dt_vindel_stream_decoder *d,
    * into final_out, which every edge sharing this output pattern reads. */
   const int off = base - d->match_lo;
   const signed char *in_range = d->in_range;
-  const double *match_cost0 = d->match_cost0, *match_cost1 = d->match_cost1;
-  const double cost_ins = d->cost_ins, cost_del = d->cost_del;
-  double *scratch = d->alignment;
+  const float *match_cost0 = d->match_cost0, *match_cost1 = d->match_cost1;
+  const float cost_ins = d->cost_ins, cost_del = d->cost_del;
+  float *scratch = d->alignment;
 
-  scratch[0] = 0.0;
+  scratch[0] = 0.0f;
   for (int consumed = 1; consumed <= max_consume; ++consumed) {
     scratch[consumed] = in_range[off + consumed - 1]
                             ? scratch[consumed - 1] + cost_ins
                             : INFINITY;
   }
   for (int j = 1; j <= n; ++j) {
-    double *cost_row = (j == n) ? final_out : scratch + (size_t)j * stride;
-    const double *prev_row = scratch + (size_t)(j - 1) * stride;
-    const double *match_cost = expected[j - 1] ? match_cost1 : match_cost0;
+    float *cost_row = (j == n) ? final_out : scratch + (size_t)j * stride;
+    const float *prev_row = scratch + (size_t)(j - 1) * stride;
+    const float *match_cost = expected[j - 1] ? match_cost1 : match_cost0;
     cost_row[0] =
         prev_row[0] + cost_del; /* delete expected[j-1], consume nothing */
     for (int consumed = 1; consumed <= max_consume; ++consumed) {
-      double best = prev_row[consumed] + cost_del; /* deletion always avail. */
+      float best = prev_row[consumed] + cost_del; /* deletion always avail. */
       const int position = off + consumed - 1;
       if (in_range[position]) {
-        const double align_cost =
+        const float align_cost =
             prev_row[consumed - 1] + match_cost[position]; /* match / sub */
-        const double insert_cost =
+        const float insert_cost =
             cost_row[consumed - 1] + cost_ins; /* extra received bit */
         if (align_cost < best) best = align_cost;
         if (insert_cost < best) best = insert_cost;
@@ -320,7 +320,7 @@ static void align_fill_into(const dt_vindel_stream_decoder *d,
  * wide. */
 static void fill_match_costs(dt_vindel_stream_decoder *d) {
   const int window = d->n + 4 * d->max_drift;
-  const double keep = d->cost_keep, match = d->cost_match, miss = d->cost_miss,
+  const float keep = d->cost_keep, match = d->cost_match, miss = d->cost_miss,
                erase = d->cost_erase;
   d->match_lo = d->read_base - d->max_drift;
   for (int p = 0; p < window; ++p) {
@@ -344,17 +344,17 @@ static void fill_match_costs(dt_vindel_stream_decoder *d) {
 /* Subtract the lowest node cost from every node, so the best one sits at 0.
  * Over an unbounded stream this keeps the costs from growing without limit.
  * Returns the amount subtracted: the best path's cost increment this step. */
-static double normalize(double *metric, size_t count) {
-  double lowest = INFINITY;
+static float normalize(float *metric, size_t count) {
+  float lowest = INFINITY;
   for (size_t i = 0; i < count; ++i) {
     if (metric[i] < lowest) {
       lowest = metric[i];
     }
   }
   if (lowest == INFINITY) {
-    return 0.0;
+    return 0.0f;
   }
-  if (lowest > 0.0) {
+  if (lowest > 0.0f) {
     for (size_t i = 0; i < count; ++i) {
       if (metric[i] != INFINITY) {
         metric[i] -= lowest;
@@ -386,7 +386,7 @@ static void reanchor_metric(dt_vindel_stream_decoder *d, int sigma) {
     }
   }
   dt_memcpy(d->metric, d->next_metric,
-            (size_t)num_states * drift_width * sizeof(double));
+            (size_t)num_states * drift_width * sizeof(float));
 }
 
 /* Compute, once per step, the per-(pattern, source drift) alignment rows that
@@ -442,7 +442,7 @@ static void forward_pass(dt_vindel_stream_decoder *d) {
   for (int state = 0; state < num_states; ++state) {
     const size_t source_row = (size_t)state * drift_width;
     for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
-      const double current_cost = d->metric[source_row + drift_index];
+      const float current_cost = d->metric[source_row + drift_index];
       if (current_cost == INFINITY) {
         continue;
       }
@@ -457,18 +457,18 @@ static void forward_pass(dt_vindel_stream_decoder *d) {
       for (int bit = 0; bit <= 1; ++bit) {
         const int edge = state * 2 + bit;
         const int next_state = code->next_state[edge];
-        const double *final_row =
+        const float *final_row =
             d->align_shared +
             ((size_t)d->group_of[edge] * drift_width + drift_index) * stride;
         const size_t dest_row = (size_t)next_state * drift_width;
         for (int next_drift_index = first; next_drift_index < drift_width;
              ++next_drift_index) {
-          const double branch_cost =
+          const float branch_cost =
               final_row[n + (next_drift_index - drift_index)];
           if (branch_cost == INFINITY) {
             continue;
           }
-          const double cost = current_cost + branch_cost;
+          const float cost = current_cost + branch_cost;
           const size_t destination = dest_row + next_drift_index;
           if (cost < d->next_metric[destination]) {
             d->next_metric[destination] = cost;
@@ -480,11 +480,11 @@ static void forward_pass(dt_vindel_stream_decoder *d) {
     }
   }
 
-  const double increment = normalize(d->next_metric, count);
-  const double alpha = 2.0 / (d->decision_depth + 1.0);
+  const float increment = normalize(d->next_metric, count);
+  const float alpha = 2.0f / (d->decision_depth + 1.0f);
   d->smoothed_cost += alpha * (increment - d->smoothed_cost);
 
-  double *temp = d->metric;
+  float *temp = d->metric;
   d->metric = d->next_metric;
   d->next_metric = temp;
 }
@@ -500,7 +500,7 @@ static void forward_pass_nodrift(dt_vindel_stream_decoder *d) {
   const int n = d->n, num_states = d->num_states;
   const int base = d->read_base;
   const int in_range = base >= 0 && base + n <= d->received_length;
-  const double keep_total = (double)n * d->cost_keep;
+  const float keep_total = (float)n * d->cost_keep;
 
   for (int state = 0; state < num_states; ++state) {
     d->next_metric[state] = INFINITY;
@@ -510,13 +510,13 @@ static void forward_pass_nodrift(dt_vindel_stream_decoder *d) {
       (size_t)(d->steps % d->decision_depth) * (size_t)num_states;
 
   for (int state = 0; state < num_states; ++state) {
-    const double current_cost = d->metric[state];
+    const float current_cost = d->metric[state];
     if (current_cost == INFINITY) {
       continue;
     }
     for (int bit = 0; bit <= 1; ++bit) {
       const int edge = state * 2 + bit;
-      double branch_cost = INFINITY;
+      float branch_cost = INFINITY;
       if (in_range) {
         const uint8_t *expected = &code->output[(size_t)edge * n];
         branch_cost = keep_total;
@@ -530,7 +530,7 @@ static void forward_pass_nodrift(dt_vindel_stream_decoder *d) {
       if (branch_cost == INFINITY) {
         continue;
       }
-      const double cost = current_cost + branch_cost;
+      const float cost = current_cost + branch_cost;
       const int next_state = code->next_state[edge];
       if (cost < d->next_metric[next_state]) {
         d->next_metric[next_state] = cost;
@@ -539,11 +539,11 @@ static void forward_pass_nodrift(dt_vindel_stream_decoder *d) {
     }
   }
 
-  const double increment = normalize(d->next_metric, (size_t)num_states);
-  const double alpha = 2.0 / (d->decision_depth + 1.0);
+  const float increment = normalize(d->next_metric, (size_t)num_states);
+  const float alpha = 2.0f / (d->decision_depth + 1.0f);
   d->smoothed_cost += alpha * (increment - d->smoothed_cost);
 
-  double *temp = d->metric;
+  float *temp = d->metric;
   d->metric = d->next_metric;
   d->next_metric = temp;
 }
@@ -618,16 +618,16 @@ static unsigned char trace(const dt_vindel_stream_decoder *d, int frontier_node,
  * path dominant?" confidence: a confidently decoded WRONG code is dominant but
  * expensive, so it reads as unlocked. (Two encoders for the SAME code are not
  * "wrong" - they share codewords - and correctly read as locked.) */
-static double lock_estimate(const dt_vindel_stream_decoder *d) {
-  const double gap = d->expected_unlock - d->expected_lock;
-  if (gap <= 0.0) {
-    return 0.0;
+static float lock_estimate(const dt_vindel_stream_decoder *d) {
+  const float gap = d->expected_unlock - d->expected_lock;
+  if (gap <= 0.0f) {
+    return 0.0f;
   }
-  double probability = (d->expected_unlock - d->smoothed_cost) / gap;
-  if (probability < 0.0) {
-    probability = 0.0;
-  } else if (probability > 1.0) {
-    probability = 1.0;
+  float probability = (d->expected_unlock - d->smoothed_cost) / gap;
+  if (probability < 0.0f) {
+    probability = 0.0f;
+  } else if (probability > 1.0f) {
+    probability = 1.0f;
   }
   return probability;
 }
@@ -635,7 +635,7 @@ static double lock_estimate(const dt_vindel_stream_decoder *d) {
 /* Process steps, emitting forced decisions, until input/output limits hit. Each
  * emitted bit's lock probability is written to lock_out[] when non-NULL.
  * `draining` relaxes the look-ahead requirement for end-of-stream. */
-static int run(dt_vindel_stream_decoder *d, uint8_t *out, double *lock_out,
+static int run(dt_vindel_stream_decoder *d, uint8_t *out, float *lock_out,
                int max_out, int draining) {
   int output_count = 0;
   for (;;) {
@@ -677,7 +677,7 @@ static void init_metric(dt_vindel_stream_decoder *d) {
   }
   for (int state = 0; state < d->num_states; ++state) {
     d->metric[node_at(state, d->max_drift, d->drift_width)] =
-        0.0; /* zero drift, cost 0 */
+        0.0f; /* zero drift, cost 0 */
   }
 }
 
@@ -724,21 +724,21 @@ static int decoder_init(dt_vindel_stream_decoder *d,
                         const dt_ccode *code) {
   const int decision_depth = params->decision_depth;
   const int max_drift = params->max_drift;
-  const double p_sub = params->p_sub;
-  const double p_ins = params->p_ins;
-  const double p_del = params->p_del;
-  const double p_erase = params->p_erase;
+  const float p_sub = params->p_sub;
+  const float p_ins = params->p_ins;
+  const float p_del = params->p_del;
+  const float p_erase = params->p_erase;
 
   if (decision_depth < 1 || max_drift < 0) {
     return DT_ERR_ARG;
   }
-  if (!(p_sub > 0.0 && p_sub < 1.0) || !(p_erase >= 0.0 && p_erase < 1.0) ||
-      !(p_ins + p_del < 1.0) || p_ins < 0.0 || p_del < 0.0) {
+  if (!(p_sub > 0.0f && p_sub < 1.0f) || !(p_erase >= 0.0f && p_erase < 1.0f) ||
+      !(p_ins + p_del < 1.0f) || p_ins < 0.0f || p_del < 0.0f) {
     return DT_ERR_ARG;
   }
   /* Insertion/deletion probabilities are only consulted when tracking drift;
    * with max_drift == 0 they may be left 0 (correct flips only). */
-  if (max_drift > 0 && (p_ins <= 0.0 || p_del <= 0.0)) {
+  if (max_drift > 0 && (p_ins <= 0.0f || p_del <= 0.0f)) {
     return DT_ERR_ARG;
   }
 
@@ -762,10 +762,10 @@ static int decoder_init(dt_vindel_stream_decoder *d,
    * received and flipped with prob p_sub. The common (1 - p_erase) factor is
    * kept explicit so paths reading different erasure counts compare correctly
    * (p_erase = 0 reduces these to the plain hard-decision metric). */
-  d->cost_match = -dt_log((1.0 - p_erase) * (1.0 - p_sub));
-  d->cost_miss = -dt_log((1.0 - p_erase) * p_sub);
+  d->cost_match = -dt_log((1.0f - p_erase) * (1.0f - p_sub));
+  d->cost_miss = -dt_log((1.0f - p_erase) * p_sub);
   d->cost_erase = -dt_log(p_erase); /* +inf when p_erase == 0 (never read) */
-  d->cost_keep = -dt_log(1.0 - p_ins - p_del);
+  d->cost_keep = -dt_log(1.0f - p_ins - p_del);
   d->cost_ins = -dt_log(p_ins);
   d->cost_del = -dt_log(p_del);
 
@@ -773,15 +773,15 @@ static int decoder_init(dt_vindel_stream_decoder *d,
    * plus a match/miss term; the expected misfit fraction is p_sub when locked,
    * and we call it "unlocked" once misfit reaches the midpoint between p_sub
    * and 0.5 (random). Erased bits contribute cost_erase to both. */
-  const double misfit_lock = p_sub;
-  const double misfit_unlock = 0.5 * (p_sub + 0.5);
-  const double erase_term = p_erase > 0.0 ? p_erase * d->cost_erase : 0.0;
-  const double kept = 1.0 - p_erase;
+  const float misfit_lock = p_sub;
+  const float misfit_unlock = 0.5f * (p_sub + 0.5f);
+  const float erase_term = p_erase > 0.0f ? p_erase * d->cost_erase : 0.0f;
+  const float kept = 1.0f - p_erase;
   d->expected_lock = d->n * (d->cost_keep + erase_term +
-                             kept * ((1.0 - misfit_lock) * d->cost_match +
+                             kept * ((1.0f - misfit_lock) * d->cost_match +
                                      misfit_lock * d->cost_miss));
   d->expected_unlock = d->n * (d->cost_keep + erase_term +
-                               kept * ((1.0 - misfit_unlock) * d->cost_match +
+                               kept * ((1.0f - misfit_unlock) * d->cost_match +
                                        misfit_unlock * d->cost_miss));
 
   d->steps = 0;
@@ -801,12 +801,12 @@ static int decoder_init(dt_vindel_stream_decoder *d,
   d->shift = dt_malloc((size_t)d->decision_depth * sizeof(int));
   d->received = dt_malloc((size_t)d->received_capacity);
   d->alignment =
-      dt_malloc((size_t)(d->n + 1) * (max_consume + 1) * sizeof(double));
-  d->match_cost0 = dt_malloc((size_t)window * sizeof(double));
-  d->match_cost1 = dt_malloc((size_t)window * sizeof(double));
+      dt_malloc((size_t)(d->n + 1) * (max_consume + 1) * sizeof(float));
+  d->match_cost0 = dt_malloc((size_t)window * sizeof(float));
+  d->match_cost1 = dt_malloc((size_t)window * sizeof(float));
   d->in_range = dt_malloc((size_t)window * sizeof(signed char));
-  d->metric = dt_malloc(count * sizeof(double));
-  d->next_metric = dt_malloc(count * sizeof(double));
+  d->metric = dt_malloc(count * sizeof(float));
+  d->next_metric = dt_malloc(count * sizeof(float));
   d->backpointers =
       dt_malloc((size_t)d->decision_depth * count * sizeof(vin_backpointer));
   d->group_of = dt_malloc((size_t)edges * sizeof(int));
@@ -820,7 +820,7 @@ static int decoder_init(dt_vindel_stream_decoder *d,
   register_patterns(d);
 
   d->align_shared = dt_malloc((size_t)d->n_patterns * d->drift_width *
-                              (size_t)stride * sizeof(double));
+                              (size_t)stride * sizeof(float));
   if (!d->align_shared) {
     return DT_ERR_ALLOC;
   }
@@ -886,7 +886,7 @@ void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d) {
 }
 
 int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in,
-                            int n_in, uint8_t *out, double *lock_probability,
+                            int n_in, uint8_t *out, float *lock_probability,
                             int max_out) {
   if (!d || (n_in > 0 && !in) || n_in < 0 || (max_out > 0 && !out) ||
       max_out < 0) {

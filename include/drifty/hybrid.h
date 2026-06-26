@@ -87,14 +87,14 @@ extern "C" {
 typedef struct {
   int decision_depth;
   int max_drift;
-  double p_flip;
-  double p_ins_true;
-  double p_ins_false;
-  double p_ins_erase;
-  double p_del;
-  double p_ovr_true;
-  double p_ovr_false;
-  double p_ovr_erase;
+  float p_flip;
+  float p_ins_true;
+  float p_ins_false;
+  float p_ins_erase;
+  float p_del;
+  float p_ovr_true;
+  float p_ovr_false;
+  float p_ovr_erase;
 } dt_hybrid_stream_params;
 
 /* Build an encoder over `code`. Returns NULL on a bad argument or out of

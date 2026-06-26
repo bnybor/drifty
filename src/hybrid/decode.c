@@ -69,11 +69,11 @@ typedef struct {
    * expected 0/1 against a received 0/1 (asymmetric: overwrites bias the two
    * directions differently). Insertion cost depends on the inserted bit's value:
    * cost_ins_t / cost_ins_f / cost_ins_e for a consumed 1 / 0 / DT_ERASURE. */
-  double cost_bit[2][2];
-  double cost_erase, cost_keep, cost_del;
-  double cost_ins_t, cost_ins_f, cost_ins_e;
+  float cost_bit[2][2];
+  float cost_erase, cost_keep, cost_del;
+  float cost_ins_t, cost_ins_f, cost_ins_e;
   /* Lock detection reference costs (channel-derived, code-independent). */
-  double expected_lock, expected_unlock;
+  float expected_lock, expected_unlock;
 
   int *shift; /* [ring_len] re-anchor sigma per step */
 
@@ -93,13 +93,13 @@ typedef struct {
   uint8_t *pattern_bits;   /* [n_patterns * n] distinct output rows             */
   int n_patterns;          /* distinct output patterns in the code              */
   int pattern_cap;         /* allocated capacity of pattern_bits, in patterns   */
-  double *alignment;       /* [(n+1)*(max_consume+1)] alignment DP scratch      */
-  double *align_shared;    /* [n_patterns*drift_width*(max_consume+1)] final rows */
+  float *alignment;       /* [(n+1)*(max_consume+1)] alignment DP scratch      */
+  float *align_shared;    /* [n_patterns*drift_width*(max_consume+1)] final rows */
   /* Per-step received-window match costs, indexed by position-match_lo: cost of
    * aligning an expected 0/1 bit there, with in_range gating the ends. */
-  double *match_cost0;     /* [n+4*max_drift] expected-bit-0 costs              */
-  double *match_cost1;     /* [n+4*max_drift] expected-bit-1 costs              */
-  double *ins_cost;        /* [n+4*max_drift] cost to consume position as insert */
+  float *match_cost0;     /* [n+4*max_drift] expected-bit-0 costs              */
+  float *match_cost1;     /* [n+4*max_drift] expected-bit-1 costs              */
+  float *ins_cost;        /* [n+4*max_drift] cost to consume position as insert */
   signed char *in_range;   /* [n+4*max_drift] 1 if position buffered            */
   int match_lo;            /* absolute received index of match table position 0 */
 
@@ -111,28 +111,28 @@ typedef struct {
    * since compare-select discards the losing hypothesis. Sized [decision_depth *
    * n_patterns * drift_width * (n+2*max_drift+1)], allocated in
    * dt_decode_ctx_finalize once n_patterns is known. */
-  double *branch_ring;
+  float *branch_ring;
   /* Two [num_states*drift_width] scratch buffers for the backward beta pass
    * (only beta[t+1] is needed to form beta[t]). */
-  double *beta_a, *beta_b;
+  float *beta_a, *beta_b;
 } dt_decode_ctx;
 
 /* The decoder's per-step Viterbi working state. */
 typedef struct {
   const dt_ccode *code;          /* borrowed                                  */
-  double *metric;               /* [num_states*drift_width] node costs       */
-  double *next_metric;          /* [num_states*drift_width] scratch          */
-  double smoothed_cost;         /* EWMA of best-path per-step cost           */
+  float *metric;               /* [num_states*drift_width] node costs       */
+  float *next_metric;          /* [num_states*drift_width] scratch          */
+  float smoothed_cost;         /* EWMA of best-path per-step cost           */
   int *group_of;                /* [2*num_states] (state*2+bit)->pattern idx */
   /* Per-step forward-metric (alpha) snapshots for the BCJR backward pass: the
    * metric fed into each step's forward_pass (post re-anchor), ringed by
    * step % ring_len. [ring_len*num_states*drift_width]. */
-  double *alpha_ring;
+  float *alpha_ring;
   /* Per-frontier smoothed-cost snapshots [ring_len]: smoothed_ring[s % ring_len]
    * is smoothed_cost when the frontier was at step s, so a batched decision for
    * target t reads the lock consistency at t's own decision time (frontier
    * t+decision_depth), not the later batch frontier. */
-  double *smoothed_ring;
+  float *smoothed_ring;
 } dt_trellis;
 
 /* Internal decoder routines (defined below); the decoder is a single TU. */
@@ -147,7 +147,7 @@ static void dt_trellis_free(dt_trellis *tr);
 static int dt_decode_feed(dt_decode_ctx *ctx, const uint8_t *in, int n_in);
 static void dt_decode_step(dt_decode_ctx *ctx, dt_trellis *tr);
 static int dt_trellis_frontier(const dt_decode_ctx *ctx, const dt_trellis *tr);
-static double dt_lock_from_cost(const dt_decode_ctx *ctx, double cost);
+static float dt_lock_from_cost(const dt_decode_ctx *ctx, float cost);
 static void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr,
                                   long long base, int n, uint8_t *bits_out,
                                   dt_decode_details *details_out);
@@ -230,7 +230,7 @@ static int reserve_received(dt_decode_ctx *ctx, int extra) {
  * one step past the last one processed). */
 static int dt_trellis_frontier(const dt_decode_ctx *ctx, const dt_trellis *tr) {
   const size_t count = (size_t)ctx->num_states * ctx->drift_width;
-  double best_cost = INFINITY;
+  float best_cost = INFINITY;
   int best = 0;
   for (size_t i = 0; i < count; ++i) {
     if (tr->metric[i] < best_cost) {
@@ -277,7 +277,7 @@ static int pick_shift(const dt_decode_ctx *ctx, const dt_trellis *tr) {
  * per-group. */
 /* clang-format on */
 static void align_fill_into(const dt_decode_ctx *ctx, const uint8_t *expected,
-                            int base, double *final_out) {
+                            int base, float *final_out) {
   const int n = ctx->n, max_consume = ctx->n + 2 * ctx->max_drift,
             stride = max_consume + 1;
   /* The per-bit match cost and in-range gate for each received position are
@@ -288,30 +288,30 @@ static void align_fill_into(const dt_decode_ctx *ctx, const uint8_t *expected,
    * into final_out, indexed by pattern in the shared per-step table. */
   const int off = base - ctx->match_lo;
   const signed char *in_range = ctx->in_range;
-  const double *match_cost0 = ctx->match_cost0, *match_cost1 = ctx->match_cost1;
-  const double *ins_cost = ctx->ins_cost;
-  const double cost_del = ctx->cost_del;
-  double *scratch = ctx->alignment;
+  const float *match_cost0 = ctx->match_cost0, *match_cost1 = ctx->match_cost1;
+  const float *ins_cost = ctx->ins_cost;
+  const float cost_del = ctx->cost_del;
+  float *scratch = ctx->alignment;
 
-  scratch[0] = 0.0;
+  scratch[0] = 0.0f;
   for (int consumed = 1; consumed <= max_consume; ++consumed) {
     scratch[consumed] = in_range[off + consumed - 1]
                             ? scratch[consumed - 1] + ins_cost[off + consumed - 1]
                             : INFINITY;
   }
   for (int j = 1; j <= n; ++j) {
-    double *cost_row = (j == n) ? final_out : scratch + (size_t)j * stride;
-    const double *prev_row = scratch + (size_t)(j - 1) * stride;
-    const double *match_cost = expected[j - 1] ? match_cost1 : match_cost0;
+    float *cost_row = (j == n) ? final_out : scratch + (size_t)j * stride;
+    const float *prev_row = scratch + (size_t)(j - 1) * stride;
+    const float *match_cost = expected[j - 1] ? match_cost1 : match_cost0;
     cost_row[0] =
         prev_row[0] + cost_del; /* delete expected[j-1], consume nothing */
     for (int consumed = 1; consumed <= max_consume; ++consumed) {
-      double best = prev_row[consumed] + cost_del; /* deletion always avail. */
+      float best = prev_row[consumed] + cost_del; /* deletion always avail. */
       const int position = off + consumed - 1;
       if (in_range[position]) {
-        const double align_cost =
+        const float align_cost =
             prev_row[consumed - 1] + match_cost[position]; /* match / sub */
-        const double insert_cost =
+        const float insert_cost =
             cost_row[consumed - 1] + ins_cost[position]; /* extra received bit */
         if (align_cost < best) best = align_cost;
         if (insert_cost < best) best = insert_cost;
@@ -330,7 +330,7 @@ static void align_fill_into(const dt_decode_ctx *ctx, const uint8_t *expected,
  * spans every (source drift, consumed) an edge can touch: n + 4*max_drift wide. */
 static void fill_match_costs(dt_decode_ctx *ctx) {
   const int window = ctx->n + 4 * ctx->max_drift;
-  const double keep = ctx->cost_keep, erase = ctx->cost_erase;
+  const float keep = ctx->cost_keep, erase = ctx->cost_erase;
   ctx->match_lo = ctx->read_base - ctx->max_drift;
   for (int p = 0; p < window; ++p) {
     const int absolute = ctx->match_lo + p;
@@ -356,17 +356,17 @@ static void fill_match_costs(dt_decode_ctx *ctx) {
 /* Subtract the lowest node cost from every node, so the best one sits at 0.
  * Over an unbounded stream this keeps the costs from growing without limit.
  * Returns the amount subtracted: the best path's cost increment this step. */
-static double normalize(double *metric, size_t count) {
-  double lowest = INFINITY;
+static float normalize(float *metric, size_t count) {
+  float lowest = INFINITY;
   for (size_t i = 0; i < count; ++i) {
     if (metric[i] < lowest) {
       lowest = metric[i];
     }
   }
   if (lowest == INFINITY) {
-    return 0.0;
+    return 0.0f;
   }
-  if (lowest > 0.0) {
+  if (lowest > 0.0f) {
     for (size_t i = 0; i < count; ++i) {
       if (metric[i] != INFINITY) {
         metric[i] -= lowest;
@@ -399,7 +399,7 @@ static void reanchor_metric(const dt_decode_ctx *ctx, dt_trellis *tr,
     }
   }
   dt_memcpy(tr->metric, tr->next_metric,
-         (size_t)num_states * drift_width * sizeof(double));
+         (size_t)num_states * drift_width * sizeof(float));
 }
 
 /* Compute the per-(pattern, source drift) alignment rows the forward pass then
@@ -453,7 +453,7 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
   for (int state = 0; state < num_states; ++state) {
     const size_t source_row = (size_t)state * drift_width;
     for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
-      const double current_cost = tr->metric[source_row + drift_index];
+      const float current_cost = tr->metric[source_row + drift_index];
       if (current_cost == INFINITY) {
         continue;
       }
@@ -468,18 +468,18 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
       for (int bit = 0; bit <= 1; ++bit) {
         const int edge = state * 2 + bit;
         const int next_state = code->next_state[edge];
-        const double *final_row =
+        const float *final_row =
             ctx->align_shared +
             ((size_t)tr->group_of[edge] * drift_width + drift_index) * stride;
         const size_t dest_row = (size_t)next_state * drift_width;
         for (int next_drift_index = first; next_drift_index < drift_width;
              ++next_drift_index) {
-          const double branch_cost =
+          const float branch_cost =
               final_row[n + (next_drift_index - drift_index)];
           if (branch_cost == INFINITY) {
             continue;
           }
-          const double cost = current_cost + branch_cost;
+          const float cost = current_cost + branch_cost;
           const size_t destination = dest_row + next_drift_index;
           if (cost < tr->next_metric[destination]) {
             tr->next_metric[destination] = cost;
@@ -489,11 +489,11 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
     }
   }
 
-  const double increment = normalize(tr->next_metric, count);
-  const double alpha = 2.0 / (ctx->decision_depth + 1.0);
+  const float increment = normalize(tr->next_metric, count);
+  const float alpha = 2.0f / (ctx->decision_depth + 1.0f);
   tr->smoothed_cost += alpha * (increment - tr->smoothed_cost);
 
-  double *temp = tr->metric;
+  float *temp = tr->metric;
   tr->metric = tr->next_metric;
   tr->next_metric = temp;
 }
@@ -509,20 +509,20 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
   const int n = ctx->n, num_states = ctx->num_states;
   const int base = ctx->read_base;
   const int in_range = base >= 0 && base + n <= ctx->received_length;
-  const double keep_total = (double)n * ctx->cost_keep;
+  const float keep_total = (float)n * ctx->cost_keep;
 
   for (int state = 0; state < num_states; ++state) {
     tr->next_metric[state] = INFINITY;
   }
 
   for (int state = 0; state < num_states; ++state) {
-    const double current_cost = tr->metric[state];
+    const float current_cost = tr->metric[state];
     if (current_cost == INFINITY) {
       continue;
     }
     for (int bit = 0; bit <= 1; ++bit) {
       const int edge = state * 2 + bit;
-      double branch_cost = INFINITY;
+      float branch_cost = INFINITY;
       if (in_range) {
         const uint8_t *expected = &code->output[(size_t)edge * n];
         branch_cost = keep_total;
@@ -536,7 +536,7 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
       if (branch_cost == INFINITY) {
         continue;
       }
-      const double cost = current_cost + branch_cost;
+      const float cost = current_cost + branch_cost;
       const int next_state = code->next_state[edge];
       if (cost < tr->next_metric[next_state]) {
         tr->next_metric[next_state] = cost;
@@ -544,11 +544,11 @@ static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
     }
   }
 
-  const double increment = normalize(tr->next_metric, (size_t)num_states);
-  const double alpha = 2.0 / (ctx->decision_depth + 1.0);
+  const float increment = normalize(tr->next_metric, (size_t)num_states);
+  const float alpha = 2.0f / (ctx->decision_depth + 1.0f);
   tr->smoothed_cost += alpha * (increment - tr->smoothed_cost);
 
-  double *temp = tr->metric;
+  float *temp = tr->metric;
   tr->metric = tr->next_metric;
   tr->next_metric = temp;
 }
@@ -567,17 +567,17 @@ static void snapshot_step(dt_decode_ctx *ctx, dt_trellis *tr, int nodrift) {
   const size_t slot = (size_t)(ctx->steps % ctx->ring_len);
   const size_t count = (size_t)ctx->num_states * ctx->drift_width;
 
-  dt_memcpy(tr->alpha_ring + slot * count, tr->metric, count * sizeof(double));
+  dt_memcpy(tr->alpha_ring + slot * count, tr->metric, count * sizeof(float));
 
-  double *bslot = ctx->branch_ring + slot * shared;
+  float *bslot = ctx->branch_ring + slot * shared;
   if (nodrift) {
     /* drift_width == 1, stride == n + 1; branch for pattern p sits at row p's
      * final cell (the n-consumed entry the backward pass reads). */
     const int base = ctx->read_base, nn = ctx->n;
     const int in_range = base >= 0 && base + nn <= ctx->received_length;
-    const double keep_total = (double)nn * ctx->cost_keep;
+    const float keep_total = (float)nn * ctx->cost_keep;
     for (int p = 0; p < ctx->n_patterns; ++p) {
-      double branch = INFINITY;
+      float branch = INFINITY;
       if (in_range) {
         const uint8_t *pat = &ctx->pattern_bits[(size_t)p * nn];
         branch = keep_total;
@@ -590,7 +590,7 @@ static void snapshot_step(dt_decode_ctx *ctx, dt_trellis *tr, int nodrift) {
       bslot[(size_t)p * stride + nn] = branch;
     }
   } else {
-    dt_memcpy(bslot, ctx->align_shared, shared * sizeof(double));
+    dt_memcpy(bslot, ctx->align_shared, shared * sizeof(float));
   }
 }
 
@@ -641,16 +641,16 @@ static void dt_decode_step(dt_decode_ctx *ctx, dt_trellis *tr) {
  * path dominant?" confidence: a confidently decoded WRONG code is dominant but
  * expensive, so it reads as unlocked. (Two encoders for the SAME code are not
  * "wrong" - they share codewords - and correctly read as locked.) */
-static double dt_lock_from_cost(const dt_decode_ctx *ctx, double cost) {
-  const double gap = ctx->expected_unlock - ctx->expected_lock;
-  if (gap <= 0.0) {
-    return 0.0;
+static float dt_lock_from_cost(const dt_decode_ctx *ctx, float cost) {
+  const float gap = ctx->expected_unlock - ctx->expected_lock;
+  if (gap <= 0.0f) {
+    return 0.0f;
   }
-  double probability = (ctx->expected_unlock - cost) / gap;
-  if (probability < 0.0) {
-    probability = 0.0;
-  } else if (probability > 1.0) {
-    probability = 1.0;
+  float probability = (ctx->expected_unlock - cost) / gap;
+  if (probability < 0.0f) {
+    probability = 0.0f;
+  } else if (probability > 1.0f) {
+    probability = 1.0f;
   }
   return probability;
 }
@@ -659,10 +659,10 @@ static double dt_lock_from_cost(const dt_decode_ctx *ctx, double cost) {
  * from a step's snapshotted branch row (align_shared layout): final_row[n + (nd -
  * di)] - the same value forward_pass scatters. INFINITY if that ending drift is
  * infeasible for this edge. */
-static double branch_cost(const dt_decode_ctx *ctx, const dt_trellis *tr,
-                          const double *bslot, int edge, int di, int nd) {
+static float branch_cost(const dt_decode_ctx *ctx, const dt_trellis *tr,
+                          const float *bslot, int edge, int di, int nd) {
   const int stride = ctx->n + 2 * ctx->max_drift + 1;
-  const double *final_row =
+  const float *final_row =
       bslot + ((size_t)tr->group_of[edge] * ctx->drift_width + di) * stride;
   return final_row[ctx->n + (nd - di)];
 }
@@ -692,13 +692,13 @@ static double branch_cost(const dt_decode_ctx *ctx, const dt_trellis *tr,
  * the agreement is 0).
  *
  * c_lock is the independent lock consistency (is this the right code at all?). */
-static uint8_t finalize_soft(const dt_decode_ctx *ctx, double m0, double m1,
-                             double smoothed, dt_decode_details *out) {
-  const double mmin = m0 < m1 ? m0 : m1;
-  const double c_true = m1 == INFINITY ? 0.0 : dt_exp(mmin - m1);
-  const double c_false = m0 == INFINITY ? 0.0 : dt_exp(mmin - m0);
-  const double diff = c_true - c_false;
-  const double c_lost = 1.0 - (diff < 0.0 ? -diff : diff);
+static uint8_t finalize_soft(const dt_decode_ctx *ctx, float m0, float m1,
+                             float smoothed, dt_decode_details *out) {
+  const float mmin = m0 < m1 ? m0 : m1;
+  const float c_true = m1 == INFINITY ? 0.0f : dt_exp(mmin - m1);
+  const float c_false = m0 == INFINITY ? 0.0f : dt_exp(mmin - m0);
+  const float diff = c_true - c_false;
+  const float c_lost = 1.0f - (diff < 0.0f ? -diff : diff);
   if (out) {
     out->c_true = c_true;
     out->c_false = c_false;
@@ -750,46 +750,46 @@ static void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr
                         (size_t)(nn + 2 * ctx->max_drift + 1);
   DT_ASSERT(ctx->steps - base <= rl);
 
-  double *beta_next = ctx->beta_a, *beta_cur = ctx->beta_b;
+  float *beta_next = ctx->beta_a, *beta_cur = ctx->beta_b;
   for (size_t node = 0; node < count; ++node) {
-    beta_next[node] = tr->metric[node] == INFINITY ? INFINITY : 0.0;
+    beta_next[node] = tr->metric[node] == INFINITY ? INFINITY : 0.0f;
   }
 
   for (long long t = ctx->steps - 1; t >= base; --t) {
     const int in_emit = t < base + n;
     const int need_beta = t > base; /* beta[base] is never consumed */
-    const double *alpha_t = tr->alpha_ring + (size_t)(t % rl) * count;
-    const double *bslot = ctx->branch_ring + (size_t)(t % rl) * shared;
+    const float *alpha_t = tr->alpha_ring + (size_t)(t % rl) * count;
+    const float *bslot = ctx->branch_ring + (size_t)(t % rl) * shared;
     const int sigma = (t + 1 == ctx->steps) ? 0 : ctx->shift[(t + 1) % rl];
     if (need_beta) {
       for (size_t node = 0; node < count; ++node) beta_cur[node] = INFINITY;
     }
-    double m0 = INFINITY, m1 = INFINITY;
+    float m0 = INFINITY, m1 = INFINITY;
     for (int state = 0; state < num_states; ++state) {
       for (int di = 0; di < drift_width; ++di) {
-        const double a = alpha_t[(size_t)state * drift_width + di];
+        const float a = alpha_t[(size_t)state * drift_width + di];
         if (a == INFINITY) {
           continue;
         }
         int first = di - nn;
         if (first < 0) first = 0;
-        double beta_src = INFINITY;
+        float beta_src = INFINITY;
         for (int bit = 0; bit <= 1; ++bit) {
           const int edge = state * 2 + bit;
           const size_t drow = (size_t)code->next_state[edge] * drift_width;
-          double best_edge = INFINITY;
+          float best_edge = INFINITY;
           for (int nd = first; nd < drift_width; ++nd) {
-            const double bc = branch_cost(ctx, tr, bslot, edge, di, nd);
+            const float bc = branch_cost(ctx, tr, bslot, edge, di, nd);
             const int dest = nd - sigma;
             if (bc == INFINITY || dest < 0 || dest >= drift_width) {
               continue;
             }
-            const double cand = bc + beta_next[drow + dest];
+            const float cand = bc + beta_next[drow + dest];
             if (cand < best_edge) best_edge = cand;
           }
           if (best_edge < beta_src) beta_src = best_edge;
           if (in_emit && best_edge != INFINITY) {
-            const double total = a + best_edge;
+            const float total = a + best_edge;
             if (bit) {
               if (total < m1) m1 = total;
             } else {
@@ -812,7 +812,7 @@ static void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr
       if (bits_out) bits_out[k] = bit;
     }
     if (need_beta) {
-      double *tmp = beta_next;
+      float *tmp = beta_next;
       beta_next = beta_cur;
       beta_cur = tmp;
     }
@@ -882,7 +882,7 @@ static void init_metric(const dt_decode_ctx *ctx, dt_trellis *tr) {
   }
   for (int state = 0; state < ctx->num_states; ++state) {
     tr->metric[node_at(state, ctx->max_drift, ctx->drift_width)] =
-        0.0; /* zero drift, cost 0 */
+        0.0f; /* zero drift, cost 0 */
   }
 }
 
@@ -895,29 +895,29 @@ static int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params 
   }
   const int decision_depth = params->decision_depth;
   const int max_drift = params->max_drift;
-  const double p_flip = params->p_flip;
-  const double p_ins_true = params->p_ins_true;
-  const double p_ins_false = params->p_ins_false;
-  const double p_ins_erase = params->p_ins_erase;
-  const double p_del = params->p_del;
-  const double p_ovr_true = params->p_ovr_true;
-  const double p_ovr_false = params->p_ovr_false;
-  const double p_ovr_erase = params->p_ovr_erase;
-  const double p_ins = p_ins_true + p_ins_false + p_ins_erase;
-  const double p_ovr = p_ovr_true + p_ovr_false + p_ovr_erase;
+  const float p_flip = params->p_flip;
+  const float p_ins_true = params->p_ins_true;
+  const float p_ins_false = params->p_ins_false;
+  const float p_ins_erase = params->p_ins_erase;
+  const float p_del = params->p_del;
+  const float p_ovr_true = params->p_ovr_true;
+  const float p_ovr_false = params->p_ovr_false;
+  const float p_ovr_erase = params->p_ovr_erase;
+  const float p_ins = p_ins_true + p_ins_false + p_ins_erase;
+  const float p_ovr = p_ovr_true + p_ovr_false + p_ovr_erase;
 
   if (decision_depth < 1 || max_drift < 0) {
     return DT_ERR_ARG;
   }
-  if (!(p_flip > 0.0 && p_flip < 1.0) || p_ins_true < 0.0 ||
-      p_ins_false < 0.0 || p_ins_erase < 0.0 || p_del < 0.0 ||
-      p_ovr_true < 0.0 || p_ovr_false < 0.0 || p_ovr_erase < 0.0 ||
-      !(p_ovr < 1.0) || !(p_ins + p_del < 1.0)) {
+  if (!(p_flip > 0.0f && p_flip < 1.0f) || p_ins_true < 0.0f ||
+      p_ins_false < 0.0f || p_ins_erase < 0.0f || p_del < 0.0f ||
+      p_ovr_true < 0.0f || p_ovr_false < 0.0f || p_ovr_erase < 0.0f ||
+      !(p_ovr < 1.0f) || !(p_ins + p_del < 1.0f)) {
     return DT_ERR_ARG;
   }
   /* Insertion/deletion probabilities are only consulted when tracking drift;
    * with max_drift == 0 they may be left 0 (correct flips only). */
-  if (max_drift > 0 && (p_ins <= 0.0 || p_del <= 0.0)) {
+  if (max_drift > 0 && (p_ins <= 0.0f || p_del <= 0.0f)) {
     return DT_ERR_ARG;
   }
 
@@ -937,13 +937,13 @@ static int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params 
    * prob p_flip. So receiving value r against an expected/sent bit b mixes the
    * overwrite floor with the normal channel; cost_bit[b][r] is its -log. The
    * overwrite-to-erasure rate p_ovr_erase doubles as the plain erasure rate. */
-  const double pn = 1.0 - p_ovr;
-  ctx->cost_bit[0][0] = -dt_log(p_ovr_false + pn * (1.0 - p_flip));
+  const float pn = 1.0f - p_ovr;
+  ctx->cost_bit[0][0] = -dt_log(p_ovr_false + pn * (1.0f - p_flip));
   ctx->cost_bit[0][1] = -dt_log(p_ovr_true + pn * p_flip);
   ctx->cost_bit[1][0] = -dt_log(p_ovr_false + pn * p_flip);
-  ctx->cost_bit[1][1] = -dt_log(p_ovr_true + pn * (1.0 - p_flip));
+  ctx->cost_bit[1][1] = -dt_log(p_ovr_true + pn * (1.0f - p_flip));
   ctx->cost_erase = -dt_log(p_ovr_erase); /* +inf when 0 (never read) */
-  ctx->cost_keep = -dt_log(1.0 - p_ins - p_del);
+  ctx->cost_keep = -dt_log(1.0f - p_ins - p_del);
   /* Cost to consume a received bit as an insertion. The total insertion rate
    * (p_ins_true + p_ins_false + p_ins_erase) sets how readily the decoder
    * realigns; the per-value rates only bias which value it expects an inserted
@@ -951,8 +951,8 @@ static int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params 
    * (the 2x), so an evenly-split rate gives -log(p_ins) - the same eagerness as a
    * single combined rate, only tilting when the true/false rates differ. An
    * erasure carries no value to score, so it is taken at its own rate. */
-  ctx->cost_ins_t = -dt_log(2.0 * p_ins_true);  /* consume a received 1 */
-  ctx->cost_ins_f = -dt_log(2.0 * p_ins_false); /* consume a received 0 */
+  ctx->cost_ins_t = -dt_log(2.0f * p_ins_true);  /* consume a received 1 */
+  ctx->cost_ins_f = -dt_log(2.0f * p_ins_false); /* consume a received 0 */
   ctx->cost_ins_e = -dt_log(p_ins_erase);       /* consume an erasure   */
   ctx->cost_del = -dt_log(p_del);
 
@@ -962,22 +962,22 @@ static int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params 
    * when locked is the model's miss rate among non-erased bits (= p_flip with no
    * overwrites), and we call it "unlocked" once misfit reaches the midpoint
    * between that and 0.5 (random). Erased bits contribute cost_erase to both. */
-  const double avg_match =
-      0.5 * (ctx->cost_bit[0][0] + ctx->cost_bit[1][1]);
-  const double avg_miss = 0.5 * (ctx->cost_bit[0][1] + ctx->cost_bit[1][0]);
-  const double misfit_lock =
-      (pn * p_flip + 0.5 * (p_ovr_true + p_ovr_false)) / (1.0 - p_ovr_erase);
-  const double misfit_unlock = 0.5 * (misfit_lock + 0.5);
-  const double erase_term =
-      p_ovr_erase > 0.0 ? p_ovr_erase * ctx->cost_erase : 0.0;
-  const double kept = 1.0 - p_ovr_erase;
+  const float avg_match =
+      0.5f * (ctx->cost_bit[0][0] + ctx->cost_bit[1][1]);
+  const float avg_miss = 0.5f * (ctx->cost_bit[0][1] + ctx->cost_bit[1][0]);
+  const float misfit_lock =
+      (pn * p_flip + 0.5f * (p_ovr_true + p_ovr_false)) / (1.0f - p_ovr_erase);
+  const float misfit_unlock = 0.5f * (misfit_lock + 0.5f);
+  const float erase_term =
+      p_ovr_erase > 0.0f ? p_ovr_erase * ctx->cost_erase : 0.0f;
+  const float kept = 1.0f - p_ovr_erase;
   ctx->expected_lock =
       ctx->n * (ctx->cost_keep + erase_term +
-                kept * ((1.0 - misfit_lock) * avg_match +
+                kept * ((1.0f - misfit_lock) * avg_match +
                         misfit_lock * avg_miss));
   ctx->expected_unlock =
       ctx->n * (ctx->cost_keep + erase_term +
-                kept * ((1.0 - misfit_unlock) * avg_match +
+                kept * ((1.0f - misfit_unlock) * avg_match +
                         misfit_unlock * avg_miss));
 
   ctx->steps = 0;
@@ -1002,13 +1002,13 @@ static int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params 
   ctx->received = dt_malloc((size_t)ctx->received_capacity);
   ctx->pattern_bits = dt_malloc((size_t)ctx->pattern_cap * ctx->n);
   ctx->alignment =
-      dt_malloc((size_t)(ctx->n + 1) * (max_consume + 1) * sizeof(double));
-  ctx->match_cost0 = dt_malloc((size_t)window * sizeof(double));
-  ctx->match_cost1 = dt_malloc((size_t)window * sizeof(double));
-  ctx->ins_cost = dt_malloc((size_t)window * sizeof(double));
+      dt_malloc((size_t)(ctx->n + 1) * (max_consume + 1) * sizeof(float));
+  ctx->match_cost0 = dt_malloc((size_t)window * sizeof(float));
+  ctx->match_cost1 = dt_malloc((size_t)window * sizeof(float));
+  ctx->ins_cost = dt_malloc((size_t)window * sizeof(float));
   ctx->in_range = dt_malloc((size_t)window * sizeof(signed char));
-  ctx->beta_a = dt_malloc(node_count * sizeof(double));
-  ctx->beta_b = dt_malloc(node_count * sizeof(double));
+  ctx->beta_a = dt_malloc(node_count * sizeof(float));
+  ctx->beta_b = dt_malloc(node_count * sizeof(float));
   if (!ctx->shift || !ctx->received || !ctx->pattern_bits || !ctx->alignment ||
       !ctx->match_cost0 || !ctx->match_cost1 || !ctx->ins_cost ||
       !ctx->in_range || !ctx->beta_a || !ctx->beta_b) {
@@ -1029,10 +1029,10 @@ static int dt_decode_ctx_finalize(dt_decode_ctx *ctx) {
   const size_t shared = (size_t)patterns * ctx->drift_width * (size_t)stride;
   dt_free(ctx->align_shared);
   dt_free(ctx->branch_ring);
-  ctx->align_shared = dt_malloc(shared * sizeof(double));
+  ctx->align_shared = dt_malloc(shared * sizeof(float));
   /* One align_shared-sized branch snapshot per retained step (BCJR backward). */
   ctx->branch_ring =
-      dt_malloc((size_t)ctx->ring_len * shared * sizeof(double));
+      dt_malloc((size_t)ctx->ring_len * shared * sizeof(float));
   return ctx->align_shared && ctx->branch_ring ? DT_OK : DT_ERR_ALLOC;
 }
 
@@ -1118,11 +1118,11 @@ static int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_ccode *c
 
   const size_t count = (size_t)ctx->num_states * ctx->drift_width;
   const int edges = ctx->num_states * 2;
-  tr->metric = dt_malloc(count * sizeof(double));
-  tr->next_metric = dt_malloc(count * sizeof(double));
+  tr->metric = dt_malloc(count * sizeof(float));
+  tr->next_metric = dt_malloc(count * sizeof(float));
   tr->group_of = dt_malloc((size_t)edges * sizeof(int));
-  tr->alpha_ring = dt_malloc((size_t)ctx->ring_len * count * sizeof(double));
-  tr->smoothed_ring = dt_malloc((size_t)ctx->ring_len * sizeof(double));
+  tr->alpha_ring = dt_malloc((size_t)ctx->ring_len * count * sizeof(float));
+  tr->smoothed_ring = dt_malloc((size_t)ctx->ring_len * sizeof(float));
   if (!tr->metric || !tr->next_metric || !tr->group_of || !tr->alpha_ring ||
       !tr->smoothed_ring) {
     dt_trellis_free(tr);

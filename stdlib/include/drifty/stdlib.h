@@ -53,8 +53,8 @@ void *dt_memmove(void *dest, const void *src, size_t n);
 void *dt_memset(void *dest, int value, size_t n);
 
 int dt_abs(int value);
-double dt_log(double x);
-double dt_exp(double x);
+float dt_log(float x);
+float dt_exp(float x);
 
 #ifdef __cplusplus
 }

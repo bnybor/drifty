@@ -54,7 +54,7 @@
  * Usage: dt_codesearch [trials] [info_bits] [seed] [pool]
  */
 
-#include <hybrid/drifty.h>
+#include <drifty/hybrid.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -249,8 +249,14 @@ static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
                         const uint8_t *msg, int info_bits, int depth) {
   const int clen = info_bits * dt_ccode_n(enc);
   uint8_t *coded = xmalloc((size_t)clen);
-  int st = 0;
-  dt_ccode_encode(enc, msg, info_bits, &st, coded);
+
+  /* Encode with the public hybrid encoder. begin + encode, no finalize: the lock
+   * metric reads only the streaming output, so the flush tail is unnecessary
+   * (and omitting it keeps this measurement identical to the original). */
+  dt_encoder *e = dt_hybrid_encoder_create(enc);
+  int written = e->begin(e, coded, clen);
+  written += e->encode(e, coded + written, clen - written, msg, info_bits);
+  dt_hybrid_encoder_destroy(e);
 
   dt_hybrid_stream_params params = {.decision_depth = depth,
                              .max_drift = 4,
@@ -259,30 +265,28 @@ static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
                              .p_ins_false = 0.005,
                              .p_del = 0.01,
                              .p_ovr_erase = 0.0};
-  dt_stream_decoder *sd = dt_stream_decoder_create(dec, &params);
+  dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(dec, &params);
   if (!sd) {
     free(coded);
     return 1.0; /* treat as worst case (indistinguishable) */
   }
   const int cap = info_bits + 64;
-  uint8_t *out = xmalloc((size_t)cap);
-  dt_decode_details *details = xmalloc((size_t)cap * sizeof(dt_decode_details));
-  int got = dt_stream_decode(sd, coded, clen, out, details, cap);
+  dt_soft_decoder_out *soft = xmalloc((size_t)cap * sizeof(*soft));
+  int got = sd->decode(sd, soft, (size_t)cap, coded, (size_t)written);
 
   double result = 1.0;
   if (got > 0) {
     double sum = 0.0;
     int count = 0;
     for (int i = got / 2; i < got; ++i) {
-      sum += details[i].c_lock;
+      sum += soft[i].c_locked;
       ++count;
     }
     result = count ? sum / count : 1.0;
   }
-  dt_stream_decoder_destroy(sd);
+  dt_hybrid_soft_decoder_destroy(sd);
   free(coded);
-  free(out);
-  free(details);
+  free(soft);
   return result;
 }
 

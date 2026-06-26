@@ -48,8 +48,8 @@
  *
  * Alongside the edit rate we report a confidence metric in [0, 1]:
  *
- *   mean_lock   - the decoder's own running estimate (see dt_decode_details'
- *                 c_lock) that it is tracking a valid coded stream,
+ *   mean_lock   - the decoder's own running estimate (the soft decoder's
+ *                 c_locked) that it is tracking a valid coded stream,
  *                 averaged across the kept bits. It shows how confidently the
  *                 decoder stays synced as each impairment ramps up.
  *
@@ -58,7 +58,7 @@
  * Usage: dt_metrics [trials] [info_bits] [seed]
  */
 
-#include <hybrid/drifty.h>
+#include <drifty/hybrid.h>
 
 #include <limits.h>
 #include <stdint.h>
@@ -113,48 +113,6 @@ static void *xmalloc(size_t size) {
  * 1 at the top of a sweep. */
 static double clamp_double(double value, double lo, double hi) {
   return value < lo ? lo : (value > hi ? hi : value);
-}
-
-/* Push a received buffer through the streaming decoder in small chunks, then
- * drain. Returns the number of decoded bits collected (<= decoded_cap). When
- * `details` is non-NULL it receives the per-bit soft output for the bits emitted
- * by streaming; the trailing flush bits carry no lock value, so *n_stream (if
- * non-NULL) reports how many leading bits `details` was filled for. */
-static int decode_all(dt_stream_decoder *decoder, const uint8_t *received,
-                      int received_len, uint8_t *decoded,
-                      dt_decode_details *details, int decoded_cap,
-                      int *n_stream) {
-  int n_decoded = 0, read_pos = 0;
-  while (read_pos < received_len && n_decoded < decoded_cap) {
-    int chunk = received_len - read_pos < 64 ? received_len - read_pos : 64;
-    int written = dt_stream_decode(decoder, received + read_pos, chunk,
-                                   decoded + n_decoded,
-                                   details ? details + n_decoded : NULL,
-                                   decoded_cap - n_decoded);
-    if (written < 0) {
-      return written;
-    }
-    n_decoded += written;
-    read_pos += chunk;
-  }
-  if (n_stream) {
-    *n_stream = n_decoded;
-  }
-  for (;;) {
-    if (n_decoded >= decoded_cap) {
-      break;
-    }
-    int written = dt_stream_decode_flush(decoder, decoded + n_decoded, NULL,
-                                         decoded_cap - n_decoded);
-    if (written < 0) {
-      return written;
-    }
-    if (written == 0) {
-      break;
-    }
-    n_decoded += written;
-  }
-  return n_decoded;
 }
 
 /* Apply the channel to `coded` (coded_len bits): with probability p_ins emit a
@@ -518,33 +476,88 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   for (int i = 0; i < info_bits; ++i) {
     message[i] = bit_sym((unsigned int)rng_next(rng));
   }
-  int enc_state = 0, coded_len = 0;
-  coded_len += dt_ccode_encode(code, message, info_bits, &enc_state, coded);
-  coded_len += dt_ccode_encode_flush(code, &enc_state, coded + coded_len);
+  /* Encode with the public hybrid encoder: begin, then encode, then finalize
+   * (which writes the flush tail). */
+  const int coded_cap = (info_bits + m.constraint_len) * m.code_n;
+  dt_encoder *encoder = dt_hybrid_encoder_create(code);
+  if (!encoder) {
+    fprintf(stderr, "dt_metrics: encoder create failed\n");
+    exit(1);
+  }
+  int coded_len = encoder->begin(encoder, coded, (size_t)coded_cap);
+  coded_len += encoder->encode(encoder, coded + coded_len,
+                               (size_t)(coded_cap - coded_len), message,
+                               (size_t)info_bits);
+  coded_len += encoder->finalize(encoder, coded + coded_len,
+                                 (size_t)(coded_cap - coded_len));
+  dt_hybrid_encoder_destroy(encoder);
 
   uint8_t *received = NULL;
   int received_len = apply_channel(coded, coded_len, channel_sub, channel_ins,
                                    channel_del, channel_erase, rng, &received);
 
-  /* Edit distance and lock probability both come from one decode. Lock needs the
-   * per-bit lock buffer; edit needs the banded-DP scratch - allocate only what
-   * this metric uses. */
+  /* Decode through the public API. Edit distance needs the hard decoder's bits;
+   * lock probability needs the soft decoder's per-bit c_locked - allocate and
+   * run only what this metric uses. For lock, only the streaming bits carry a
+   * value, so n_stream tracks how many `decode` produced (vs the flush tail from
+   * `finalize`). */
   const int decoded_cap = info_bits + 256;
-  uint8_t *decoded = xmalloc((size_t)decoded_cap);
-  dt_decode_details *details =
-      which_metric == METRIC_LOCK
-          ? xmalloc((size_t)decoded_cap * sizeof(dt_decode_details))
-          : NULL;
-
-  dt_stream_decoder *decoder = dt_stream_decoder_create(code, &m.params);
-  if (!decoder) {
-    fprintf(stderr, "dt_metrics: decoder create failed\n");
-    exit(1);
+  uint8_t *decoded = NULL;
+  dt_soft_decoder_out *soft = NULL;
+  int n_stream = 0, n_decoded;
+  if (which_metric == METRIC_EDIT) {
+    decoded = xmalloc((size_t)decoded_cap);
+    dt_decoder *dec = dt_hybrid_decoder_create(code, &m.params);
+    if (!dec) {
+      fprintf(stderr, "dt_metrics: decoder create failed\n");
+      exit(1);
+    }
+    /* Feed in 64-bit chunks (the decoder's output depends on feed granularity),
+     * collecting streaming bits, then flush the tail. */
+    for (int read_pos = 0; read_pos < received_len && n_stream < decoded_cap;) {
+      int chunk = received_len - read_pos < 64 ? received_len - read_pos : 64;
+      int w = dec->decode(dec, decoded + n_stream, (size_t)(decoded_cap - n_stream),
+                          received + read_pos, (size_t)chunk);
+      if (w < 0) {
+        n_stream = w;
+        break;
+      }
+      n_stream += w;
+      read_pos += chunk;
+    }
+    n_decoded = n_stream;
+    if (n_decoded >= 0) {
+      int tail = dec->finalize(dec, decoded + n_decoded,
+                               (size_t)(decoded_cap - n_decoded));
+      n_decoded = tail < 0 ? tail : n_decoded + tail;
+    }
+    dt_hybrid_decoder_destroy(dec);
+  } else { /* METRIC_LOCK */
+    soft = xmalloc((size_t)decoded_cap * sizeof(*soft));
+    dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &m.params);
+    if (!sd) {
+      fprintf(stderr, "dt_metrics: decoder create failed\n");
+      exit(1);
+    }
+    for (int read_pos = 0; read_pos < received_len && n_stream < decoded_cap;) {
+      int chunk = received_len - read_pos < 64 ? received_len - read_pos : 64;
+      int w = sd->decode(sd, soft + n_stream, (size_t)(decoded_cap - n_stream),
+                         received + read_pos, (size_t)chunk);
+      if (w < 0) {
+        n_stream = w;
+        break;
+      }
+      n_stream += w;
+      read_pos += chunk;
+    }
+    n_decoded = n_stream;
+    if (n_decoded >= 0) {
+      int tail = sd->finalize(sd, soft + n_decoded,
+                              (size_t)(decoded_cap - n_decoded));
+      n_decoded = tail < 0 ? tail : n_decoded + tail;
+    }
+    dt_hybrid_soft_decoder_destroy(sd);
   }
-  int n_stream = 0;
-  int n_decoded = decode_all(decoder, received, received_len, decoded, details,
-                             decoded_cap, &n_stream);
-  dt_stream_decoder_destroy(decoder);
   free(received);
   if (n_decoded < 0) {
     fprintf(stderr, "dt_metrics: decode error %d\n", n_decoded);
@@ -573,7 +586,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
      * already trimmed from the edit window, has none). */
     int lock_end = decoded_end < n_stream ? decoded_end : n_stream;
     for (int i = m.warmup; i < lock_end; ++i) {
-      r.lock_sum += details[i].c_lock;
+      r.lock_sum += soft[i].c_locked;
       ++r.lock_bits;
     }
   }
@@ -581,7 +594,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   free(message);
   free(coded);
   free(decoded);
-  free(details);
+  free(soft);
   return r;
 }
 

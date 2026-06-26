@@ -36,31 +36,38 @@ extern "C" {
 #endif
 
 /*
- * An encoder for DT_ bit positions.
+ * dt_encoder - the encode side of the streaming codec, called through function
+ * pointers. It turns a stream of input bits into a longer stream of coded bits.
  *
- * `src` may contain only:
- * - DT_TRUE
- * - DT_FALSE
- * - DT_ERASURE
- * - DT_INVALID
+ * Drive one instance through three phases:
  *
- * `dst` will be written to contain only:
- * - DT_TRUE
- * - DT_FALSE
- * - DT_ERASURE
- * - DT_INVALID
+ *   begin    - once, first: initialise and write any preamble.
+ *   encode   - any number of times: append the coded bits for `src`.
+ *   finalize - once, last: flush the tail (terminating bits) at end of stream.
+ *
+ * Every call writes into `dst` (capacity `dst_len`) and returns the number of
+ * bits written, or a negative value on a bad argument - most often too little
+ * room. Size `dst` from the input length and dt_ccode_n(): n input bits become
+ * up to (n + K) * dt_ccode_n(code) coded bits once the flush is counted.
+ *
+ *   `src` holds DT_TRUE / DT_FALSE (and may carry DT_ERASURE / DT_INVALID).
+ *   `dst` receives DT_TRUE / DT_FALSE / DT_ERASURE / DT_INVALID coded symbols.
+ *
+ * `data` is the implementation's private state - do not touch it. Build an
+ * encoder with a factory such as dt_hybrid_encoder_create() and free it with
+ * the matching _destroy().
  */
 typedef struct dt_encoder_t dt_encoder;
 struct dt_encoder_t {
-  // Initialize the encoder, and write any preamble
+  // Initialise the encoder and write any preamble. Call once, before encode().
   int (*begin)(dt_encoder *enc, dt_t *dst, size_t dst_len);
-  // Encode bits
+  // Encode src_len input bits, appending the coded bits to dst.
   int (*encode)(dt_encoder *enc, dt_t *dst, size_t dst_len, const dt_t *src,
                 size_t src_len);
-  // Finish encoding any in-progress bits and write any trailer.
+  // Flush in-progress bits and write the trailer. Call once, at end of stream.
   int (*finalize)(dt_encoder *enc, dt_t *dst, size_t dst_len);
 
-  // implementation-specific state
+  // implementation-private state; do not access
   void *data;
 };
 

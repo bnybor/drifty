@@ -31,6 +31,14 @@
 extern "C" {
 #endif
 
+/*
+ * A dt_ccode is the convolutional code - the redundancy scheme the encoder and
+ * decoder share. Pick a ready-made one with dt_ccode_create_standard() (most
+ * users want this) or define your own with dt_ccode_create(), then build a
+ * codec over it with the dt_hybrid_*_create() factories in <drifty/hybrid.h>.
+ * The code must outlive everything built from it.
+ */
+
 /* ------------------------------------------------------------------------- */
 /* Code (the error-correction scheme)                                        */
 /* ------------------------------------------------------------------------- */

@@ -35,49 +35,60 @@
 extern "C" {
 #endif
 
+/*
+ * Soft output for one decoded bit position. Each c_ field is a *consistency* in
+ * [0, 1] - how well that hypothesis fits the received stream - not a
+ * probability, so the fields need not sum to 1; compare them to decide. The
+ * usual hard decision is DT_ERASURE if c_erasure dominates, else whichever of
+ * c_true / c_false is larger.
+ *
+ * An implementation need not model every hypothesis: the hybrid codec leaves
+ * c_invalid and c_absent at 0.
+ */
 typedef struct dt_soft_decoder_out_t dt_soft_decoder_out;
 struct dt_soft_decoder_out_t {
-  /*
-   * All c_ values are consistency measures (not probabilities) ranging 0...1
-   * Consistency is of a hypothesis.
-   */
+  // Consistency that the bit position holds false (DT_FALSE)
+  double c_false;
+  // Consistency that the bit position holds true (DT_TRUE)
+  double c_true;
+  // Consistency that the value is unrecoverable (DT_ERASURE)
+  double c_erasure;
+  // Consistency of a bound, non-boolean value (DT_INVALID)
+  double c_invalid;
+  // Consistency that the position was deleted (DT_ABSENT)
+  double c_absent;
 
-  // The bit position holds false
-  double c_false;  // DT_FALSE
-  // The bit position holds true
-  double c_true;  // DT_TRUE
-  // The bit position has an unknowable value
-  double c_erasure;  // DT_ERASURE
-  // The bit position has a value, but it is neither true nor false
-  double c_invalid;  // DT_INVALID
-  // The bit position was deleted
-  double c_absent;  // DT_ABSENT
-
-  // Hypothesis that the decoder is valid for this stream
+  // Consistency that the decoder is correctly tracking this stream - low during
+  // warm-up or after losing sync. Independent of the value fields above.
   double c_locked;
 };
 
 /*
- * A decoder for DT_ bit positions.
+ * dt_soft_decoder - like dt_decoder, but each recovered position is reported as
+ * a dt_soft_decoder_out record of consistencies rather than a single hard bit.
+ * It is driven and behaves identically otherwise: the same begin / decode /
+ * finalize phases, the same warm-up delay, and the same buffering - a decode
+ * call that returns exactly `dst_len` records has more buffered, so call again
+ * with no new input (src_len 0) to drain before feeding more.
  *
- * `src` may contain only:
- * - DT_TRUE
- * - DT_FALSE
- * - DT_ERASURE
- * - DT_INVALID
+ * `begin` writes any preamble into `dst`; the hybrid codec emits none, so
+ * begin(dec, NULL, 0) is fine. `src` holds received DT_TRUE / DT_FALSE /
+ * DT_ERASURE (and may carry DT_INVALID); `data` is private state - do not touch
+ * it. Build one with dt_hybrid_soft_decoder_create() and free it with the
+ * matching _destroy().
  */
 typedef struct dt_soft_decoder_t dt_soft_decoder;
 struct dt_soft_decoder_t {
-  // Initialize the decoder, and write any preamble
+  // Initialise the decoder and write any preamble. Call once, before decode().
   int (*begin)(dt_soft_decoder *dec, dt_t *dst, size_t dst_len);
-  // Decode bits
+  // Decode src_len received bits, writing up to dst_len soft records to dst.
   int (*decode)(dt_soft_decoder *dec, dt_soft_decoder_out *dst, size_t dst_len,
                 const dt_t *src, size_t src_len);
-  // Finish decoding any in-progress bits and write any trailer.
+  // Drain records still in flight. Call once, at end of stream.
   int (*finalize)(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
                   size_t dst_len);
 
-  // implementation-specific state
+  // implementation-private state; do not access
   void *data;
 };
 

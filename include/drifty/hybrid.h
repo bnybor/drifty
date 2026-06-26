@@ -36,11 +36,22 @@
 extern "C" {
 #endif
 
+/*
+ * The hybrid codec - drifty's convolutional, drift-tolerant implementation of
+ * the encoder / decoder / soft-decoder interfaces. This is the single header to
+ * include for the whole public API.
+ *
+ * Build a codec object over a dt_ccode with one of the factories below, drive
+ * it through its vtable (see encoder.h / decoder.h / soft_decoder.h), and free
+ * it with the matching _destroy(). The code must outlive everything built from
+ * it.
+ */
+
 /* clang-format off */
 /*
- * Decoder channel-model settings for dt_hybrid_decoder_create() (and the
- * lower-level dt_stream_decoder_create()). Use designated initializers; any
- * field you leave out is 0.
+ * Decoder channel-model settings for dt_hybrid_decoder_create() and
+ * dt_hybrid_soft_decoder_create(). Use designated initializers; any field you
+ * leave out is 0.
  *
  *   decision_depth : output delay, in bits, before each bit is committed. Bigger
  *                    is more reliable but slower to emit. Try ~6 * dt_ccode_k().
@@ -86,15 +97,26 @@ typedef struct {
   double p_ovr_erase;
 } dt_hybrid_stream_params;
 
+/* Build an encoder over `code`. Returns NULL on a bad argument or out of
+ * memory. */
 dt_encoder *dt_hybrid_encoder_create(const dt_ccode *code);
+/* Free an encoder from dt_hybrid_encoder_create(). Passing NULL is fine. */
 void dt_hybrid_encoder_destroy(dt_encoder *enc);
 
+/* Build a hard-decision decoder over `code` with the channel model in `params`.
+ * `params` is copied and need not outlive the call. Returns NULL on a bad
+ * argument (including an invalid `params`) or out of memory. */
 dt_decoder *dt_hybrid_decoder_create(const dt_ccode *code,
                                      const dt_hybrid_stream_params *params);
+/* Free a decoder from dt_hybrid_decoder_create(). Passing NULL is fine. */
 void dt_hybrid_decoder_destroy(dt_decoder *dec);
 
+/* Build a soft-output decoder - same inputs as dt_hybrid_decoder_create(), but
+ * it reports per-bit consistencies instead of a hard decision. Returns NULL on
+ * a bad argument or out of memory. */
 dt_soft_decoder *dt_hybrid_soft_decoder_create(
     const dt_ccode *code, const dt_hybrid_stream_params *params);
+/* Free a soft decoder from dt_hybrid_soft_decoder_create(). NULL is fine. */
 void dt_hybrid_soft_decoder_destroy(dt_soft_decoder *dec);
 
 #ifdef __cplusplus

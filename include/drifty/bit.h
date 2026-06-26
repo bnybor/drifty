@@ -33,6 +33,24 @@
 extern "C" {
 #endif
 
+/*
+ * dt_t - the bit symbol the whole drifty API speaks. Every input bit, coded
+ * bit, and decoded bit is one byte holding one of the DT_ symbols below (one
+ * bit per byte, never a packed bitfield).
+ *
+ * In practice you build and read three of them:
+ *   DT_FALSE, DT_TRUE - a known 0 / 1.
+ *   DT_ERASURE        - a position that exists but whose value is unknown (a
+ *                       bit the channel lost). Valid as decoder input and may
+ *                       appear in decoder output.
+ * A decoder may additionally emit:
+ *   DT_ABSENT         - a position it judges was deleted from the stream.
+ *   DT_INVALID        - a bound value that is not a boolean.
+ *
+ * The symbols are points in a small flag space (the structural bits below), so
+ * the predicates are plain mask tests. To recover a 0/1 from DT_FALSE/DT_TRUE,
+ * guard with DT_IS_BIT() and take DT_BIT().
+ */
 typedef uint8_t dt_t; /* disposition of one bit position; uint8_t for
                          slot-struct footprint */
 
@@ -64,20 +82,19 @@ typedef uint8_t dt_t; /* disposition of one bit position; uint8_t for
 /* bound, true */
 #define DT_TRUE (DT_PRESENT | DT_BOUND | DT_BOOLEAN | DT_VALUE)
 
-/* --- predicates; each is a single mask, and each names one of the cuts we
- * made --- */
+/* --- predicates: each is a single mask test, naming one distinction --- */
 
-/* X = {T,F,E,I}; valid on unlocked stream */
+/* a transmit-domain symbol (T, F, E, or I) - valid encoder/decoder input */
 #define DT_IS_TRANSMIT(s) ((s) & DT_PRESENT)
-/* Z = X ∪ {ABSENT}; excludes NONE */
+/* an output-domain symbol: any transmit symbol or ABSENT; excludes NONE */
 #define DT_IS_OUTPUT(s) ((s) & (DT_PRESENT | DT_DELETED))
-/* T,F,I — feeds value mass, not erasure */
+/* carries a bound value (T, F, or I) - contributes value mass, not erasure */
 #define DT_IS_BOUND(s) ((s) & DT_BOUND)
-/* T or F — a usable boolean */
+/* a usable boolean: T or F */
 #define DT_IS_BIT(s) ((s) & DT_BOOLEAN)
-/* extract 0/1, valid iff DT_IS_BIT */
+/* extract the 0/1 payload; meaningful only when DT_IS_BIT(s) */
 #define DT_BIT(s) ((s) & DT_VALUE)
-/* deletion = outer-code erasure */
+/* marked deleted - an erasure to an outer code */
 #define DT_IS_ABSENT(s) ((s) & DT_DELETED)
 
 #ifdef __cplusplus

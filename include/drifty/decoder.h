@@ -35,33 +35,51 @@
 extern "C" {
 #endif
 
+/* clang-format off */
 /*
- * A decoder for DT_ bit positions.
+ * dt_decoder - the decode side of the streaming codec, called through function
+ * pointers. It recovers input bits from received coded bits, correcting bits
+ * that were flipped, inserted, dropped, or erased.
  *
- * `src` may contain only:
- * - DT_TRUE
- * - DT_FALSE
- * - DT_ERASURE
- * - DT_INVALID
+ * Drive one instance through three phases:
  *
- * `dst` will be written to contain only:
- * - DT_TRUE
- * - DT_FALSE
- * - DT_ERASURE
- * - DT_INVALID
- * - DT_ABSENT
+ *   begin    - once, first: initialise and write any preamble.
+ *   decode   - any number of times: feed received bits as they arrive; out
+ *              come recovered bits.
+ *   finalize - once, last: drain the bits still in flight at end of stream.
+ *
+ * Every call writes into `dst` (capacity `dst_len`) and returns the number of
+ * bits written, or a negative value on a bad argument such as too little room.
+ *
+ * Two behaviours to plan for:
+ *   - Delay. A bit is committed only after a fixed look-ahead (the decision
+ *     depth), so output trails input and the first ~decision_depth decoded bits
+ *     are unreliable warm-up - discard them, or send a known preamble you skip.
+ *   - Buffering. The decoder keeps recovered bits that don't fit in `dst`
+ *     rather than dropping them. When a decode call returns exactly `dst_len`
+ *     (it filled the buffer), call decode again with no new input (src_len 0)
+ *     to drain the rest before feeding more.
+ *
+ *   `src` holds received DT_TRUE / DT_FALSE / DT_ERASURE (may carry DT_INVALID).
+ *   `dst` receives DT_TRUE / DT_FALSE / DT_ERASURE / DT_INVALID, plus DT_ABSENT
+ *         for a position judged deleted.
+ *
+ * `data` is the implementation's private state - do not touch it. Build a
+ * decoder with a factory such as dt_hybrid_decoder_create() and free it with
+ * the matching _destroy().
  */
+/* clang-format on */
 typedef struct dt_decoder_t dt_decoder;
 struct dt_decoder_t {
-  // Initialize the decoder, and write any preamble
+  // Initialise the decoder and write any preamble. Call once, before decode().
   int (*begin)(dt_decoder *dec, dt_t *dst, size_t dst_len);
-  // Decode bits
+  // Decode src_len received bits, writing recovered bits to dst.
   int (*decode)(dt_decoder *dec, dt_t *dst, size_t dst_len, const dt_t *src,
                 size_t src_len);
-  // Finish decoding any in-progress bits and write any trailer.
+  // Drain bits still in flight. Call once, at end of stream.
   int (*finalize)(dt_decoder *dec, dt_t *dst, size_t dst_len);
 
-  // implementation-specific state
+  // implementation-private state; do not access
   void *data;
 };
 

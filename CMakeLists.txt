@@ -60,8 +60,7 @@ set(_dt_public_symbols
     dt_hybrid_decoder_create dt_hybrid_decoder_destroy
     dt_hybrid_soft_decoder_create dt_hybrid_soft_decoder_destroy
     dt_vindel_encoder_create dt_vindel_encoder_destroy
-    dt_vindel_decoder_create dt_vindel_decoder_destroy
-    dt_vindel_soft_decoder_create dt_vindel_soft_decoder_destroy)
+    dt_vindel_decoder_create dt_vindel_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

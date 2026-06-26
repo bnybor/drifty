@@ -30,7 +30,6 @@
 #include <drifty/ccode.h>
 #include <drifty/decoder.h>
 #include <drifty/encoder.h>
-#include <drifty/soft_decoder.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,20 +37,18 @@ extern "C" {
 
 /*
  * The vindel codec - drifty's convolutional, drift-tolerant implementation of
- * the encoder / decoder / soft-decoder interfaces. This is the single header to
- * include for the whole public API.
+ * the encoder / decoder interfaces. This is the single header to include for
+ * the whole public API.
  *
  * Build a codec object over a dt_ccode with one of the factories below, drive
- * it through its vtable (see encoder.h / decoder.h / soft_decoder.h), and free
- * it with the matching _destroy(). The code must outlive everything built from
- * it.
+ * it through its vtable (see encoder.h / decoder.h), and free it with the
+ * matching _destroy(). The code must outlive everything built from it.
  */
 
 /* clang-format off */
 /*
- * Decoder channel-model settings for dt_vindel_decoder_create() and
- * dt_vindel_soft_decoder_create(). Use designated initializers; any field you
- * leave out is 0.
+ * Decoder channel-model settings for dt_vindel_decoder_create(). Use designated
+ * initializers; any field you leave out is 0.
  *
  *   decision_depth : output delay, in bits, before each bit is committed. Bigger
  *                    is more reliable but slower to emit. Try ~6 * dt_ccode_k().
@@ -110,14 +107,6 @@ dt_decoder *dt_vindel_decoder_create(const dt_ccode *code,
                                      const dt_vindel_stream_params *params);
 /* Free a decoder from dt_vindel_decoder_create(). Passing NULL is fine. */
 void dt_vindel_decoder_destroy(dt_decoder *dec);
-
-/* Build a soft-output decoder - same inputs as dt_vindel_decoder_create(), but
- * it reports per-bit consistencies instead of a hard decision. Returns NULL on
- * a bad argument or out of memory. */
-dt_soft_decoder *dt_vindel_soft_decoder_create(
-    const dt_ccode *code, const dt_vindel_stream_params *params);
-/* Free a soft decoder from dt_vindel_soft_decoder_create(). NULL is fine. */
-void dt_vindel_soft_decoder_destroy(dt_soft_decoder *dec);
 
 #ifdef __cplusplus
 }

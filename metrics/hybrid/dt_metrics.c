@@ -619,7 +619,9 @@ static void format_row(char *out, size_t cap, const char *code_name,
   } else { /* METRIC_LOCK */
     double mean_lock =
         agg.lock_bits > 0 ? agg.lock_sum / (double)agg.lock_bits : 0.0;
-    snprintf(out, cap, "%s,,,%lld,%.8g\n", head, agg.lock_bits, mean_lock);
+    /* Leave ref_bits, edit_distance, edit_rate (3 columns) blank so lock_bits
+     * and mean_lock land in their header columns - four commas, not three. */
+    snprintf(out, cap, "%s,,,,%lld,%.8g\n", head, agg.lock_bits, mean_lock);
   }
 }
 

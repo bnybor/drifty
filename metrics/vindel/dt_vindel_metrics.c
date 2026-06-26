@@ -27,7 +27,7 @@
 /*
  * dt_vindel_metrics - Monte-Carlo measurement of decoding-mistake rate as a
  * function of the channel's flip / insert / delete / erase rates, for each
- * standard code, for the vindel codec (the ported drift_viterbi algorithm).
+ * standard code, for the vindel codec.
  *
  * This is the vindel counterpart of metrics/hybrid/dt_metrics.c. It drives the
  * private engine API (vindel/decode.h) rather than the public archive, because

@@ -28,10 +28,6 @@
  * MAXIR codec: realizes the abstract dt_encoder / dt_decoder / dt_soft_decoder
  * interfaces over the convolutional encode and MAXIR decode engine. The code
  * handle is dt_ccode throughout.
- *
- * DIVERGED FROM BCJR (2026-06-26): maxir started as a copy of the bcjr codec but
- * is now independent. Do NOT port bcjr changes into maxir; the two evolve
- * separately. See include/drifty/cc/maxir.h.
  */
 
 #include <drifty/cc/maxir.h>

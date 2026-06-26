@@ -29,8 +29,9 @@
  * the convolutional encode and Viterbi hard-decision decode engine. The code
  * handle is dt_ccode throughout. The decoder takes no channel-model parameters.
  *
- * The encoder is complete; the decode engine is a stub (see viterbi/decode.c) -
- * the vtable plumbing is wired but produces no output until the algorithm lands.
+ * Both the encoder and the decode engine (see viterbi/decode.c) are complete;
+ * this file is just the vtable plumbing that adapts them to the abstract
+ * interfaces.
  */
 
 #include <drifty/cc/viterbi.h>

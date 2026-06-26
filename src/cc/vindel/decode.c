@@ -33,9 +33,9 @@
 
 #include "../ccode_internal.h"
 
-/* vindel speaks dt_bit bit symbols (bit.h) at its public boundary, but the ported
- * drift_viterbi engine works internally in that algorithm's 0 / 1 / 0xFF
- * convention (a coded/received bit is 0 or 1, an erasure is the 0xFF sentinel).
+/* vindel speaks dt_bit bit symbols (bit.h) at its public boundary, but the
+ * internal engine works in a 0 / 1 / 0xFF convention (a coded/received bit is 0
+ * or 1, an erasure is the 0xFF sentinel).
  * Convert at the two edges: received bits on the way in (decode_feed), decided
  * bits on the way out (run / flush). Expected codewords (code->output) are
  * already raw 0/1, so the cost model is untouched. */

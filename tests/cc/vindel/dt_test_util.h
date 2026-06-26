@@ -27,7 +27,7 @@
 /*
  * Shared test utilities for the vindel suite: a small soft-assertion framework
  * plus the PRNG, encode, channel, and decoder helpers the test files have in
- * common. The decoder helpers drive the ported drift_viterbi engine through its
+ * common. The decoder helpers drive the vindel engine through its
  * private API (vindel/decode.h). Header-only; every helper is `static inline`
  * so a test file that does not use one draws no -Wunused warning.
  */
@@ -147,7 +147,7 @@ static inline int vindel_encode_all(const dt_ccode *code, const uint8_t *msg,
 /* -- decoder helpers ------------------------------------------------------- */
 
 /* Build a decoder from positional settings (keeps tests concise). The argument
- * order mirrors the drift_viterbi channel model the engine implements. */
+ * order mirrors the channel model the engine implements. */
 static inline dt_vindel_stream_decoder *make_decoder(const dt_ccode *code,
                                                      int depth, int drift,
                                                      double p_sub, double p_ins,

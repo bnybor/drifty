@@ -26,9 +26,6 @@
 
 /* clang-format off */
 /*
- * DIVERGED FROM BCJR (2026-06-26): maxir is an independent fork of bcjr - do not
- * port bcjr changes here. See include/drifty/cc/maxir.h.
- *
  * MAXIR (max-log-MAP / forward-backward) decoder - drift-tolerant.
  *
  * The max-product (max-log-MAP) sibling of a Viterbi decoder: instead of a single

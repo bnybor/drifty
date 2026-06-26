@@ -37,11 +37,6 @@ extern "C" {
 #endif
 
 /*
- * DIVERGED FROM BCJR (2026-06-26): maxir began as a copy of the bcjr codec and
- * has since diverged - the two are now independent. Do NOT port bcjr changes
- * into maxir (or vice versa), and do not assume the two stay in sync; evolve
- * maxir on its own terms.
- *
  * The maxir codec - a convolutional encoder and MAXIR (max-log-MAP /
  * forward-backward) decoder over a dt_ccode. Where the viterbi codec finds the
  * single most likely path, MAXIR computes the per-bit a-posteriori weight of each

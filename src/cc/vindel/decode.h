@@ -27,7 +27,7 @@
 #ifndef DRIFTY_VINDEL_DECODE_H
 #define DRIFTY_VINDEL_DECODE_H
 
-/* The vindel decoder is the ported drift_viterbi algorithm. It is built from a
+/* The vindel decoder is a drift-tolerant Viterbi decoder. It is built from a
  * dt_ccode and shares the result codes defined alongside the encoder;
  * dt_vindel_stream_decoder_create takes the dt_vindel_stream_params channel
  * model, which lives in <drifty/cc/vindel.h>. */

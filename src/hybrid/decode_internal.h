@@ -41,7 +41,7 @@
  * them all.
  */
 
-#include <drifty/hybrid/decode.h> /* dt_stream_params, dt_code (opaque), uint8_t */
+#include <drifty/hybrid/decode.h> /* dt_stream_params, dt_ccode (opaque), uint8_t */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -68,7 +68,7 @@
  * and the input bit that got there, packed into one 32-bit word to shrink the
  * backpointer ring (~3x vs a struct) and make each forward-pass write a single
  * store. Layout: bit:1 | prev_drift_index:15 | prev_state:16. The field widths
- * dwarf the validated ranges (dt_code_create caps K <= 9, so prev_state < 256;
+ * dwarf the validated ranges (dt_ccode_create caps K <= 9, so prev_state < 256;
  * dt_trellis_init guards prev_drift_index/prev_state against overflow). */
 typedef uint32_t dt_backpointer;
 
@@ -159,7 +159,7 @@ typedef struct {
  * its own metric/backpointers and the map from each edge to its output pattern's
  * index in ctx->pattern_bits / ctx->align_shared. */
 typedef struct {
-  const dt_code *code;          /* borrowed                                  */
+  const dt_ccode *code;          /* borrowed                                  */
   double *metric;               /* [num_states*drift_width] node costs       */
   double *next_metric;          /* [num_states*drift_width] scratch          */
   dt_backpointer *backpointers; /* [decision_depth*num_states*drift_width]   */
@@ -185,7 +185,7 @@ typedef struct {
  * and zero the cadence. Returns DT_OK or a negative DT_ERR_*. A ctx that failed
  * (or was zero-initialised) is safe to pass to dt_decode_ctx_free. */
 int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
-                       const dt_code *code);
+                       const dt_ccode *code);
 void dt_decode_ctx_free(dt_decode_ctx *ctx);
 
 /* Allocate the shared per-step alignment table now that every trellis sharing
@@ -197,7 +197,7 @@ int dt_decode_ctx_finalize(dt_decode_ctx *ctx);
  * metric and smoothed cost for blind acquisition, and register its output
  * patterns into the shared `ctx` (so `ctx` is mutated). Returns DT_OK or
  * negative; a failed/zeroed trellis is safe to dt_trellis_free. */
-int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_code *code);
+int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_ccode *code);
 void dt_trellis_free(dt_trellis *tr);
 
 /* Append `n_in` received bits to the shared buffer. Returns DT_OK or negative. */

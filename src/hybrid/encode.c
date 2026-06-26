@@ -47,7 +47,7 @@ static int parity(unsigned int bits) {
 /* Code and encoder                                                          */
 /* ------------------------------------------------------------------------- */
 
-dt_code *dt_code_create(int K, const unsigned int *generators,
+dt_ccode *dt_ccode_create(int K, const unsigned int *generators,
                         int num_generators) {
   /* K is documented as 2..9 (encode.h). The upper bound also keeps 1 << (K-1)
    * well clear of int-shift UB and the trellis a sane size. */
@@ -55,7 +55,7 @@ dt_code *dt_code_create(int K, const unsigned int *generators,
     return NULL;
   }
 
-  dt_code *code = dt_calloc(1, sizeof(*code));
+  dt_ccode *code = dt_calloc(1, sizeof(*code));
   if (!code) {
     return NULL;
   }
@@ -68,7 +68,7 @@ dt_code *dt_code_create(int K, const unsigned int *generators,
   code->next_state = dt_malloc((size_t)code->n_states * 2 * sizeof(int));
   code->output = dt_malloc((size_t)code->n_states * 2 * code->n * sizeof(uint8_t));
   if (!code->generators || !code->next_state || !code->output) {
-    dt_code_destroy(code);
+    dt_ccode_destroy(code);
     return NULL;
   }
 
@@ -93,7 +93,7 @@ dt_code *dt_code_create(int K, const unsigned int *generators,
   return code;
 }
 
-dt_code *dt_code_create_standard(dt_standard_code which) {
+dt_ccode *dt_ccode_create_standard(dt_standard_code which) {
   switch (which) {
     /* These generator sets and the d_free values in encode.h are produced by
      * bench/dt_codesearch, which selects, per family, the codes that are
@@ -101,73 +101,73 @@ dt_code *dt_code_create_standard(dt_standard_code which) {
      * out at three such codes; the wider rates reach five). */
     case DT_CODE_K3_RATE_1_2: {
       static const unsigned int generators[] = {005, 007};
-      return dt_code_create(3, generators, 2);
+      return dt_ccode_create(3, generators, 2);
     }
     case DT_CODE_K3_RATE_1_2_ALT1: {
       static const unsigned int generators[] = {001, 007};
-      return dt_code_create(3, generators, 2);
+      return dt_ccode_create(3, generators, 2);
     }
     case DT_CODE_K3_RATE_1_2_ALT2: {
       static const unsigned int generators[] = {003, 007};
-      return dt_code_create(3, generators, 2);
+      return dt_ccode_create(3, generators, 2);
     }
     case DT_CODE_K7_RATE_1_2: {
       static const unsigned int generators[] = {0171, 0133};
-      return dt_code_create(7, generators, 2);
+      return dt_ccode_create(7, generators, 2);
     }
     case DT_CODE_K7_RATE_1_2_ALT1: {
       static const unsigned int generators[] = {0043, 0175};
-      return dt_code_create(7, generators, 2);
+      return dt_ccode_create(7, generators, 2);
     }
     case DT_CODE_K7_RATE_1_2_ALT2: {
       static const unsigned int generators[] = {0107, 0156};
-      return dt_code_create(7, generators, 2);
+      return dt_ccode_create(7, generators, 2);
     }
     case DT_CODE_K7_RATE_1_3: {
       static const unsigned int generators[] = {0113, 0135, 0157};
-      return dt_code_create(7, generators, 3);
+      return dt_ccode_create(7, generators, 3);
     }
     case DT_CODE_K7_RATE_1_3_ALT1: {
       static const unsigned int generators[] = {0112, 0153, 0157};
-      return dt_code_create(7, generators, 3);
+      return dt_ccode_create(7, generators, 3);
     }
     case DT_CODE_K7_RATE_1_3_ALT2: {
       static const unsigned int generators[] = {0037, 0135, 0153};
-      return dt_code_create(7, generators, 3);
+      return dt_ccode_create(7, generators, 3);
     }
     case DT_CODE_K7_RATE_1_3_ALT3: {
       static const unsigned int generators[] = {0012, 0145, 0177};
-      return dt_code_create(7, generators, 3);
+      return dt_ccode_create(7, generators, 3);
     }
     case DT_CODE_K7_RATE_1_3_ALT4: {
       static const unsigned int generators[] = {0042, 0133, 0172};
-      return dt_code_create(7, generators, 3);
+      return dt_ccode_create(7, generators, 3);
     }
     case DT_CODE_K5_RATE_1_5: {
       static const unsigned int generators[] = {025, 027, 033, 035, 037};
-      return dt_code_create(5, generators, 5);
+      return dt_ccode_create(5, generators, 5);
     }
     case DT_CODE_K5_RATE_1_5_ALT1: {
       static const unsigned int generators[] = {007, 017, 025, 027, 035};
-      return dt_code_create(5, generators, 5);
+      return dt_ccode_create(5, generators, 5);
     }
     case DT_CODE_K5_RATE_1_5_ALT2: {
       static const unsigned int generators[] = {011, 032, 033, 035, 037};
-      return dt_code_create(5, generators, 5);
+      return dt_ccode_create(5, generators, 5);
     }
     case DT_CODE_K5_RATE_1_5_ALT3: {
       static const unsigned int generators[] = {013, 021, 023, 033, 037};
-      return dt_code_create(5, generators, 5);
+      return dt_ccode_create(5, generators, 5);
     }
     case DT_CODE_K5_RATE_1_5_ALT4: {
       static const unsigned int generators[] = {013, 024, 032, 033, 037};
-      return dt_code_create(5, generators, 5);
+      return dt_ccode_create(5, generators, 5);
     }
   }
   return NULL;
 }
 
-void dt_code_destroy(dt_code *code) {
+void dt_ccode_destroy(dt_ccode *code) {
   if (!code) {
     return;
   }
@@ -177,14 +177,14 @@ void dt_code_destroy(dt_code *code) {
   dt_free(code);
 }
 
-int dt_code_n(const dt_code *code) { return code ? code->n : -1; }
+int dt_ccode_n(const dt_ccode *code) { return code ? code->n : -1; }
 
-int dt_code_k(const dt_code *code) { return code ? code->K : -1; }
+int dt_ccode_k(const dt_ccode *code) { return code ? code->K : -1; }
 
 /* Encode one input bit `bit` from state *state: copy the code's n output bits
  * to `out`, advance *state, and return the number of bits written (the code's
  * n). */
-static int emit_group(const dt_code *code, int *state, int bit, uint8_t *out) {
+static int emit_group(const dt_ccode *code, int *state, int bit, uint8_t *out) {
   const uint8_t *group = &code->output[((size_t)(*state * 2 + bit)) * code->n];
   for (int j = 0; j < code->n; ++j) {
     /* code->output holds the codeword as raw 0/1; emit it as bit symbols. */
@@ -194,7 +194,7 @@ static int emit_group(const dt_code *code, int *state, int bit, uint8_t *out) {
   return code->n;
 }
 
-int dt_code_encode(const dt_code *code, const uint8_t *bits, int n_bits,
+int dt_ccode_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
                    int *state, uint8_t *out) {
   if (!code || !state || n_bits < 0 || (n_bits > 0 && !bits) || !out) {
     return DT_ERR_ARG;
@@ -211,7 +211,7 @@ int dt_code_encode(const dt_code *code, const uint8_t *bits, int n_bits,
   return written;
 }
 
-int dt_code_encode_flush(const dt_code *code, int *state, uint8_t *out) {
+int dt_ccode_encode_flush(const dt_ccode *code, int *state, uint8_t *out) {
   if (!code || !state || !out) {
     return DT_ERR_ARG;
   }

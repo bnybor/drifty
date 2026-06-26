@@ -49,14 +49,14 @@ static const dt_standard_code FAMILY[] = {
 
 /* Build a multi-decoder over the whole family with identical decoder settings,
  * handing back the codes (which must outlive the multi-decoder) via `codes`. */
-static dt_multi_decoder *build_multi(dt_code *codes[N_DEC],
+static dt_multi_decoder *build_multi(dt_ccode *codes[N_DEC],
                                      const dt_multi_params *params_in) {
   for (int j = 0; j < N_DEC; ++j) {
-    codes[j] = dt_code_create_standard(FAMILY[j]);
+    codes[j] = dt_ccode_create_standard(FAMILY[j]);
     assert(codes[j]);
   }
   dt_multi_params params = params_in ? *params_in : (dt_multi_params){0};
-  params.codes = (const dt_code *const *)codes;
+  params.codes = (const dt_ccode *const *)codes;
   params.codes_len = N_DEC;
   if (params.stream.decision_depth == 0) { /* caller left stream unset */
     params.stream = (dt_stream_params){.decision_depth = DEPTH, .p_flip = 0.02};
@@ -64,9 +64,9 @@ static dt_multi_decoder *build_multi(dt_code *codes[N_DEC],
   return dt_multi_create(&params);
 }
 
-static void destroy_codes(dt_code *codes[N_DEC]) {
+static void destroy_codes(dt_ccode *codes[N_DEC]) {
   for (int j = 0; j < N_DEC; ++j) {
-    dt_code_destroy(codes[j]);
+    dt_ccode_destroy(codes[j]);
   }
 }
 
@@ -137,17 +137,17 @@ static const dt_stream_params IMPAIRED_STREAM = {.decision_depth = DEPTH,
  * every decoded bit to true_idx, and decode the end-of-stream tail. */
 static void clean_trial(uint64_t seed, int true_idx) {
   uint64_t rng = seed;
-  dt_code *codes[N_DEC];
+  dt_ccode *codes[N_DEC];
   dt_multi_decoder *md = build_multi(codes, NULL); /* default thresholds */
   assert(md != NULL);
 
   uint8_t *msg = malloc((size_t)N_INFO);
   rand_bits(msg, N_INFO, &rng);
 
-  int clen = N_INFO * dt_code_n(codes[true_idx]);
+  int clen = N_INFO * dt_ccode_n(codes[true_idx]);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dt_code_encode(codes[true_idx], msg, N_INFO, &st, coded);
+  dt_ccode_encode(codes[true_idx], msg, N_INFO, &st, coded);
 
   int cap = N_INFO + 64;
   uint8_t *out = malloc((size_t)cap);
@@ -188,7 +188,7 @@ static void recover_trial(uint64_t seed, int true_idx, double p_flip,
                           double p_ins, double p_del, double p_erase,
                           double min_frac, int max_errs, const char *label) {
   uint64_t rng = seed;
-  dt_code *codes[N_DEC];
+  dt_ccode *codes[N_DEC];
   dt_multi_params params = {.stream = IMPAIRED_STREAM};
   dt_multi_decoder *md = build_multi(codes, &params);
   assert(md != NULL);
@@ -196,10 +196,10 @@ static void recover_trial(uint64_t seed, int true_idx, double p_flip,
   uint8_t *msg = malloc((size_t)N_INFO);
   rand_bits(msg, N_INFO, &rng);
 
-  size_t clen = (size_t)N_INFO * dt_code_n(codes[true_idx]);
+  size_t clen = (size_t)N_INFO * dt_ccode_n(codes[true_idx]);
   uint8_t *coded = malloc(clen);
   int st = 0;
-  dt_code_encode(codes[true_idx], msg, N_INFO, &st, coded);
+  dt_ccode_encode(codes[true_idx], msg, N_INFO, &st, coded);
 
   /* Channel chain: indels first (they reframe), then flips, then erasures. */
   uint8_t *del = malloc(clen);
@@ -264,7 +264,7 @@ typedef struct {
  * bit erased, none confidently attributed to a decoder. */
 static void noise_trial(uint64_t seed) {
   uint64_t rng = seed;
-  dt_code *codes[N_DEC];
+  dt_ccode *codes[N_DEC];
   dt_multi_decoder *md = build_multi(codes, &(dt_multi_params){0});
   assert(md != NULL);
 
@@ -297,16 +297,16 @@ static void noise_trial(uint64_t seed) {
 static void margin_trial(uint64_t seed) {
   uint64_t rng = seed;
   dt_multi_params params = {.lock_margin = 1.5};
-  dt_code *codes[N_DEC];
+  dt_ccode *codes[N_DEC];
   dt_multi_decoder *md = build_multi(codes, &params);
   assert(md != NULL);
 
   uint8_t *msg = malloc((size_t)N_INFO);
   rand_bits(msg, N_INFO, &rng);
-  int clen = N_INFO * dt_code_n(codes[0]);
+  int clen = N_INFO * dt_ccode_n(codes[0]);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dt_code_encode(codes[0], msg, N_INFO, &st, coded);
+  dt_ccode_encode(codes[0], msg, N_INFO, &st, coded);
 
   int cap = N_INFO + 64;
   uint8_t *out = malloc((size_t)cap);
@@ -376,10 +376,10 @@ static void test_multi_args(void) {
  * a single winner. */
 static void duplicate_code_trial(uint64_t seed) {
   uint64_t rng = seed;
-  dt_code *a = dt_code_create_standard(DT_CODE_K7_RATE_1_3);
-  dt_code *b = dt_code_create_standard(DT_CODE_K7_RATE_1_3);
+  dt_ccode *a = dt_ccode_create_standard(DT_CODE_K7_RATE_1_3);
+  dt_ccode *b = dt_ccode_create_standard(DT_CODE_K7_RATE_1_3);
   assert(a && b);
-  const dt_code *codes[] = {a, b};
+  const dt_ccode *codes[] = {a, b};
   dt_multi_decoder *md = dt_multi_create(&(dt_multi_params){
       .codes = codes,
       .codes_len = 2,
@@ -388,10 +388,10 @@ static void duplicate_code_trial(uint64_t seed) {
 
   uint8_t *msg = malloc((size_t)N_INFO);
   rand_bits(msg, N_INFO, &rng);
-  int clen = N_INFO * dt_code_n(a);
+  int clen = N_INFO * dt_ccode_n(a);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dt_code_encode(a, msg, N_INFO, &st, coded);
+  dt_ccode_encode(a, msg, N_INFO, &st, coded);
 
   int cap = N_INFO + 64;
   uint8_t *out = malloc((size_t)cap);
@@ -414,8 +414,8 @@ static void duplicate_code_trial(uint64_t seed) {
   free(coded);
   free(msg);
   dt_multi_destroy(md);
-  dt_code_destroy(a);
-  dt_code_destroy(b);
+  dt_ccode_destroy(a);
+  dt_ccode_destroy(b);
 }
 
 /* A code set that mixes constraint lengths (so different n_states) shares a rate
@@ -423,18 +423,18 @@ static void duplicate_code_trial(uint64_t seed) {
  * trellis sized for the larger code index the smaller code's tables out of
  * bounds. */
 static void test_reject_incompatible(void) {
-  dt_code *k7 = dt_code_create_standard(DT_CODE_K7_RATE_1_2);
-  dt_code *k3 = dt_code_create_standard(DT_CODE_K3_RATE_1_2);
+  dt_ccode *k7 = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_ccode *k3 = dt_ccode_create_standard(DT_CODE_K3_RATE_1_2);
   assert(k7 && k3);
-  const dt_code *mixed[] = {k7, k3}; /* same dt_code_n (2), different dt_code_k */
+  const dt_ccode *mixed[] = {k7, k3}; /* same dt_ccode_n (2), different dt_ccode_k */
   dt_multi_decoder *md = dt_multi_create(&(dt_multi_params){
       .codes = mixed,
       .codes_len = 2,
       .stream = {.decision_depth = DEPTH, .p_flip = 0.02}});
   check("multi rejects mixed constraint lengths", md == NULL);
   dt_multi_destroy(md); /* NULL-safe */
-  dt_code_destroy(k7);
-  dt_code_destroy(k3);
+  dt_ccode_destroy(k7);
+  dt_ccode_destroy(k3);
 }
 
 int main(void) {

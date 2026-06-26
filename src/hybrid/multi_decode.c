@@ -94,12 +94,12 @@ dt_multi_decoder *dt_multi_create(const dt_multi_params *params) {
     for (size_t j = 0; j < params->codes_len; ++j) {
       /* Every trellis is sized from the shared ctx (taken from codes[0]) yet
        * forward_pass walks each code's own next_state/output tables over
-       * ctx->num_states. Codes that differ in rate (dt_code_n) or constraint
-       * length (dt_code_k, hence n_states) would index those tables out of
+       * ctx->num_states. Codes that differ in rate (dt_ccode_n) or constraint
+       * length (dt_ccode_k, hence n_states) would index those tables out of
        * bounds, so reject the set rather than corrupt memory. A NULL slot fails
-       * here too: dt_code_n(NULL) == -1 != codes[0]'s rate. */
-      if (dt_code_n(params->codes[j]) != dt_code_n(params->codes[0]) ||
-          dt_code_k(params->codes[j]) != dt_code_k(params->codes[0])) {
+       * here too: dt_ccode_n(NULL) == -1 != codes[0]'s rate. */
+      if (dt_ccode_n(params->codes[j]) != dt_ccode_n(params->codes[0]) ||
+          dt_ccode_k(params->codes[j]) != dt_ccode_k(params->codes[0])) {
         dt_multi_destroy(m);
         return NULL;
       }

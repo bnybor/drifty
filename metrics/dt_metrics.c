@@ -434,11 +434,11 @@ typedef struct {
   double lock_sum, detect_sum;
 } trial_result;
 
-static point_model make_model(const dt_code *code, axis channel_axis,
+static point_model make_model(const dt_ccode *code, axis channel_axis,
                               double rate, variation var) {
   point_model m;
-  m.code_n = dt_code_n(code);
-  m.constraint_len = dt_code_k(code);
+  m.code_n = dt_ccode_n(code);
+  m.constraint_len = dt_ccode_k(code);
   m.decision_depth = 8 * m.constraint_len;
 
   if (var != VAR_MATCHED && var != VAR_OVERMATCHED) {
@@ -519,7 +519,7 @@ static point_model make_model(const dt_code *code, axis channel_axis,
  * buffer (no decode), while edit distance and lock probability both come from a
  * single decode and each skips the other's post-processing. Each trial is fully
  * independent, so trials parallelize across cores (see main). */
-static trial_result run_one_trial(const dt_code *code, axis channel_axis,
+static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                                   metric which_metric, double rate,
                                   int info_bits, uint64_t seed,
                                   variation var) {
@@ -545,8 +545,8 @@ static trial_result run_one_trial(const dt_code *code, axis channel_axis,
     message[i] = bit_sym((unsigned int)rng_next(rng));
   }
   int enc_state = 0, coded_len = 0;
-  coded_len += dt_code_encode(code, message, info_bits, &enc_state, coded);
-  coded_len += dt_code_encode_flush(code, &enc_state, coded + coded_len);
+  coded_len += dt_ccode_encode(code, message, info_bits, &enc_state, coded);
+  coded_len += dt_ccode_encode_flush(code, &enc_state, coded + coded_len);
 
   uint8_t *received = NULL;
   int received_len = apply_channel(coded, coded_len, channel_sub, channel_ins,
@@ -710,11 +710,11 @@ int main(int argc, char **argv) {
       var == VAR_DETECT ? DETECT_METRICS : DECODE_METRICS;
   const int n_run_metrics = var == VAR_DETECT ? 1 : 2;
 
-  /* The trellis tables in a dt_code are read-only once built, so all threads
+  /* The trellis tables in a dt_ccode are read-only once built, so all threads
    * share the four codes; each decode allocates its own decoder state. */
-  dt_code *codes[N_CODES];
+  dt_ccode *codes[N_CODES];
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    codes[code_idx] = dt_code_create_standard(CODES[code_idx].which);
+    codes[code_idx] = dt_ccode_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
       fprintf(stderr, "dt_metrics: code create failed\n");
       return 1;
@@ -850,7 +850,7 @@ int main(int argc, char **argv) {
   free(remaining);
   free(items);
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    dt_code_destroy(codes[code_idx]);
+    dt_ccode_destroy(codes[code_idx]);
   }
   return 0;
 }

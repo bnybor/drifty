@@ -48,10 +48,10 @@ static const dt_standard_code FAMILY[] = {
 
 /* Build a multi-encoder over the whole family, handing back the codes (which
  * must outlive the encoder) via `codes`. Fresh codes => the shared state is 0. */
-static dt_multi_encoder *build_multi_encoder(dt_code *codes[N_FAM]) {
-  const dt_code *cp[N_FAM];
+static dt_multi_encoder *build_multi_encoder(dt_ccode *codes[N_FAM]) {
+  const dt_ccode *cp[N_FAM];
   for (int j = 0; j < N_FAM; ++j) {
-    codes[j] = dt_code_create_standard(FAMILY[j]);
+    codes[j] = dt_ccode_create_standard(FAMILY[j]);
     assert(codes[j]);
     cp[j] = codes[j];
   }
@@ -59,9 +59,9 @@ static dt_multi_encoder *build_multi_encoder(dt_code *codes[N_FAM]) {
   return dt_multi_encode_create(&params);
 }
 
-static void destroy_codes(dt_code *codes[N_FAM]) {
+static void destroy_codes(dt_ccode *codes[N_FAM]) {
   for (int j = 0; j < N_FAM; ++j) {
-    dt_code_destroy(codes[j]);
+    dt_ccode_destroy(codes[j]);
   }
 }
 
@@ -74,7 +74,7 @@ static void test_single_index_equivalence(uint64_t seed) {
   rand_bits(msg, N_INFO, &rng);
 
   for (int j = 0; j < N_FAM; ++j) {
-    dt_code *codes[N_FAM];
+    dt_ccode *codes[N_FAM];
     dt_multi_encoder *e = build_multi_encoder(codes);
     REQUIRE("equiv: encoder created", e != NULL);
 
@@ -104,14 +104,14 @@ static void test_chunked_matches_oneshot(uint64_t seed) {
   rand_bits(msg, N_INFO, &rng);
   const int idx = 1;
 
-  dt_code *codes_a[N_FAM];
+  dt_ccode *codes_a[N_FAM];
   dt_multi_encoder *one = build_multi_encoder(codes_a);
   REQUIRE("chunk: one-shot encoder", one != NULL);
   uint8_t a[MAX_CODED(N_INFO)];
   int la = dt_multi_encode(one, idx, msg, N_INFO, a, (int)sizeof a);
   la += dt_multi_encode_flush(one, idx, a + la, (int)sizeof a - la);
 
-  dt_code *codes_b[N_FAM];
+  dt_ccode *codes_b[N_FAM];
   dt_multi_encoder *many = build_multi_encoder(codes_b);
   REQUIRE("chunk: chunked encoder", many != NULL);
   uint8_t b[MAX_CODED(N_INFO)];
@@ -143,10 +143,10 @@ static void test_shared_state_code_switch(uint64_t seed) {
   rand_bits(msg, N_INFO, &rng);
   const int a_idx = 0, b_idx = 1, half = N_INFO / 2;
 
-  dt_code *codes[N_FAM];
+  dt_ccode *codes[N_FAM];
   dt_multi_encoder *e = build_multi_encoder(codes);
   REQUIRE("switch: encoder created", e != NULL);
-  const int n = dt_code_n(codes[0]);
+  const int n = dt_ccode_n(codes[0]);
 
   uint8_t got[MAX_CODED(N_INFO)];
   int w = dt_multi_encode(e, a_idx, msg, half, got, (int)sizeof got);
@@ -158,7 +158,7 @@ static void test_shared_state_code_switch(uint64_t seed) {
   /* Prefix: code A's encoding of the first half from state 0. */
   uint8_t ref_a[MAX_CODED(N_INFO)];
   int sa = 0;
-  int la = dt_code_encode(codes[a_idx], msg, half, &sa, ref_a);
+  int la = dt_ccode_encode(codes[a_idx], msg, half, &sa, ref_a);
   check("switch: prefix is code A", w == la &&
                                         memcmp(got, ref_a, (size_t)la) == 0);
 
@@ -167,9 +167,9 @@ static void test_shared_state_code_switch(uint64_t seed) {
   uint8_t scratch[MAX_CODED(N_INFO)];
   uint8_t ref_b[MAX_CODED(N_INFO)];
   int sb = 0;
-  dt_code_encode(codes[b_idx], msg, half, &sb, scratch);
-  int lb = dt_code_encode(codes[b_idx], msg + half, N_INFO - half, &sb, ref_b);
-  lb += dt_code_encode_flush(codes[b_idx], &sb, ref_b + lb);
+  dt_ccode_encode(codes[b_idx], msg, half, &sb, scratch);
+  int lb = dt_ccode_encode(codes[b_idx], msg + half, N_INFO - half, &sb, ref_b);
+  lb += dt_ccode_encode_flush(codes[b_idx], &sb, ref_b + lb);
   check("switch: suffix is code B from shared state",
         w2 + wf == lb && memcmp(got + w, ref_b, (size_t)lb) == 0);
   check("switch: prefix length is half*n", w == half * n);
@@ -186,7 +186,7 @@ static void test_round_trip(uint64_t seed, int true_idx) {
   uint8_t msg[N_INFO];
   rand_bits(msg, N_INFO, &rng);
 
-  dt_code *codes[N_FAM];
+  dt_ccode *codes[N_FAM];
   dt_multi_encoder *e = build_multi_encoder(codes);
   REQUIRE("rt: encoder created", e != NULL);
 
@@ -195,7 +195,7 @@ static void test_round_trip(uint64_t seed, int true_idx) {
   w += dt_multi_encode_flush(e, true_idx, coded + w, (int)sizeof coded - w);
   REQUIRE("rt: encoded some bits", w > 0);
 
-  const dt_code *cp[N_FAM];
+  const dt_ccode *cp[N_FAM];
   for (int j = 0; j < N_FAM; ++j) {
     cp[j] = codes[j];
   }
@@ -255,7 +255,7 @@ static void test_round_trip(uint64_t seed, int true_idx) {
     if (out[i] != DT_ERASURE && out[i] != DT_FALSE) ++tail_set;
   }
   check("rt: message bits plus flush tail decoded",
-        got == N_INFO + (dt_code_k(codes[0]) - 1));
+        got == N_INFO + (dt_ccode_k(codes[0]) - 1));
   check("rt: exact recovery", errors == 0);
   check("rt: flush tail is zero", tail_set == 0);
   check("rt: attributed to true code", wrong == 0);
@@ -271,7 +271,7 @@ static void test_args(void) {
   uint8_t msg[8] = {0};
   uint8_t buf[MAX_CODED(N_INFO)];
 
-  dt_code *codes[N_FAM];
+  dt_ccode *codes[N_FAM];
   dt_multi_encoder *e = build_multi_encoder(codes);
   REQUIRE("args: encoder created", e != NULL);
 
@@ -306,21 +306,21 @@ static void test_args(void) {
   check("args: NULL params", dt_multi_encode_create(NULL) == NULL);
 
   /* A NULL code entry is rejected at create. */
-  dt_code *c0 = dt_code_create_standard(FAMILY[0]);
+  dt_ccode *c0 = dt_ccode_create_standard(FAMILY[0]);
   assert(c0);
-  const dt_code *with_null[2] = {c0, NULL};
+  const dt_ccode *with_null[2] = {c0, NULL};
   dt_multi_encode_params np = {.codes = with_null, .codes_len = 2};
   check("args: NULL code entry rejected", dt_multi_encode_create(&np) == NULL);
 
   /* A mismatched rate/constraint length is rejected at create. */
-  dt_code *k3 = dt_code_create_standard(DT_CODE_K3_RATE_1_2);
+  dt_ccode *k3 = dt_ccode_create_standard(DT_CODE_K3_RATE_1_2);
   assert(k3);
-  const dt_code *mixed[2] = {c0, k3};
+  const dt_ccode *mixed[2] = {c0, k3};
   dt_multi_encode_params mp = {.codes = mixed, .codes_len = 2};
   check("args: mismatched n/k rejected", dt_multi_encode_create(&mp) == NULL);
 
-  dt_code_destroy(c0);
-  dt_code_destroy(k3);
+  dt_ccode_destroy(c0);
+  dt_ccode_destroy(k3);
 }
 
 int main(void) {

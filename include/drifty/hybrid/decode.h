@@ -27,7 +27,7 @@
 #ifndef DRIFTY_HYBRID_DECODE_H
 #define DRIFTY_HYBRID_DECODE_H
 
-/* The decoder is built from a dt_code, and shares the result codes and bit
+/* The decoder is built from a dt_ccode, and shares the result codes and bit
  * values defined alongside the encoder. */
 #include <drifty/hybrid/encode.h>
 
@@ -86,7 +86,7 @@ typedef struct dt_stream_decoder dt_stream_decoder;
  * any field you leave out is 0.
  *
  *   decision_depth : output delay, in bits, before each bit is committed. Bigger
- *                    is more reliable but slower to emit. Try ~6 * dt_code_k().
+ *                    is more reliable but slower to emit. Try ~6 * dt_ccode_k().
  *                    Required (must be >= 1).
  *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
  *                    0.01 for 1%). Required.
@@ -147,7 +147,7 @@ typedef struct {
   double c_false;
   // Consistency of the proposition that the encoded bit is unrecoverable
   double c_lost;
-  // Consistency of the proposition that the `dt_code` is correct.
+  // Consistency of the proposition that the `dt_ccode` is correct.
   double c_lock;
 } dt_decode_details;
 
@@ -156,7 +156,7 @@ typedef struct {
  * using `params`. Returns NULL on invalid settings or out of memory; free it
  * with dt_stream_decoder_destroy().
  */
-dt_stream_decoder *dt_stream_decoder_create(const dt_code *code,
+dt_stream_decoder *dt_stream_decoder_create(const dt_ccode *code,
                                             const dt_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
@@ -167,7 +167,7 @@ void dt_stream_decoder_destroy(dt_stream_decoder *d);
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
  * written (0 or more), or a negative DT_ERR_* code.
  *
- * You get about one decoded bit per dt_code_n(code) received bits. If `out`
+ * You get about one decoded bit per dt_ccode_n(code) received bits. If `out`
  * fills up (return value == max_out), call again to collect more before feeding
  * more input.
  *

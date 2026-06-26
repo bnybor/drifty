@@ -93,7 +93,7 @@ static void *xmalloc(size_t size) {
 static double max_double(double a, double b) { return a > b ? a : b; }
 static double min_double(double a, double b) { return a < b ? a : b; }
 
-/* -- code structure (computed locally, decoupled from the opaque dt_code) --- */
+/* -- code structure (computed locally, decoupled from the opaque dt_ccode) --- */
 
 /* GF(2) polynomial gcd of the generators; the code is non-catastrophic iff this
  * is 1 (the Massey-Sain condition for a rate-1/n code, restricted to the
@@ -246,12 +246,12 @@ static int cand_cmp(const void *pa, const void *pb) {
 
 /* Mean lock probability over the settled second half when `enc`'s coded stream
  * is decoded with `dec`'s decoder. Same settings the test helper uses. */
-static double lock_mean(const dt_code *enc, const dt_code *dec,
+static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
                         const uint8_t *msg, int info_bits, int depth) {
-  const int clen = info_bits * dt_code_n(enc);
+  const int clen = info_bits * dt_ccode_n(enc);
   uint8_t *coded = xmalloc((size_t)clen);
   int st = 0;
-  dt_code_encode(enc, msg, info_bits, &st, coded);
+  dt_ccode_encode(enc, msg, info_bits, &st, coded);
 
   dt_stream_params params = {.decision_depth = depth,
                              .max_drift = 4,
@@ -291,7 +291,7 @@ static double lock_mean(const dt_code *enc, const dt_code *dec,
  * single lucky message can't inflate distinguishability. For self pairs we take
  * the MIN observed lock (the worst self-lock); for cross pairs the MAX (the
  * worst cross-lock). */
-static double lock_agg(const dt_code *enc, const dt_code *dec,
+static double lock_agg(const dt_ccode *enc, const dt_ccode *dec,
                        const uint8_t *messages, int n_msg, int info_bits,
                        int depth, int take_min) {
   double agg = take_min ? 1.0 : 0.0;
@@ -307,16 +307,16 @@ static double lock_agg(const dt_code *enc, const dt_code *dec,
  * different). The distinguishability tests cross-check lock against dt_compare,
  * so the selected five must separate under this metric too; this verifies the
  * final pick rather than driving it (dt_compare is the costlier metric). */
-static double compare_codes(const dt_code *a, const dt_code *b,
+static double compare_codes(const dt_ccode *a, const dt_ccode *b,
                             const uint8_t *msg, int info_bits) {
-  const int n = dt_code_n(a), K = dt_code_k(a);
-  const int ca = info_bits * n, cb = info_bits * dt_code_n(b);
+  const int n = dt_ccode_n(a), K = dt_ccode_k(a);
+  const int ca = info_bits * n, cb = info_bits * dt_ccode_n(b);
   uint8_t *sa = xmalloc((size_t)ca);
   uint8_t *sb = xmalloc((size_t)cb);
   int st = 0;
-  dt_code_encode(a, msg, info_bits, &st, sa);
+  dt_ccode_encode(a, msg, info_bits, &st, sa);
   st = 0;
-  dt_code_encode(b, msg, info_bits, &st, sb);
+  dt_ccode_encode(b, msg, info_bits, &st, sb);
   double result = dt_compare(n, K, sa, (size_t)ca, sb, (size_t)cb);
   free(sa);
   free(sb);
@@ -437,9 +437,9 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
   qsort(samp, (size_t)nsamp, sizeof(*samp), cand_cmp);
 
   /* 2. Build a decoder-ready code for each sample member (shared read-only). */
-  dt_code **codes = xmalloc((size_t)nsamp * sizeof(*codes));
+  dt_ccode **codes = xmalloc((size_t)nsamp * sizeof(*codes));
   for (int i = 0; i < nsamp; ++i) {
-    codes[i] = dt_code_create(fam->K, samp[i].g, fam->n);
+    codes[i] = dt_ccode_create(fam->K, samp[i].g, fam->n);
     if (!codes[i]) {
       fprintf(stderr, "dt_codesearch: code create failed\n");
       exit(1);
@@ -613,7 +613,7 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
     printf("    case %s%s: {\n", fam->enum_prefix, suffix[i]);
     printf("      static const unsigned int generators[] = {");
     for (int j = 0; j < fam->n; ++j) printf("%s0%o", j ? ", " : "", c->g[j]);
-    printf("};\n      return dt_code_create(%d, generators, %d);\n    }\n",
+    printf("};\n      return dt_ccode_create(%d, generators, %d);\n    }\n",
            fam->K, fam->n);
   }
   printf("  --- encode.h d_free comments ---\n");
@@ -647,7 +647,7 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
          (worst_compare_self > 0.5 && worst_compare_cross < 0.5) ? "OK"
                                                                  : "FAIL");
 
-  for (int i = 0; i < nsamp; ++i) dt_code_destroy(codes[i]);
+  for (int i = 0; i < nsamp; ++i) dt_ccode_destroy(codes[i]);
   free(codes);
   free(self);
   free(samp);

@@ -181,14 +181,14 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
  * the coded length. */
 static inline size_t encode(dt_standard_code which, const uint8_t *msg,
                             int info_bits, uint8_t *out, int *n, int *k) {
-  dt_code *code = dt_code_create_standard(which);
+  dt_ccode *code = dt_ccode_create_standard(which);
   assert(code);
-  *n = dt_code_n(code);
-  *k = dt_code_k(code);
+  *n = dt_ccode_n(code);
+  *k = dt_ccode_k(code);
   int state = 0;
-  int len = dt_code_encode(code, msg, info_bits, &state, out);
-  len += dt_code_encode_flush(code, &state, out + len);
-  dt_code_destroy(code);
+  int len = dt_ccode_encode(code, msg, info_bits, &state, out);
+  len += dt_ccode_encode_flush(code, &state, out + len);
+  dt_ccode_destroy(code);
   return (size_t)len;
 }
 
@@ -257,7 +257,7 @@ static inline size_t prepend_prefix(size_t plen, const uint8_t *body,
 /* -- decoder helpers ------------------------------------------------------- */
 
 /* Build a decoder from positional settings (keeps tests concise). */
-static inline dt_stream_decoder *make_decoder(const dt_code *code, int depth,
+static inline dt_stream_decoder *make_decoder(const dt_ccode *code, int depth,
                                               int drift, double p_flip,
                                               double p_ins, double p_del,
                                               double p_erase) {
@@ -300,13 +300,13 @@ static inline int stream_decode_all(dt_stream_decoder *sd, const uint8_t *rx,
  * `dec` at the given decision depth, and return the mean lock probability over
  * the settled second half. When enc != dec this measures whether one code's
  * stream is mistaken for the other's. */
-static inline double decoder_lock_mean(const dt_code *enc, const dt_code *dec,
+static inline double decoder_lock_mean(const dt_ccode *enc, const dt_ccode *dec,
                                        const uint8_t *msg, int info_bits,
                                        int depth) {
-  int clen = info_bits * dt_code_n(enc);
+  int clen = info_bits * dt_ccode_n(enc);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dt_code_encode(enc, msg, info_bits, &st, coded);
+  dt_ccode_encode(enc, msg, info_bits, &st, coded);
 
   dt_stream_decoder *sd = make_decoder(dec, depth, 4, 0.01, 0.01, 0.01, 0.0);
   assert(sd != NULL);

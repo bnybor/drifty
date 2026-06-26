@@ -206,12 +206,12 @@ static void test_lock_matches_compare(uint64_t seed) {
     rand_bits(msg_b, info_bits, &rng);
 
     /* lock: decode code i's stream with code j's decoder. */
-    dt_code *enc = dt_code_create_standard(family[f].v[i]);
-    dt_code *dec = dt_code_create_standard(family[f].v[j]);
+    dt_ccode *enc = dt_ccode_create_standard(family[f].v[i]);
+    dt_ccode *dec = dt_ccode_create_standard(family[f].v[j]);
     double lock =
-        decoder_lock_mean(enc, dec, msg_a, info_bits, 8 * dt_code_k(dec));
-    dt_code_destroy(enc);
-    dt_code_destroy(dec);
+        decoder_lock_mean(enc, dec, msg_a, info_bits, 8 * dt_ccode_k(dec));
+    dt_ccode_destroy(enc);
+    dt_ccode_destroy(dec);
 
     /* compare: independent streams from code i and code j. */
     int n, k, n2, k2;
@@ -284,10 +284,10 @@ static void test_len_helpers(uint64_t seed) {
                      (double)dt_compare_min_len(5, 9));
 
   /* A representative in-range code. */
-  dt_code *code = dt_code_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  int n = dt_code_n(code), k = dt_code_k(code);
-  dt_code_destroy(code);
+  int n = dt_ccode_n(code), k = dt_ccode_k(code);
+  dt_ccode_destroy(code);
 
   long min_len = dt_compare_min_len(n, k);
   long max_len = dt_compare_max_len(n, k);

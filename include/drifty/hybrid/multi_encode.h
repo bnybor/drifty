@@ -47,8 +47,8 @@ typedef struct dt_multi_encoder dt_multi_encoder;
  * Settings for dt_multi_encode_create().
  *
  *   codes     : array of `codes_len` codes to encode with, selected per call by
- *               index. Required. They must share a rate (same dt_code_n) AND a
- *               constraint length (same dt_code_k): one shared encoder state
+ *               index. Required. They must share a rate (same dt_ccode_n) AND a
+ *               constraint length (same dt_ccode_k): one shared encoder state
  *               drives whichever code is chosen, which is well defined precisely
  *               because a convolutional encoder's state transition depends only
  *               on the constraint length and the input bits, not the generator
@@ -60,13 +60,13 @@ typedef struct dt_multi_encoder dt_multi_encoder;
  */
 /* clang-format on */
 typedef struct {
-  const dt_code *const *codes;
+  const dt_ccode *const *codes;
   size_t codes_len;
 } dt_multi_encode_params;
 
 /*
  * Allocate a multi-encoder from `params` (must be non-NULL). The codes must share
- * a rate (dt_code_n) and a constraint length (dt_code_k), and each must outlive
+ * a rate (dt_ccode_n) and a constraint length (dt_ccode_k), and each must outlive
  * the encoder (it copies the array and borrows the codes; it frees neither in
  * dt_multi_encode_destroy()). Returns NULL on a NULL params/codes, a NULL or
  * mismatched-rate/length code entry, or out of memory.
@@ -78,7 +78,7 @@ void dt_multi_encode_destroy(dt_multi_encoder *e);
 
 /*
  * Encode `n_bits` input bits (each DT_FALSE or DT_TRUE) with codes[idx], writing
- * n_bits * dt_code_n bits to `out` (capacity `max_out`). The one encoder state is
+ * n_bits * dt_ccode_n bits to `out` (capacity `max_out`). The one encoder state is
  * shared across all the codes and advances here, so encoding is one continuous
  * stream across calls - and because the state is code-independent for a same-K
  * family, you may switch `idx` between calls to change codes mid-stream. Call
@@ -91,9 +91,9 @@ int dt_multi_encode(dt_multi_encoder *e, int idx, const uint8_t *bits, int n_bit
                     uint8_t *out, int max_out);
 
 /*
- * Finish an encoded stream with codes[idx]: writes (dt_code_k - 1) * dt_code_n
+ * Finish an encoded stream with codes[idx]: writes (dt_ccode_k - 1) * dt_ccode_n
  * trailing bits to `out` (capacity `max_out`) and returns the shared state to 0.
- * Mirror of dt_code_encode_flush. Returns the number of bits written, or
+ * Mirror of dt_ccode_encode_flush. Returns the number of bits written, or
  * DT_ERR_ARG.
  */
 int dt_multi_encode_flush(dt_multi_encoder *e, int idx, uint8_t *out, int max_out);

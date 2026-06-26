@@ -28,6 +28,8 @@
 #define DRIFTY_DECODER_H
 
 #include <drifty/bit.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {

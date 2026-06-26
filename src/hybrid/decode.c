@@ -331,7 +331,7 @@ static void align_precompute(dt_decode_ctx *ctx, const dt_trellis *trs,
  * node/edge order (state, drift, bit, ending drift) matches the per-edge form, so
  * the `<` tie-break - and the decoded bits - are identical. */
 static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
-  const dt_code *code = tr->code;
+  const dt_ccode *code = tr->code;
   const int n = ctx->n, num_states = ctx->num_states,
             drift_width = ctx->drift_width;
   const size_t count = (size_t)num_states * drift_width;
@@ -400,7 +400,7 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
  * drift loops. This yields exactly the general path's branch cost (final_row[n])
  * in the same (state, bit) order, so output is identical. */
 static void forward_pass_nodrift(dt_decode_ctx *ctx, dt_trellis *tr) {
-  const dt_code *code = tr->code;
+  const dt_ccode *code = tr->code;
   const int n = ctx->n, num_states = ctx->num_states;
   const int base = ctx->read_base;
   const int in_range = base >= 0 && base + n <= ctx->received_length;
@@ -698,7 +698,7 @@ static uint8_t finalize_soft(const dt_decode_ctx *ctx, double m0, double m1,
 void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr,
                            long long base, int n, uint8_t *bits_out,
                            dt_decode_details *details_out, int detail_stride) {
-  const dt_code *code = tr->code;
+  const dt_ccode *code = tr->code;
   const int nn = ctx->n, num_states = ctx->num_states,
             drift_width = ctx->drift_width, rl = ctx->ring_len,
             dd = ctx->decision_depth;
@@ -846,7 +846,7 @@ static void init_metric(const dt_decode_ctx *ctx, dt_trellis *tr) {
 /* -- internal context / trellis lifecycle ---------------------------------- */
 
 int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
-                       const dt_code *code) {
+                       const dt_ccode *code) {
   if (!ctx || !params || !code) {
     return DT_ERR_ARG;
   }
@@ -1027,7 +1027,7 @@ void dt_decode_ctx_free(dt_decode_ctx *ctx) {
  * already there) and fill group_of[edge] with each edge's pattern index. The
  * fused decoder thus builds one union pattern list across all its codes, so the
  * per-step alignment is computed once per distinct pattern, not once per code. */
-static int register_patterns(dt_decode_ctx *ctx, const dt_code *code,
+static int register_patterns(dt_decode_ctx *ctx, const dt_ccode *code,
                              int *group_of) {
   const int n = ctx->n, edges = ctx->num_states * 2;
   for (int edge = 0; edge < edges; ++edge) {
@@ -1066,12 +1066,12 @@ static int register_patterns(dt_decode_ctx *ctx, const dt_code *code,
   return DT_OK;
 }
 
-int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_code *code) {
+int dt_trellis_init(dt_trellis *tr, dt_decode_ctx *ctx, const dt_ccode *code) {
   if (!tr || !ctx || !code) {
     return DT_ERR_ARG;
   }
   /* The packed backpointer (decode_internal.h) carries prev_state in 16 bits and
-   * prev_drift_index in 15. dt_code_create caps K (num_states <= 256) and real
+   * prev_drift_index in 15. dt_ccode_create caps K (num_states <= 256) and real
    * max_drift is tiny, but guard the packing invariant rather than silently
    * truncating. */
   if (ctx->num_states - 1 > DT_BP_MAX_STATE ||
@@ -1145,7 +1145,7 @@ struct dt_stream_decoder {
   dt_trellis trellis;
 };
 
-dt_stream_decoder *dt_stream_decoder_create(const dt_code *code,
+dt_stream_decoder *dt_stream_decoder_create(const dt_ccode *code,
                                             const dt_stream_params *params) {
   if (!code || !params) {
     return NULL;

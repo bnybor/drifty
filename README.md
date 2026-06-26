@@ -17,14 +17,14 @@ Pick a code, encode your bits, then stream-decode the received bits.
 #include "drifty/hybrid/drifty.h"
 
 /* 1. Pick a code (sender and receiver must use the same one). */
-dt_code *code = dt_code_create_standard(DT_CODE_K7_RATE_1_2);
-/* or define your own: dt_code_create(K, generators, num_generators) */
+dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+/* or define your own: dt_ccode_create(K, generators, num_generators) */
 
 /* 2. Encode, in as many chunks as you like; carry `state` across calls. */
 int state = 0, len = 0;
-len += dt_code_encode(code, chunk1, n1, &state, out + len);
-len += dt_code_encode(code, chunk2, n2, &state, out + len);
-len += dt_code_encode_flush(code, &state, out + len);   /* finish the stream */
+len += dt_ccode_encode(code, chunk1, n1, &state, out + len);
+len += dt_ccode_encode(code, chunk2, n2, &state, out + len);
+len += dt_ccode_encode_flush(code, &state, out + len);   /* finish the stream */
 
 /* 3. Decode the received bits. */
 dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_stream_params){
@@ -40,13 +40,13 @@ while (dt_stream_decode_flush(d, decoded, OUT) > 0)    /* drain at the end */
     /* use the decoded bits */ ;
 
 dt_stream_decoder_destroy(d);
-dt_code_destroy(code);
+dt_ccode_destroy(code);
 ```
 
-`dt_code` and `dt_stream_decoder` are opaque handles (`_create` / `_destroy`).
+`dt_ccode` and `dt_stream_decoder` are opaque handles (`_create` / `_destroy`).
 Functions return `DT_OK` (0) or a count on success, or a negative `DT_ERR_*`
 code. Each bit is `DT_FALSE` or `DT_TRUE`, or `DT_ERASURE` to mark a received bit
-as lost. `dt_code_n()` gives output-bits-per-input-bit for sizing encode buffers.
+as lost. `dt_ccode_n()` gives output-bits-per-input-bit for sizing encode buffers.
 
 The decoder starts producing output after a short delay (`decision_depth` bits),
 and it locks on whether you decode from the start of a stream or join one already
@@ -90,7 +90,7 @@ emitting the value the weight favours, and marks the bit `DT_ERASURE` when no
 code is locked or the weighted vote is too close to call.
 
 ```c
-const dt_code *codes[] = { code_a, code_b, code_c };   /* same rate */
+const dt_ccode *codes[] = { code_a, code_b, code_c };   /* same rate */
 
 dt_multi_decoder *m = dt_multi_create(&(dt_multi_params){
     .codes = codes, .codes_len = 3,
@@ -109,8 +109,8 @@ dt_multi_destroy(m);   /* frees the decoders it built; you still own the codes *
 ```
 
 `dt_multi_decoder` is an opaque handle. It builds one stream decoder per code from
-the shared `stream` settings, so the codes must share a rate (`dt_code_n`) and a
-constraint length (`dt_code_k`), and must outlive the multi-decoder. The optional
+the shared `stream` settings, so the codes must share a rate (`dt_ccode_n`) and a
+constraint length (`dt_ccode_k`), and must outlive the multi-decoder. The optional
 `locked_decoder` array (here `which`) reports, per output bit, the index of the
 likeliest code or `-1` where the bit was erased. `lock_floor` / `lock_margin` set
 how confident the combiner must be — in the best code's absolute lock probability,
@@ -127,7 +127,7 @@ length and the input bits, not the generator polynomials — so you can even swi
 codes partway through one message and the stream stays continuous.
 
 ```c
-const dt_code *codes[] = { code_a, code_b, code_c };   /* same rate and K */
+const dt_ccode *codes[] = { code_a, code_b, code_c };   /* same rate and K */
 
 dt_multi_encoder *e = dt_multi_encode_create(&(dt_multi_encode_params){
     .codes = codes, .codes_len = 3,
@@ -141,9 +141,9 @@ len += dt_multi_encode_flush(e, idx, coded + len, OUT - len);  /* finish the str
 dt_multi_encode_destroy(e);   /* you still own the codes */
 ```
 
-`dt_multi_encoder` is an opaque handle. The codes must share a rate (`dt_code_n`)
-and a constraint length (`dt_code_k`) and must outlive the encoder, which borrows
-them (it copies the array, frees neither). Each call writes `n_bits * dt_code_n`
+`dt_multi_encoder` is an opaque handle. The codes must share a rate (`dt_ccode_n`)
+and a constraint length (`dt_ccode_k`) and must outlive the encoder, which borrows
+them (it copies the array, frees neither). Each call writes `n_bits * dt_ccode_n`
 bits for the selected code; `max_out` caps the write. Feed the resulting stream to
 a `dt_multi_decoder` over the same family to decode it without knowing the index.
 

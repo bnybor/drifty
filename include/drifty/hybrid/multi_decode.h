@@ -48,8 +48,8 @@ typedef struct dt_multi_decoder dt_multi_decoder;
  *
  *   codes      : array of `codes_len` codes to decode against in parallel over a
  *                single shared received buffer and cadence. Required. They must
- *                share a rate (same dt_code_n) AND a constraint length (same
- *                dt_code_k) - one decoded bit corresponds to one message bit
+ *                share a rate (same dt_ccode_n) AND a constraint length (same
+ *                dt_ccode_k) - one decoded bit corresponds to one message bit
  *                across all of them, and they advance in lockstep under one
  *                shared re-anchor over one trellis geometry - and otherwise
  *                typically differ only in their generator polynomials. A set
@@ -68,7 +68,7 @@ typedef struct dt_multi_decoder dt_multi_decoder;
  */
 /* clang-format on */
 typedef struct {
-  const dt_code *const *codes;
+  const dt_ccode *const *codes;
   size_t codes_len;
   dt_stream_params stream;
   double lock_floor;

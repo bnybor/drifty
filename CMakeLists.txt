@@ -48,8 +48,8 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # full archive still resolves libc at the consumer's final link.
 set(_dt_public_symbols
     drifty_version
-    dt_code_create dt_code_create_standard dt_code_destroy
-    dt_code_encode dt_code_encode_flush dt_code_k dt_code_n
+    dt_ccode_create dt_ccode_create_standard dt_ccode_destroy
+    dt_ccode_encode dt_ccode_encode_flush dt_ccode_k dt_ccode_n
     dt_compare dt_compare_max_len dt_compare_min_len
     dt_detect dt_detect_max_len dt_detect_min_len dt_detect_sequential
     dt_multi_create dt_multi_decode dt_multi_decode_flush dt_multi_destroy

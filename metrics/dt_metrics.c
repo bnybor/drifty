@@ -63,7 +63,7 @@
  * Usage: dt_metrics [trials] [info_bits] [seed]
  */
 
-#include <drifty/hybrid/drifty.h>
+#include <hybrid/drifty.h>
 
 #include <limits.h>
 #include <stdint.h>

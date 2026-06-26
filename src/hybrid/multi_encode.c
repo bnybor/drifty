@@ -36,9 +36,9 @@
  * multi-decoder following a code change.
  */
 
-#include <drifty/hybrid/multi_encode.h>
+#include "multi_encode.h"
 
-#include <drifty/hybrid/encode.h>
+#include "encode.h"
 #include <drifty/stdlib.h>
 
 struct dt_multi_encoder {

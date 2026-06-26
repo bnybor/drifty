@@ -55,7 +55,7 @@
  * Usage: dt_codesearch [trials] [info_bits] [seed] [pool]
  */
 
-#include <drifty/hybrid/drifty.h>
+#include <hybrid/drifty.h>
 
 #include <stdint.h>
 #include <stdio.h>

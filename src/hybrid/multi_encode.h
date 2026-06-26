@@ -27,7 +27,7 @@
 #ifndef DRIFTY_HYBRID_MULTI_ENCODE_H
 #define DRIFTY_HYBRID_MULTI_ENCODE_H
 
-#include <drifty/hybrid/encode.h>
+#include "encode.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

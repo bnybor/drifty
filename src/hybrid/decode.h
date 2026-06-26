@@ -31,7 +31,7 @@
  * values defined alongside the encoder. dt_stream_decoder_create takes the
  * dt_hybrid_stream_params channel model, which lives in <drifty/hybrid.h>. */
 #include <drifty/hybrid.h>
-#include <drifty/hybrid/encode.h>
+#include "encode.h"
 
 #ifdef __cplusplus
 extern "C" {

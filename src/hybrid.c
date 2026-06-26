@@ -32,7 +32,7 @@
 
 #include <drifty/hybrid.h>
 
-#include <drifty/hybrid/decode.h> /* dt_stream_decoder + dt_stream_decode* */
+#include "hybrid/decode.h" /* dt_stream_decoder + dt_stream_decode* */
 #include <drifty/stdlib.h>
 
 /* dt_t is uint8_t (bit.h), the same element type the engine's encode/decode

@@ -47,20 +47,17 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # every *defined* symbol except the public API. Undefined references are left
 # alone, so the bare archive still asks the consumer to supply the shims and the
 # full archive still resolves libc at the consumer's final link.
+# The public API is the abstract surface in include/: the dt_ccode descriptor
+# (ccode.h) plus the dt_hybrid_* factories (hybrid.h). The engine functions
+# (dt_stream_*, dt_compare, dt_detect, dt_multi_*, dt_ccode_encode*) are private -
+# their headers live under src/hybrid/ - so they are localized, not exported.
 set(_dt_public_symbols
     drifty_version
     dt_ccode_create dt_ccode_create_standard dt_ccode_destroy
-    dt_ccode_encode dt_ccode_encode_flush dt_ccode_k dt_ccode_n
-    dt_compare dt_compare_max_len dt_compare_min_len
-    dt_detect dt_detect_max_len dt_detect_min_len dt_detect_sequential
+    dt_ccode_k dt_ccode_n
     dt_hybrid_encoder_create dt_hybrid_encoder_destroy
     dt_hybrid_decoder_create dt_hybrid_decoder_destroy
-    dt_hybrid_soft_decoder_create dt_hybrid_soft_decoder_destroy
-    dt_multi_create dt_multi_decode dt_multi_decode_flush dt_multi_destroy
-    dt_multi_encode dt_multi_encode_create dt_multi_encode_destroy
-    dt_multi_encode_flush
-    dt_stream_decode dt_stream_decode_flush
-    dt_stream_decoder_create dt_stream_decoder_destroy)
+    dt_hybrid_soft_decoder_create dt_hybrid_soft_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

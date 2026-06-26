@@ -39,7 +39,10 @@ add_library(drifty_bare_obj OBJECT
     src/cc/viterbi.c
     src/cc/bcjr/encode.c
     src/cc/bcjr/decode.c
-    src/cc/bcjr.c)
+    src/cc/bcjr.c
+    src/cc/maxir/encode.c
+    src/cc/maxir/decode.c
+    src/cc/maxir.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
@@ -56,11 +59,12 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # full archive still resolves libc at the consumer's final link.
 # The public API is the abstract surface in include/: the dt_ccode descriptor
 # (cc/ccode.h, implemented in src/cc/ccode.c) plus the per-codec dt_hybrid_* /
-# dt_vindel_* / dt_viterbi_* / dt_bcjr_* factories (cc/hybrid.h, cc/vindel.h,
-# cc/viterbi.h, cc/bcjr.h). Each codec's engine functions (dt_stream_* /
-# dt_vindel_stream_* / dt_viterbi_stream_* / dt_bcjr_stream_*, dt_ccode_encode* /
-# dt_vindel_encode* / dt_viterbi_encode* / dt_bcjr_encode*) are private - their
-# headers live under src/cc/<codec>/ - so they are localized, not exported.
+# dt_vindel_* / dt_viterbi_* / dt_bcjr_* / dt_maxir_* factories (cc/hybrid.h,
+# cc/vindel.h, cc/viterbi.h, cc/bcjr.h, cc/maxir.h). Each codec's engine functions
+# (dt_stream_* / dt_vindel_stream_* / dt_viterbi_stream_* / dt_bcjr_stream_* /
+# dt_maxir_stream_*, dt_ccode_encode* / dt_vindel_encode* / dt_viterbi_encode* /
+# dt_bcjr_encode* / dt_maxir_encode*) are private - their headers live under
+# src/cc/<codec>/ - so they are localized, not exported.
 set(_dt_public_symbols
     dt_ccode_create dt_ccode_create_standard dt_ccode_destroy
     dt_ccode_k dt_ccode_n
@@ -73,7 +77,10 @@ set(_dt_public_symbols
     dt_viterbi_decoder_create dt_viterbi_decoder_destroy
     dt_bcjr_encoder_create dt_bcjr_encoder_destroy
     dt_bcjr_decoder_create dt_bcjr_decoder_destroy
-    dt_bcjr_soft_decoder_create dt_bcjr_soft_decoder_destroy)
+    dt_bcjr_soft_decoder_create dt_bcjr_soft_decoder_destroy
+    dt_maxir_encoder_create dt_maxir_encoder_destroy
+    dt_maxir_decoder_create dt_maxir_decoder_destroy
+    dt_maxir_soft_decoder_create dt_maxir_soft_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

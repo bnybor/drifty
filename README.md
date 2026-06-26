@@ -20,44 +20,52 @@ through small **interfaces** you call by function pointer:
 - `dt_soft_decoder` — the same, but report per-bit *consistencies* rather than a
   hard decision.
 
-drifty ships **three codecs** that implement these interfaces over a `dt_ccode`,
+drifty ships **four codecs** that implement these interfaces over a `dt_ccode`,
 differing in what channel damage they correct and how much you pay for it:
 
 - **`viterbi`** — a plain Viterbi hard-decision decoder. Corrects flipped and
   erased bits. Simplest and fastest, and takes no settings.
+- **`bcjr`** — a MAP (forward-backward) decoder for the same flips-and-erasures
+  channel as `viterbi`, adding a **soft decoder** (per-bit consistencies) and the
+  ability to lock onto a stream you join mid-flight. Hard or soft output.
 - **`vindel`** — adds drift tolerance: it stays aligned even when bits are
   inserted or dropped. Hard decision; a small channel model to set.
 - **`hybrid`** — drift-tolerant like `vindel`, and additionally offers a **soft
   decoder** (per-bit consistencies) and the most expressive channel model.
 
-Build one with its `dt_<codec>_*_create` factories — `dt_viterbi_*`,
+Build one with its `dt_<codec>_*_create` factories — `dt_viterbi_*`, `dt_bcjr_*`,
 `dt_vindel_*`, or `dt_hybrid_*` — and include its single header
-(`<drifty/cc/viterbi.h>`, `<drifty/cc/vindel.h>`, or `<drifty/cc/hybrid.h>`). They share
-the code type and the encoder, so you can swap codecs without re-encoding. See
-[Choosing a codec](#choosing-a-codec).
+(`<drifty/cc/viterbi.h>`, `<drifty/cc/bcjr.h>`, `<drifty/cc/vindel.h>`, or
+`<drifty/cc/hybrid.h>`). They share the code type and the encoder, so you can swap
+codecs without re-encoding. See [Choosing a codec](#choosing-a-codec).
 
 Bits are carried one per byte as `dt_bit` symbols: `DT_FALSE`, `DT_TRUE`, or
 `DT_ERASURE` to mark a received bit as lost (defined in `<drifty/bit.h>`).
 
 ## Choosing a codec
 
-All three share the same code (`dt_ccode`) and the same encoder; they differ only
+All four share the same code (`dt_ccode`) and the same encoder; they differ only
 in the decoder. Pick the least capable one that covers your channel — it is the
 simplest and fastest.
 
-|                                        | `viterbi`            | `vindel`           | `hybrid`          |
-|----------------------------------------|----------------------|--------------------|-------------------|
-| Corrects flips & erasures              | ✓                    | ✓                  | ✓                 |
-| Tracks drift (inserted / dropped bits) | —                    | ✓                  | ✓                 |
-| Blind acquisition (join mid-stream)    | —                    | ✓                  | ✓                 |
-| Soft output (per-bit consistencies)    | —                    | —                  | ✓                 |
-| Settings to tune                       | none                 | channel rates      | channel rates (richer) |
-| Header                                 | `<drifty/cc/viterbi.h>` | `<drifty/cc/vindel.h>`| `<drifty/cc/hybrid.h>` |
+|                                        | `viterbi`            | `bcjr`               | `vindel`           | `hybrid`          |
+|----------------------------------------|----------------------|----------------------|--------------------|-------------------|
+| Corrects flips & erasures              | ✓                    | ✓                    | ✓                  | ✓                 |
+| Tracks drift (inserted / dropped bits) | —                    | —                    | ✓                  | ✓                 |
+| Blind acquisition (join mid-stream)    | —                    | ✓                    | ✓                  | ✓                 |
+| Soft output (per-bit consistencies)    | —                    | ✓                    | —                  | ✓                 |
+| Settings to tune                       | none                 | channel rates        | channel rates      | channel rates (richer) |
+| Header                                 | `<drifty/cc/viterbi.h>` | `<drifty/cc/bcjr.h>` | `<drifty/cc/vindel.h>`| `<drifty/cc/hybrid.h>` |
 
 - Use **`viterbi`** when the received stream stays bit-aligned — the channel only
   flips or erases bits, never inserts or drops them (most wired links, framed
   packets, anything with its own clock recovery). It is a standard convolutional
   FEC: fastest, with nothing to configure.
+- Use **`bcjr`** on that same bit-aligned channel when you want **soft** output —
+  per-bit consistencies for an outer code or a downstream decision — or need to
+  lock onto a stream you join mid-flight. It runs the MAP (forward-backward)
+  algorithm: the same flips-and-erasures channel as `viterbi`, more information
+  out, a little slower.
 - Use **`vindel`** when the stream can lose sync — bits get inserted or dropped,
   so position drifts — and a hard 0/1 per bit is all you need. It tracks the
   drift and re-anchors; you tell it roughly how often each impairment happens.
@@ -67,10 +75,11 @@ simplest and fastest.
   is the most capable, and the default when in doubt.
 
 Drift tolerance is not free: `vindel` and `hybrid` do proportionally more work as
-their drift window widens, while `viterbi` is a plain trellis with none of that
-machinery. The examples below use the `hybrid` codec; `viterbi` and `vindel`
-follow the same vtable pattern, differing only in their `_create` signatures
-(`viterbi` takes just the code, `vindel` a simpler parameter set).
+their drift window widens, while `viterbi` and `bcjr` run a fixed-width trellis
+with none of that machinery. The examples below use the `hybrid` codec; `viterbi`,
+`bcjr`, and `vindel` follow the same vtable pattern, differing only in their
+`_create` signatures (`viterbi` takes just the code; `bcjr` and `vindel` take
+simpler parameter sets).
 
 ## Quick start
 
@@ -125,8 +134,10 @@ skip).
 These are the **`hybrid`** decoder's settings, set in `dt_hybrid_stream_params`;
 anything you leave out defaults to 0. **`vindel`** uses a simpler set
 (`dt_vindel_stream_params`: `decision_depth`, `max_drift`, and the rates `p_sub`,
-`p_ins`, `p_del`, `p_erase`), and **`viterbi`** has none — its decoder is built
-from the code alone.
+`p_ins`, `p_del`, `p_erase`), **`bcjr`** a smaller one still
+(`dt_bcjr_stream_params`: just `decision_depth`, `p_flip`, and `p_erase` — no
+drift settings), and **`viterbi`** has none — its decoder is built from the code
+alone.
 
 | Field            | What it does |
 |------------------|--------------|
@@ -155,8 +166,9 @@ When unsure, tune on representative data rather than chasing exact numbers.
 
 When a hard 0/1 isn't enough — for example to feed an outer code — a soft decoder
 reports, per bit position, a set of *consistencies* in `[0, 1]`: the goodness-of-fit
-of each hypothesis, not a probability split (they need not sum to 1). Of the three
-codecs, only **`hybrid`** offers a soft decoder.
+of each hypothesis, not a probability split (they need not sum to 1). Of the four
+codecs, **`bcjr`** and **`hybrid`** offer a soft decoder — `bcjr` on a bit-aligned
+channel, `hybrid` when you also need drift tolerance.
 
 ```c
 dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &params);
@@ -171,7 +183,7 @@ dt_hybrid_soft_decoder_destroy(sd);
 ```
 
 `dt_soft_decoder_out` also carries `c_invalid` and `c_absent`; the hybrid codec
-does not model those and leaves them 0.
+does not model those and leaves them 0, while the bcjr codec populates them.
 
 ## Build
 
@@ -182,8 +194,8 @@ cmake --build build
 
 This produces `libdrifty.a` (self-contained) and `libdrifty_bare.a` (the
 freestanding core, with the few libc shims left for you to supply). Only the
-public API — `dt_ccode_*` and the codec factories `dt_viterbi_*`, `dt_vindel_*`,
-and `dt_hybrid_*` — is exported; the engine internals are hidden.
+public API — `dt_ccode_*` and the codec factories `dt_viterbi_*`, `dt_bcjr_*`,
+`dt_vindel_*`, and `dt_hybrid_*` — is exported; the engine internals are hidden.
 
 ## Test
 
@@ -194,11 +206,12 @@ ctest --test-dir build --output-on-failure
 ## Metrics
 
 A Monte-Carlo harness measures decoding-mistake rates against flip / insert /
-drop / erase channels for each standard code, one per codec — see
+drop / erase channels for each standard code — see
 [metrics/hybrid/METRICS.md](metrics/hybrid/METRICS.md),
 [metrics/vindel/METRICS.md](metrics/vindel/METRICS.md), and
 [metrics/viterbi/METRICS.md](metrics/viterbi/METRICS.md) (`viterbi`, which does
-not track drift, sweeps only the flip and erase channels).
+not track drift, sweeps only the flip and erase channels). `bcjr` has no harness
+yet.
 
 ## Install
 

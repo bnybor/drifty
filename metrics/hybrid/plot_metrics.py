@@ -23,8 +23,8 @@ whole measurement); those points are dropped and reported, since the true value
 there is only a lower bound (> the bits measured), not infinity.
 
 Usage:
-    build/metrics/dt_metrics > metrics/metrics.csv
-    python3 metrics/plot_metrics.py metrics/metrics.csv -o metrics/plots/
+    build/metrics/hybrid/dt_metrics > metrics/hybrid/metrics.csv
+    python3 metrics/hybrid/plot_metrics.py metrics/hybrid/metrics.csv -o metrics/hybrid/plots/
 """
 import argparse
 import csv

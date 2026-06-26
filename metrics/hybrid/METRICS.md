@@ -1,6 +1,6 @@
 # drifty metrics
 
-`metrics/dt_metrics.c` measures the decoding-mistake rate as a function of the
+`metrics/hybrid/dt_metrics.c` measures the decoding-mistake rate as a function of the
 channel's flip / insert / delete / erase rates, for all four standard codes. It
 runs a Monte-Carlo sweep — random message → encode → channel → stream-decode —
 and reports the **normalized edit (Levenshtein) distance** between the decoded
@@ -16,8 +16,8 @@ the other rates at zero, so each curve isolates one impairment.
 The harness runs in three variations (see [Variations](#variations) below), all
 measuring decoding performance — `matched`, where the decoder anticipates the
 channel, `pegged`, where it does not, and `overmatched`, where the decoder braces
-for corruption that never comes (a clean channel). They write to `metrics/tuned/`,
-`metrics/untuned/`, and `metrics/overmatched/`.
+for corruption that never comes (a clean channel). They write to `metrics/hybrid/tuned/`,
+`metrics/hybrid/untuned/`, and `metrics/hybrid/overmatched/`.
 
 ```sh
 # Build the harness (off by default) and run each variation to its own CSV.
@@ -25,18 +25,18 @@ cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
 cmake --build build --target dt_metrics
 # dt_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
 #   variation = pegged|matched|overmatched   (defaults: 50 1000 0xC0FFEE pegged)
-#   rate_grids_file defaults to metrics/rate_grids.txt (so run from the repo root)
-build/metrics/dt_metrics 30 4000 0xC0FFEE matched     > metrics/tuned/metrics.csv
-build/metrics/dt_metrics 30 4000 0xC0FFEE pegged      > metrics/untuned/metrics.csv
-build/metrics/dt_metrics 30 4000 0xC0FFEE overmatched > metrics/overmatched/metrics.csv
+#   rate_grids_file defaults to metrics/hybrid/rate_grids.txt (so run from the repo root)
+build/metrics/hybrid/dt_metrics 30 4000 0xC0FFEE matched     > metrics/hybrid/tuned/metrics.csv
+build/metrics/hybrid/dt_metrics 30 4000 0xC0FFEE pegged      > metrics/hybrid/untuned/metrics.csv
+build/metrics/hybrid/dt_metrics 30 4000 0xC0FFEE overmatched > metrics/hybrid/overmatched/metrics.csv
 
 # Plot the metrics each CSV carries (one curve per code). Needs matplotlib:
 python3 -m venv .venv && .venv/bin/pip install matplotlib
 # --match shares each edit/runlen plot's y-axis across the pair (the larger
 # range wins) so the side-by-side untuned/tuned plots compare by eye directly.
-.venv/bin/python metrics/plot_metrics.py metrics/tuned/metrics.csv   -o metrics/tuned/plots/   --match metrics/untuned/metrics.csv
-.venv/bin/python metrics/plot_metrics.py metrics/untuned/metrics.csv -o metrics/untuned/plots/ --match metrics/tuned/metrics.csv
-.venv/bin/python metrics/plot_metrics.py metrics/overmatched/metrics.csv -o metrics/overmatched/plots/
+.venv/bin/python metrics/hybrid/plot_metrics.py metrics/hybrid/tuned/metrics.csv   -o metrics/hybrid/tuned/plots/   --match metrics/hybrid/untuned/metrics.csv
+.venv/bin/python metrics/hybrid/plot_metrics.py metrics/hybrid/untuned/metrics.csv -o metrics/hybrid/untuned/plots/ --match metrics/hybrid/tuned/metrics.csv
+.venv/bin/python metrics/hybrid/plot_metrics.py metrics/hybrid/overmatched/metrics.csv -o metrics/hybrid/overmatched/plots/
 ```
 
 All share a `seed`, so every run is reproducible. The corrupted-channel
@@ -49,7 +49,7 @@ expectation, not a channel rate) — so they line up only where their grids shar
 rate.
 
 The sweep's rate grids are not compiled in: `dt_metrics` reads them at startup
-from a plain-text file (`metrics/rate_grids.txt` by default, or a path passed as
+from a plain-text file (`metrics/hybrid/rate_grids.txt` by default, or a path passed as
 the 5th argument). Each line is `<variation> <metric> <axis>  <rate> <rate> ...`
 (`#` begins a comment), so you can retune which rates a curve samples — densify a
 knee, extend a tail, add points — by editing that file and re-running, with no
@@ -97,18 +97,18 @@ probabilities the decoder is built with change (and, for `overmatched`, the
 channel goes clean), and because that reshapes the curves, each variation samples
 its **own rate grid** tuned to where its curves actually move.
 
-- **untuned** (`metrics/untuned/`, the `pegged` model) — every impairment
+- **untuned** (`metrics/hybrid/untuned/`, the `pegged` model) — every impairment
   probability is pegged at a flat 1%, regardless of the rate actually being
   swept, with drift tracking always on. The decoder is never told what the
   channel is doing, so as a rate climbs it meets something increasingly
   unexpected. This shows how the decoder handles **channels it cannot
   anticipate**.
-- **tuned** (`metrics/tuned/`, the `matched` model) — the active impairment's
+- **tuned** (`metrics/hybrid/tuned/`, the `matched` model) — the active impairment's
   probability is set to the swept rate, and drift is tracked only when that
   impairment is an insertion or deletion. The decoder's model matches the
   channel at every point. This shows how the decoder handles **channels it can
   anticipate** — its best case.
-- **overmatched** (`metrics/overmatched/`, the `overmatched` model) — the decoder
+- **overmatched** (`metrics/hybrid/overmatched/`, the `overmatched` model) — the decoder
   is built with the *matched* model (it expects the swept rate of corruption) but
   the channel is **clean**. So the x-axis here is what the decoder *expects*, not
   what it meets, and the curve is the **penalty of over-bracing** for trouble that
@@ -238,4 +238,4 @@ bits. The x-axes run to ~0.97 because nothing happens until the threshold.
 (Left: the flip and delete edit thresholds at 0.5. Right: the flip-lock dip at the
 0.5 singularity with the high-redundancy `K5_R1_5` tail, and the erasure-lock
 collapse. The insert/erase edit and insert/delete lock plots are flat and omitted
-here; the full set is in `metrics/overmatched/plots/`.)
+here; the full set is in `metrics/hybrid/overmatched/plots/`.)

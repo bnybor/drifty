@@ -53,7 +53,7 @@
  *                 averaged across the kept bits. It shows how confidently the
  *                 decoder stays synced as each impairment ramps up.
  *
- * Output is CSV on stdout (see header row); feed it to metrics/plot_metrics.py.
+ * Output is CSV on stdout (see header row); feed it to metrics/hybrid/plot_metrics.py.
  *
  * Usage: dt_metrics [trials] [info_bits] [seed]
  */
@@ -258,7 +258,7 @@ static const char *METRIC_NAME[] = {"edit", "lock"};
 typedef enum { VAR_PEGGED, VAR_MATCHED, VAR_OVERMATCHED } variation;
 
 /* Channel rate grids - one per (variation, metric, impairment) - are read at
- * startup from a text file (load_grids; default metrics/rate_grids.txt) rather
+ * startup from a text file (load_grids; default metrics/hybrid/rate_grids.txt) rather
  * than hard-coded, so a sweep can be retuned without recompiling. Each grid is
  * sampled only over the range where its metric carries information on that axis,
  * with points clustered where the curve bends; the shipped file documents the
@@ -655,9 +655,9 @@ int main(int argc, char **argv) {
     var = (variation)parsed;
   }
 
-  /* Channel rate grids are read from a file (default metrics/rate_grids.txt,
+  /* Channel rate grids are read from a file (default metrics/hybrid/rate_grids.txt,
    * overridden by a 5th argument) so a sweep can be retuned without recompiling. */
-  const char *grids_path = argc > 5 ? argv[5] : "metrics/rate_grids.txt";
+  const char *grids_path = argc > 5 ? argv[5] : "metrics/hybrid/rate_grids.txt";
   if (load_grids(grids_path) < 0) {
     return 2;
   }

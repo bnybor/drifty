@@ -150,7 +150,7 @@ ctest --test-dir build --output-on-failure
 
 A Monte-Carlo harness measures decoding-mistake rates against flip / insert / drop
 / erase channels for each standard code — see
-[metrics/METRICS.md](metrics/METRICS.md).
+[metrics/hybrid/METRICS.md](metrics/hybrid/METRICS.md).
 
 ## Install
 

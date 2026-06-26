@@ -65,6 +65,9 @@ extern "C" {
  *                    sliding window the backward recursion spans. Bigger is more
  *                    reliable but slower to emit. Try ~6 * dt_ccode_k().
  *                    Required (must be >= 1).
+ *   max_drift      : the BCJR codec does not track inserted or dropped bits, so
+ *                    this must be 0 (the default); a nonzero value is rejected.
+ *                    For drift tolerance use the vindel or hybrid codecs.
  *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
  *                    0.01 for 1%). Sets the branch likelihoods. Required.
  *   p_erase        : how often a received bit is DT_ERASURE. 0 (the default) if
@@ -75,6 +78,7 @@ extern "C" {
 /* clang-format on */
 typedef struct {
   int decision_depth;
+  int max_drift;
   float p_flip;
   float p_erase;
 } dt_bcjr_stream_params;

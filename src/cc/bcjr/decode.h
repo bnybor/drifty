@@ -79,6 +79,12 @@ typedef struct {
   float c_false;
   /* Consistency that the value is unrecoverable (an erasure to an outer code). */
   float c_lost;
+  /* Consistency that the slot's coded group was the encoder's DT_INVALID poison
+   * marker - a bound, non-boolean value. */
+  float c_invalid;
+  /* Consistency that the slot is not backed by a tracked codeword stream
+   * (1 - c_lock); surfaces as DT_ABSENT. */
+  float c_absent;
   /* Consistency that the decoder is tracking a valid stream of this code. */
   float c_lock;
 } dt_bcjr_decode_details;

@@ -29,7 +29,7 @@
  * sets behind dt_standard_code so that all five are mutually distinguishable: a
  * decoder built for one preset must not lock onto a sibling preset's stream. It
  * exists so those polynomials are reproducible rather than picked by hand -
- * re-run it to regenerate or re-verify the tables in src/hybrid/encode.c.
+ * re-run it to regenerate or re-verify the tables in src/cc/hybrid/encode.c.
  *
  * Pipeline, per family:
  *   1. Enumerate candidate generator tuples (strictly increasing masks, the
@@ -54,7 +54,7 @@
  * Usage: dt_codesearch [trials] [info_bits] [seed] [pool]
  */
 
-#include <drifty/hybrid.h>
+#include <drifty/cc/hybrid.h>
 
 #include <stdint.h>
 #include <stdio.h>

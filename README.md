@@ -32,7 +32,7 @@ differing in what channel damage they correct and how much you pay for it:
 
 Build one with its `dt_<codec>_*_create` factories — `dt_viterbi_*`,
 `dt_vindel_*`, or `dt_hybrid_*` — and include its single header
-(`<drifty/viterbi.h>`, `<drifty/vindel.h>`, or `<drifty/hybrid.h>`). They share
+(`<drifty/cc/viterbi.h>`, `<drifty/cc/vindel.h>`, or `<drifty/cc/hybrid.h>`). They share
 the code type and the encoder, so you can swap codecs without re-encoding. See
 [Choosing a codec](#choosing-a-codec).
 
@@ -52,7 +52,7 @@ simplest and fastest.
 | Blind acquisition (join mid-stream)    | —                    | ✓                  | ✓                 |
 | Soft output (per-bit consistencies)    | —                    | —                  | ✓                 |
 | Settings to tune                       | none                 | channel rates      | channel rates (richer) |
-| Header                                 | `<drifty/viterbi.h>` | `<drifty/vindel.h>`| `<drifty/hybrid.h>` |
+| Header                                 | `<drifty/cc/viterbi.h>` | `<drifty/cc/vindel.h>`| `<drifty/cc/hybrid.h>` |
 
 - Use **`viterbi`** when the received stream stays bit-aligned — the channel only
   flips or erases bits, never inserts or drops them (most wired links, framed

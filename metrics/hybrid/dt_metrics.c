@@ -58,7 +58,7 @@
  * Usage: dt_metrics [trials] [info_bits] [seed]
  */
 
-#include <drifty/hybrid.h>
+#include <drifty/cc/hybrid.h>
 
 #include <limits.h>
 #include <stdint.h>

@@ -1,4 +1,4 @@
-# Selects the standard codes' generator polynomials (see src/hybrid/encode.c).
+# Selects the standard codes' generator polynomials (see src/cc/hybrid/encode.c).
 add_executable(dt_codesearch dt_codesearch.c)
 target_link_libraries(dt_codesearch PRIVATE drifty::drifty)
 

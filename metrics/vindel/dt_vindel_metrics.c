@@ -65,8 +65,8 @@
  * Usage: dt_vindel_metrics [trials] [info_bits] [seed]
  */
 
-#include <vindel/decode.h>
-#include <vindel/encode.h>
+#include <cc/vindel/decode.h>
+#include <cc/vindel/encode.h>
 
 #include <limits.h>
 #include <stdint.h>

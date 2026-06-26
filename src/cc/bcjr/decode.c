@@ -64,7 +64,7 @@
  * locked (c_lock low), else the resolved DT_TRUE/DT_FALSE when the value is
  * recoverable, else - for an unrecoverable position - DT_INVALID when the slot's
  * coded group was itself DT_INVALID (the encoder's poison marker) or DT_ERASURE
- * otherwise. This relies on a property of the encoder: a non-boolean input
+ * otherwise. This relies on a property of the encoder: a DT_INVALID input
  * poisons exactly the coded bits that carry its value, so the originating
  * poisoned step has no clean value evidence and is a genuine m0 == m1 tie (->
  * DT_INVALID), whereas a clean bit merely contaminated downstream keeps clean

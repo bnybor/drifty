@@ -41,7 +41,7 @@
  * them all.
  */
 
-#include <drifty/hybrid/decode.h> /* dt_stream_params, dt_ccode (opaque), uint8_t */
+#include <drifty/hybrid/decode.h> /* dt_hybrid_stream_params, dt_ccode (opaque), uint8_t */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -184,7 +184,7 @@ typedef struct {
 /* Validate `params`, take dimensions from `code`, allocate the shared buffers,
  * and zero the cadence. Returns DT_OK or a negative DT_ERR_*. A ctx that failed
  * (or was zero-initialised) is safe to pass to dt_decode_ctx_free. */
-int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
+int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params *params,
                        const dt_ccode *code);
 void dt_decode_ctx_free(dt_decode_ctx *ctx);
 

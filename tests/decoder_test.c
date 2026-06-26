@@ -386,7 +386,7 @@ static void test_stream_flips_only(void) {
   const int nflip = (int)(sizeof(flips) / sizeof(flips[0]));
   for (int i = 0; i < nflip; ++i) rx[flips[i]] ^= DT_VALUE;
 
-  dt_stream_params params = {
+  dt_hybrid_stream_params params = {
       .decision_depth = 40,
       .p_flip = 0.02,
   };
@@ -663,7 +663,7 @@ static void test_error_paths(void) {
         dt_ccode_encode(code, &bit, 1, &badstate, obuf) == DT_ERR_ARG);
 
   /* Decoder creation rejects bad settings by returning NULL. */
-  dt_stream_params ok = {
+  dt_hybrid_stream_params ok = {
       .decision_depth = 40,
       .max_drift = 4,
       .p_flip = 0.01,
@@ -676,7 +676,7 @@ static void test_error_paths(void) {
   check("decoder rejects null params",
         dt_stream_decoder_create(code, NULL) == NULL);
 
-  dt_stream_params p;
+  dt_hybrid_stream_params p;
   p = ok;
   p.decision_depth = 0;
   check("decoder rejects depth 0", dt_stream_decoder_create(code, &p) == NULL);

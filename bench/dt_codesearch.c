@@ -253,7 +253,7 @@ static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
   int st = 0;
   dt_ccode_encode(enc, msg, info_bits, &st, coded);
 
-  dt_stream_params params = {.decision_depth = depth,
+  dt_hybrid_stream_params params = {.decision_depth = depth,
                              .max_drift = 4,
                              .p_flip = 0.01,
                              .p_ins_true = 0.005,

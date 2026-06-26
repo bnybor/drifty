@@ -418,7 +418,7 @@ static const double *metric_axis_rates(variation var, metric which_metric,
  * axis, rate, and variation but not the trial, so both the trial worker and the
  * row formatter derive them the same way from make_model(). */
 typedef struct {
-  dt_stream_params params;
+  dt_hybrid_stream_params params;
   int code_n;
   int constraint_len;
   int decision_depth;
@@ -449,7 +449,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
      * something increasingly unexpected - the stress this variation measures. */
     const double pegged = 0.01;
     m.max_drift = 8;
-    m.params = (dt_stream_params){
+    m.params = (dt_hybrid_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = pegged,
@@ -478,7 +478,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
     const double ins_total = (m.max_drift > 0)
                                  ? clamp_double(channel_ins, min_prob, drift_max)
                                  : 0.0;
-    m.params = (dt_stream_params){
+    m.params = (dt_hybrid_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = (channel_axis == AXIS_FLIP)

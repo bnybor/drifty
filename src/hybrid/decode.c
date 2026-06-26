@@ -845,7 +845,7 @@ static void init_metric(const dt_decode_ctx *ctx, dt_trellis *tr) {
 
 /* -- internal context / trellis lifecycle ---------------------------------- */
 
-int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_stream_params *params,
+int dt_decode_ctx_init(dt_decode_ctx *ctx, const dt_hybrid_stream_params *params,
                        const dt_ccode *code) {
   if (!ctx || !params || !code) {
     return DT_ERR_ARG;
@@ -1146,7 +1146,7 @@ struct dt_stream_decoder {
 };
 
 dt_stream_decoder *dt_stream_decoder_create(const dt_ccode *code,
-                                            const dt_stream_params *params) {
+                                            const dt_hybrid_stream_params *params) {
   if (!code || !params) {
     return NULL;
   }

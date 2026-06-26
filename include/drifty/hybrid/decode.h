@@ -28,7 +28,9 @@
 #define DRIFTY_HYBRID_DECODE_H
 
 /* The decoder is built from a dt_ccode, and shares the result codes and bit
- * values defined alongside the encoder. */
+ * values defined alongside the encoder. dt_stream_decoder_create takes the
+ * dt_hybrid_stream_params channel model, which lives in <drifty/hybrid.h>. */
+#include <drifty/hybrid.h>
 #include <drifty/hybrid/encode.h>
 
 #ifdef __cplusplus
@@ -43,7 +45,7 @@ extern "C" {
  * decoder and read your bits back, with flipped, inserted and dropped bits
  * corrected.
  *
- *   dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_stream_params){
+ *   dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_hybrid_stream_params){
  *       .decision_depth = 40,
  *       .max_drift      = 4,
  *       .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
@@ -80,54 +82,8 @@ extern "C" {
  */
 typedef struct dt_stream_decoder dt_stream_decoder;
 
-/* clang-format off */
-/*
- * Decoder settings for dt_stream_decoder_create(). Use designated initializers;
- * any field you leave out is 0.
- *
- *   decision_depth : output delay, in bits, before each bit is committed. Bigger
- *                    is more reliable but slower to emit. Try ~6 * dt_ccode_k().
- *                    Required (must be >= 1).
- *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
- *                    0.01 for 1%). Required.
- *   max_drift      : how far alignment may slip from inserted/dropped bits before
- *                    the decoder loses track. 0 (the default) corrects flipped
- *                    bits only; 4-8 also recovers from insertions and deletions.
- *   p_ins_true,
- *   p_ins_false,
- *   p_ins_erase    : how often a spurious DT_TRUE / DT_FALSE / DT_ERASURE bit is
- *                    inserted into the stream, per bit and at any position. Their
- *                    sum is the overall insertion rate; it sets how readily the
- *                    decoder realigns, while the split only biases which value it
- *                    expects an inserted bit to carry. So an even true/false split
- *                    behaves the same as one combined rate - set them unequal only
- *                    to favour one inserted value.
- *   p_del          : how often a coded bit is dropped, per bit and at any position.
- *                    The insertion rates and p_del together must sum to < 1, and
- *                    are required when max_drift > 0; leave 0 otherwise.
- *   p_ovr_true,
- *   p_ovr_false,
- *   p_ovr_erase    : how often a coded bit is overwritten with a fixed DT_TRUE /
- *                    DT_FALSE / DT_ERASURE, regardless of what was sent. The three
- *                    must sum to < 1 (the remainder is the chance the bit arrives
- *                    normally). All 0 (the default) if there are no overwrites;
- *                    p_ovr_erase doubles as the plain erasure rate.
- *
- * Rough probabilities are fine; only their relative sizes matter.
- */
-/* clang-format on */
-typedef struct {
-  int decision_depth;
-  int max_drift;
-  double p_flip;
-  double p_ins_true;
-  double p_ins_false;
-  double p_ins_erase;
-  double p_del;
-  double p_ovr_true;
-  double p_ovr_false;
-  double p_ovr_erase;
-} dt_stream_params;
+/* dt_hybrid_stream_params (the decoder channel-model settings) is defined in
+ * <drifty/hybrid.h>, included above. */
 
 /*
  * Details about how an info-bit position was decoded.
@@ -157,7 +113,7 @@ typedef struct {
  * with dt_stream_decoder_destroy().
  */
 dt_stream_decoder *dt_stream_decoder_create(const dt_ccode *code,
-                                            const dt_stream_params *params);
+                                            const dt_hybrid_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
 void dt_stream_decoder_destroy(dt_stream_decoder *d);

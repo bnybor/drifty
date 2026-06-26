@@ -57,7 +57,7 @@ typedef struct dt_multi_decoder dt_multi_decoder;
  *                Each code must outlive the multi-decoder.
  *   codes_len  : how many codes `codes` points to.
  *   stream     : decoder settings (decision_depth, drift, channel probabilities;
- *                see dt_stream_params) shared by every code's decoder. Required.
+ *                see dt_hybrid_stream_params) shared by every code's decoder. Required.
  *   lock_floor : the lock probability (see dt_stream_decode) the best-fitting
  *                code must reach for any bit to be committed; if none does,
  *                nothing is locked and the bit is DT_ERASURE. Default 0.6.
@@ -70,7 +70,7 @@ typedef struct dt_multi_decoder dt_multi_decoder;
 typedef struct {
   const dt_ccode *const *codes;
   size_t codes_len;
-  dt_stream_params stream;
+  dt_hybrid_stream_params stream;
   double lock_floor;
   double lock_margin;
 } dt_multi_params;

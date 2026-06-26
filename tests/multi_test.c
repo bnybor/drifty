@@ -59,7 +59,7 @@ static dt_multi_decoder *build_multi(dt_ccode *codes[N_DEC],
   params.codes = (const dt_ccode *const *)codes;
   params.codes_len = N_DEC;
   if (params.stream.decision_depth == 0) { /* caller left stream unset */
-    params.stream = (dt_stream_params){.decision_depth = DEPTH, .p_flip = 0.02};
+    params.stream = (dt_hybrid_stream_params){.decision_depth = DEPTH, .p_flip = 0.02};
   }
   return dt_multi_create(&params);
 }
@@ -124,7 +124,7 @@ static int multi_decode_all(dt_multi_decoder *md, const uint8_t *rx, int rl,
 
 /* Decoder settings that can ride out every impairment: flips, erasures, and
  * cumulative insertion/deletion drift (re-anchoring past max_drift). */
-static const dt_stream_params IMPAIRED_STREAM = {.decision_depth = DEPTH,
+static const dt_hybrid_stream_params IMPAIRED_STREAM = {.decision_depth = DEPTH,
                                                  .max_drift = MAX_DRIFT,
                                                  .p_flip = 0.02,
                                                  .p_ins_true = 0.005,

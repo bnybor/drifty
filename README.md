@@ -27,7 +27,7 @@ len += dt_ccode_encode(code, chunk2, n2, &state, out + len);
 len += dt_ccode_encode_flush(code, &state, out + len);   /* finish the stream */
 
 /* 3. Decode the received bits. */
-dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_stream_params){
+dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_hybrid_stream_params){
     .decision_depth = 40,   /* output delay; try ~6 * the code's K       */
     .max_drift      = 4,    /* set 0 to correct flips only                */
     .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
@@ -55,7 +55,7 @@ known preamble you can skip).
 
 ## Decoder settings
 
-Set these in `dt_stream_params`; anything you leave out defaults to 0.
+Set these in `dt_hybrid_stream_params`; anything you leave out defaults to 0.
 
 | Field            | What it does |
 |------------------|--------------|

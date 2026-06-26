@@ -261,7 +261,7 @@ static inline dt_stream_decoder *make_decoder(const dt_ccode *code, int depth,
                                               int drift, double p_flip,
                                               double p_ins, double p_del,
                                               double p_erase) {
-  dt_stream_params params = {
+  dt_hybrid_stream_params params = {
       .decision_depth = depth,
       .max_drift = drift,
       .p_flip = p_flip,

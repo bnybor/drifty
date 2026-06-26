@@ -32,6 +32,7 @@
 
 #include <drifty/hybrid.h>
 
+#include <drifty/hybrid/decode.h> /* dt_stream_decoder + dt_stream_decode* */
 #include <drifty/stdlib.h>
 
 /* dt_t is uint8_t (bit.h), the same element type the engine's encode/decode
@@ -122,7 +123,7 @@ static int hybrid_decoder_finalize(dt_decoder *dec, dt_t *dst, size_t dst_len) {
 }
 
 dt_decoder *dt_hybrid_decoder_create(const dt_ccode *code,
-                                     const dt_stream_params *params) {
+                                     const dt_hybrid_stream_params *params) {
   if (!code || !params) {
     return NULL;
   }

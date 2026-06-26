@@ -28,16 +28,12 @@
 #define DRIFTY_HYBRID_DRIFTY_H
 
 /*
- * Umbrella header for the full drifty API. The library is split into the
- * sender's half (encode.h - pick a code and encode), the receiver's half
- * (decode.h - stream-decode received bits), and a blind code comparison
- * (compare.h - do two streams share a code?). Include this to get all of them
- * at once, or include just the part you need.
+ * Umbrella header for the internal hybrid engine. The library is split into the
+ * sender's half (encode.h - pick a code and encode) and the receiver's half
+ * (decode.h - stream-decode received bits). Include this to get both at once, or
+ * include just the part you need.
  */
-#include "compare.h"
 #include "decode.h"
 #include "encode.h"
-#include "multi_decode.h"
-#include "multi_encode.h"
 
 #endif /* DRIFTY_HYBRID_DRIFTY_H */

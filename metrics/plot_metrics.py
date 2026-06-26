@@ -64,18 +64,17 @@ def _opt_float(row, col):
 
 def load(path):
     # series[axis][code] -> {"edit": [(rate, edit_rate)...],
-    #                        "lock": [(rate, mean_lock)...],
-    #                        "detect": [(rate, mean_detect)...], "n": code_n}
+    #                        "lock": [(rate, mean_lock)...], "n": code_n}
     # Each metric carries its own (rate, value) points, since the harness sweeps
     # a separate rate grid per metric (the "metric" column tags each row). Older
     # CSVs without that column carry every metric on one grid, so a blank metric
-    # is treated as contributing to all three (guarded by the per-column value
-    # being present).
+    # is treated as contributing to both (guarded by the per-column value being
+    # present).
     def entry():
-        return {"edit": [], "lock": [], "detect": [], "n": None}
+        return {"edit": [], "lock": [], "n": None}
 
     series = defaultdict(lambda: defaultdict(entry))
-    columns = {"edit": "edit_rate", "lock": "mean_lock", "detect": "mean_detect"}
+    columns = {"edit": "edit_rate", "lock": "mean_lock"}
     with open(path, newline="") as f:
         for row in csv.DictReader(f):
             e = series[row["axis"]][row["code"]]
@@ -197,14 +196,12 @@ def plot_axis(axis, by_code, outdir, metric, unit, logy, ymax, peer_ys=None):
 PROB_METRICS = {
     "lock": {"ylabel": "mean P(decoder locked)",
              "title": "Lock probability", "missing": "mean_lock"},
-    "detect": {"ylabel": "mean P(code detected)",
-               "title": "Detection probability", "missing": "mean_detect"},
 }
 
 
 def plot_prob_axis(axis, by_code, outdir, metric):
-    """Render a unitless probability metric (lock or detect) vs channel rate, one
-    curve per code. Both live in [0, 1], so there is a single plot per axis."""
+    """Render a unitless probability metric (lock) vs channel rate, one curve per
+    code. It lives in [0, 1], so there is a single plot per axis."""
     spec = PROB_METRICS[metric]
     fig, ax = plt.subplots(figsize=(7, 5))
     plotted = False
@@ -238,10 +235,9 @@ def main():
     ap.add_argument("csv", help="CSV from dt_metrics")
     ap.add_argument("-o", "--outdir", default=".", help="output directory")
     ap.add_argument("--metric",
-                    choices=["edit", "runlength", "lock", "detect", "all"],
+                    choices=["edit", "runlength", "lock", "all"],
                     default="all", help="edit distance, mean run length between "
-                    "edits, mean lock probability, mean detect probability, or "
-                    "all (default)")
+                    "edits, mean lock probability, or all (default)")
     ap.add_argument("--unit", choices=["info", "coded", "both"], default="info",
                     help="normalize per info bit (default), per coded bit, or "
                     "both")
@@ -256,7 +252,7 @@ def main():
                     help="match each edit/runlength plot's y-axis to whichever of "
                     "this CSV or the peer has the larger range, so paired "
                     "untuned/tuned plots share a vertical scale (ignored by the "
-                    "unitless lock/detect plots and overridden by --ymax)")
+                    "unitless lock plots and overridden by --ymax)")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -264,7 +260,7 @@ def main():
     if not series:
         raise SystemExit("no rows found in CSV")
     peer_series = load(args.match) if args.match else None
-    metrics = (["edit", "runlength", "lock", "detect"] if args.metric == "all"
+    metrics = (["edit", "runlength", "lock"] if args.metric == "all"
                else [args.metric])
     units = ["info", "coded"] if args.unit == "both" else [args.unit]
     for axis, by_code in series.items():

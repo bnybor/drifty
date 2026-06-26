@@ -29,9 +29,6 @@ target_include_directories(drifty_interface INTERFACE include)
 add_library(drifty_bare_obj OBJECT
     src/hybrid/encode.c
     src/hybrid/decode.c
-    src/hybrid/compare.c
-    src/hybrid/multi_decode.c
-    src/hybrid/multi_encode.c
     src/hybrid.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
@@ -49,8 +46,8 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # full archive still resolves libc at the consumer's final link.
 # The public API is the abstract surface in include/: the dt_ccode descriptor
 # (ccode.h) plus the dt_hybrid_* factories (hybrid.h). The engine functions
-# (dt_stream_*, dt_compare, dt_detect, dt_multi_*, dt_ccode_encode*) are private -
-# their headers live under src/hybrid/ - so they are localized, not exported.
+# (dt_stream_*, dt_ccode_encode*) are private - their headers live under
+# src/hybrid/ - so they are localized, not exported.
 set(_dt_public_symbols
     drifty_version
     dt_ccode_create dt_ccode_create_standard dt_ccode_destroy

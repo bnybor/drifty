@@ -27,10 +27,9 @@
 /*
  * dt_codesearch - selects, per (K, rate) family, the FIVE generator-polynomial
  * sets behind dt_standard_code so that all five are mutually distinguishable: a
- * decoder built for one preset must not lock onto a sibling preset's stream
- * (the property tested by test_cross_lock_within_family / test_lock_matches_
- * compare). It exists so those polynomials are reproducible rather than picked
- * by hand - re-run it to regenerate or re-verify the tables in src/hybrid/encode.c.
+ * decoder built for one preset must not lock onto a sibling preset's stream. It
+ * exists so those polynomials are reproducible rather than picked by hand -
+ * re-run it to regenerate or re-verify the tables in src/hybrid/encode.c.
  *
  * Pipeline, per family:
  *   1. Enumerate candidate generator tuples (strictly increasing masks, the
@@ -301,26 +300,6 @@ static double lock_agg(const dt_ccode *enc, const dt_ccode *dec,
     agg = take_min ? min_double(agg, v) : max_double(agg, v);
   }
   return agg;
-}
-
-/* Blind dt_compare similarity between two codes' clean streams (~1 same, ~0
- * different). The distinguishability tests cross-check lock against dt_compare,
- * so the selected five must separate under this metric too; this verifies the
- * final pick rather than driving it (dt_compare is the costlier metric). */
-static double compare_codes(const dt_ccode *a, const dt_ccode *b,
-                            const uint8_t *msg, int info_bits) {
-  const int n = dt_ccode_n(a), K = dt_ccode_k(a);
-  const int ca = info_bits * n, cb = info_bits * dt_ccode_n(b);
-  uint8_t *sa = xmalloc((size_t)ca);
-  uint8_t *sb = xmalloc((size_t)cb);
-  int st = 0;
-  dt_ccode_encode(a, msg, info_bits, &st, sa);
-  st = 0;
-  dt_ccode_encode(b, msg, info_bits, &st, sb);
-  double result = dt_compare(n, K, sa, (size_t)ca, sb, (size_t)cb);
-  free(sa);
-  free(sb);
-  return result;
 }
 
 /* -- selection ------------------------------------------------------------- */
@@ -621,31 +600,6 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
     printf("    %s%-5s /* d_free %d */\n", fam->enum_prefix, suffix[i],
            samp[sel[i]].dfree);
   }
-
-  /* Cross-check the pick under dt_compare (the other route the tests use):
-   * every off-diagonal pair must read as different, the diagonal as same.
-   * dt_compare needs a longer stream than lock selection to recover the dual
-   * space, so it gets its own dedicated message - independent of the (short)
-   * selection length. */
-  const int verify_bits = 2000;
-  uint8_t *vmsg = xmalloc((size_t)verify_bits);
-  uint64_t vrng = sample_seed ^ 0x5151515151515151ULL;
-  for (int i = 0; i < verify_bits; ++i) vmsg[i] = bit_sym((unsigned int)rng_next(&vrng));
-  double worst_compare_cross = 0.0, worst_compare_self = 1.0;
-  for (int i = 0; i < count; ++i) {
-    worst_compare_self = min_double(
-        worst_compare_self,
-        compare_codes(codes[sel[i]], codes[sel[i]], vmsg, verify_bits));
-    for (int j = i + 1; j < count; ++j)
-      worst_compare_cross = max_double(
-          worst_compare_cross,
-          compare_codes(codes[sel[i]], codes[sel[j]], vmsg, verify_bits));
-  }
-  free(vmsg);
-  printf("  dt_compare check: worst self=%.3f, worst cross=%.3f %s\n",
-         worst_compare_self, worst_compare_cross,
-         (worst_compare_self > 0.5 && worst_compare_cross < 0.5) ? "OK"
-                                                                 : "FAIL");
 
   for (int i = 0; i < nsamp; ++i) dt_ccode_destroy(codes[i]);
   free(codes);

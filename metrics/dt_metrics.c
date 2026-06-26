@@ -46,17 +46,12 @@
  * Each axis (flip, insert, delete) is swept independently with the other two
  * rates held at zero, so each curve isolates one channel impairment.
  *
- * Alongside the edit rate we report two confidence metrics, both in [0, 1]:
+ * Alongside the edit rate we report a confidence metric in [0, 1]:
  *
  *   mean_lock   - the decoder's own running estimate (see dt_decode_details'
  *                 c_lock) that it is tracking a valid coded stream,
  *                 averaged across the kept bits. It shows how confidently the
  *                 decoder stays synced as each impairment ramps up.
- *   mean_detect - the blind detector's confidence (dt_detect) that the stream
- *                 carries *any* rate-1/n, constraint-length-k code, with no
- *                 knowledge of the generators or the sent bits, averaged over a
- *                 sliding window across the received bits. It shows how
- *                 recognizable the coded structure stays as the channel ramps.
  *
  * Output is CSV on stdout (see header row); feed it to metrics/plot_metrics.py.
  *
@@ -288,8 +283,8 @@ static const char *AXIS_NAME[] = {"flip", "insert", "delete", "erase"};
 
 /* The metrics measured at each point. Run length is derived from the edit rate,
  * so it shares edit's grid and is not a separate entry here. */
-typedef enum { METRIC_EDIT, METRIC_LOCK, METRIC_DETECT } metric;
-static const char *METRIC_NAME[] = {"edit", "lock", "detect"};
+typedef enum { METRIC_EDIT, METRIC_LOCK } metric;
+static const char *METRIC_NAME[] = {"edit", "lock"};
 #define N_METRICS ((int)(sizeof(METRIC_NAME) / sizeof(METRIC_NAME[0])))
 
 /* What a run measures, selected by the command-line argument. The three decoding
@@ -301,10 +296,8 @@ static const char *METRIC_NAME[] = {"edit", "lock", "detect"};
  * decoder *expects* rather than what the channel does: it measures the penalty of
  * an over-pessimistic decoder when nothing is actually wrong. The decoding
  * variations use rate grids tuned to their curves; overmatched's run almost to 1,
- * since the decoder copes on clean data until its expected rate gets extreme. The
- * detect variation measures blind detection, which uses no decoder model and so
- * is computed once, shared by all. */
-typedef enum { VAR_PEGGED, VAR_MATCHED, VAR_DETECT, VAR_OVERMATCHED } variation;
+ * since the decoder copes on clean data until its expected rate gets extreme. */
+typedef enum { VAR_PEGGED, VAR_MATCHED, VAR_OVERMATCHED } variation;
 
 /* Channel rate grids - one per (variation, metric, impairment) - are read at
  * startup from a text file (load_grids; default metrics/rate_grids.txt) rather
@@ -336,7 +329,6 @@ static int parse_variation(const char *s) {
   if (strcmp(s, "pegged") == 0 || strcmp(s, "untuned") == 0) return VAR_PEGGED;
   if (strcmp(s, "matched") == 0 || strcmp(s, "tuned") == 0) return VAR_MATCHED;
   if (strcmp(s, "overmatched") == 0) return VAR_OVERMATCHED;
-  if (strcmp(s, "detect") == 0) return VAR_DETECT;
   return -1;
 }
 
@@ -424,14 +416,12 @@ typedef struct {
   int decision_depth;
   int max_drift;
   int warmup;
-  int detect_window;
-  int detect_step;
 } point_model;
 
 /* Per-trial partial sums; summed across a point's trials to form its CSV row. */
 typedef struct {
-  long long edits, ref_bits, lock_bits, detect_samples;
-  double lock_sum, detect_sum;
+  long long edits, ref_bits, lock_bits;
+  double lock_sum;
 } trial_result;
 
 static point_model make_model(const dt_ccode *code, axis channel_axis,
@@ -495,30 +485,14 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
     };
   }
   m.warmup = m.decision_depth;
-
-  /* Sliding-window detection. dt_detect collapses a whole buffer into one
-   * confidence value, so feeding it the entire stream would yield a single
-   * sample per trial. Instead we slide a short window across the received bits
-   * and average its detections, the per-window analog of mean_lock's per-bit
-   * average - it tracks how recognizable the coded structure stays along the
-   * stream. The window clears the code's dt_detect_min_len (30-95 bits here);
-   * 512 sits well above it and still gives many windows. Step by half a window
-   * so neighbors overlap. */
-  m.detect_window = 512;
-  const long detect_floor = dt_detect_min_len(m.code_n, m.constraint_len);
-  if (detect_floor > 0 && m.detect_window < detect_floor) {
-    m.detect_window = (int)detect_floor;
-  }
-  m.detect_step = m.detect_window / 2;
   return m;
 }
 
 /* Run one Monte-Carlo trial for a (code, axis, metric, rate) point with its own
- * PRNG stream seeded from `seed`, returning that trial's partial sums. The
- * metric selects which work the trial does: detection needs only the received
- * buffer (no decode), while edit distance and lock probability both come from a
- * single decode and each skips the other's post-processing. Each trial is fully
- * independent, so trials parallelize across cores (see main). */
+ * PRNG stream seeded from `seed`, returning that trial's partial sums. Edit
+ * distance and lock probability both come from a single decode; the metric
+ * selects which post-processing the trial does and each skips the other's. Each
+ * trial is fully independent, so trials parallelize across cores (see main). */
 static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                                   metric which_metric, double rate,
                                   int info_bits, uint64_t seed,
@@ -540,7 +514,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   uint8_t *message = xmalloc((size_t)info_bits);
   uint8_t *coded = xmalloc((size_t)((info_bits + m.constraint_len) * m.code_n));
 
-  trial_result r = {0, 0, 0, 0, 0.0, 0.0};
+  trial_result r = {0, 0, 0, 0.0};
   for (int i = 0; i < info_bits; ++i) {
     message[i] = bit_sym((unsigned int)rng_next(rng));
   }
@@ -551,25 +525,6 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   uint8_t *received = NULL;
   int received_len = apply_channel(coded, coded_len, channel_sub, channel_ins,
                                    channel_del, channel_erase, rng, &received);
-
-  if (which_metric == METRIC_DETECT) {
-    /* Blind detection, averaged over a sliding window: at each step, does this
-     * stretch still look like a rate-1/n, k code? dt_detect reads the buffer
-     * without modifying it and may report DT_UNDETERMINED (negative) on a window
-     * that lands too short; skip those. No decode is needed. */
-    for (int p = 0; p + m.detect_window <= received_len; p += m.detect_step) {
-      double detect = dt_detect(m.code_n, m.constraint_len, received + p,
-                                (size_t)m.detect_window);
-      if (detect >= 0.0) {
-        r.detect_sum += detect;
-        ++r.detect_samples;
-      }
-    }
-    free(received);
-    free(message);
-    free(coded);
-    return r;
-  }
 
   /* Edit distance and lock probability both come from one decode. Lock needs the
    * per-bit lock buffer; edit needs the banded-DP scratch - allocate only what
@@ -633,8 +588,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
 /* Format the CSV row for a point from its summed trial results. A point measures
  * one metric, so only that metric's value columns are filled; the others are
  * left blank for the plotter to skip. The trailing columns are, in order:
- * ref_bits, edit_distance, edit_rate, lock_bits, mean_lock, detect_samples,
- * mean_detect. */
+ * ref_bits, edit_distance, edit_rate, lock_bits, mean_lock. */
 static void format_row(char *out, size_t cap, const char *code_name,
                        metric which_metric, axis channel_axis, double rate,
                        const point_model *m, int trials, trial_result agg) {
@@ -647,18 +601,12 @@ static void format_row(char *out, size_t cap, const char *code_name,
   if (which_metric == METRIC_EDIT) {
     double edit_rate =
         agg.ref_bits > 0 ? (double)agg.edits / (double)agg.ref_bits : 0.0;
-    snprintf(out, cap, "%s,%lld,%lld,%.8g,,,,\n", head, agg.ref_bits, agg.edits,
+    snprintf(out, cap, "%s,%lld,%lld,%.8g,,\n", head, agg.ref_bits, agg.edits,
              edit_rate);
-  } else if (which_metric == METRIC_LOCK) {
+  } else { /* METRIC_LOCK */
     double mean_lock =
         agg.lock_bits > 0 ? agg.lock_sum / (double)agg.lock_bits : 0.0;
-    snprintf(out, cap, "%s,,,,%lld,%.8g,,\n", head, agg.lock_bits, mean_lock);
-  } else {
-    double mean_detect = agg.detect_samples > 0
-                             ? agg.detect_sum / (double)agg.detect_samples
-                             : 0.0;
-    snprintf(out, cap, "%s,,,,,,%lld,%.8g\n", head, agg.detect_samples,
-             mean_detect);
+    snprintf(out, cap, "%s,,,%lld,%.8g\n", head, agg.lock_bits, mean_lock);
   }
 }
 
@@ -674,21 +622,20 @@ int main(int argc, char **argv) {
   if (trials < 1 || info_bits < 1) {
     fprintf(stderr,
             "usage: %s [trials>=1] [info_bits>=1] [seed] "
-            "[variation=pegged|matched|overmatched|detect] [rate_grids_file]\n",
+            "[variation=pegged|matched|overmatched] [rate_grids_file]\n",
             argv[0]);
     return 2;
   }
 
   /* What to measure. The decoding variations (pegged, matched, overmatched)
-   * measure edit and lock; detect measures blind detection alone. pegged/matched
-   * accept the untuned/tuned aliases. */
+   * measure edit and lock; pegged/matched accept the untuned/tuned aliases. */
   variation var = VAR_PEGGED;
   if (argc > 4) {
     int parsed = parse_variation(argv[4]);
     if (parsed < 0) {
       fprintf(stderr,
               "dt_metrics: unknown variation '%s' "
-              "(use pegged|matched|overmatched|detect)\n",
+              "(use pegged|matched|overmatched)\n",
               argv[4]);
       return 2;
     }
@@ -702,13 +649,9 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  /* Metrics for this variation: the decoding variations measure edit and lock;
-   * detect measures detection alone. */
-  const metric DECODE_METRICS[] = {METRIC_EDIT, METRIC_LOCK};
-  const metric DETECT_METRICS[] = {METRIC_DETECT};
-  const metric *run_metrics =
-      var == VAR_DETECT ? DETECT_METRICS : DECODE_METRICS;
-  const int n_run_metrics = var == VAR_DETECT ? 1 : 2;
+  /* Metrics for every variation: edit distance and lock probability. */
+  const metric run_metrics[] = {METRIC_EDIT, METRIC_LOCK};
+  const int n_run_metrics = (int)(sizeof(run_metrics) / sizeof(run_metrics[0]));
 
   /* The trellis tables in a dt_ccode are read-only once built, so all threads
    * share the four codes; each decode allocates its own decoder state. */
@@ -767,8 +710,7 @@ int main(int argc, char **argv) {
 
   const char *var_name = var == VAR_MATCHED       ? "matched"
                          : var == VAR_OVERMATCHED ? "overmatched"
-                         : var == VAR_DETECT      ? "detect"
-                                             : "pegged";
+                                                  : "pegged";
 #ifdef _OPENMP
   fprintf(stderr, "running %d points x %d trials (%s) on %d threads ...\n",
           n_points, trials, var_name, omp_get_max_threads());
@@ -780,7 +722,7 @@ int main(int argc, char **argv) {
   printf(
       "code,metric,axis,rate,dec_p_flip,dec_p_ins,dec_p_del,dec_p_ovr_erase,"
       "decision_depth,max_drift,trials,ref_bits,edit_distance,edit_rate,"
-      "lock_bits,mean_lock,detect_samples,mean_detect\n");
+      "lock_bits,mean_lock\n");
   fflush(stdout);
 
   /* Fan every (point, trial) out as an independent task (collapse(2)), so a
@@ -789,7 +731,7 @@ int main(int argc, char **argv) {
    * seed derived from its flat (point, trial) index, so values are reproducible
    * regardless of thread count. Trials write into their own result slots; the
    * task that finishes a point's last trial (tracked by an atomic counter) sums
-   * the slots in trial order - keeping mean_lock/mean_detect bit-exact, free of
+   * the slots in trial order - keeping mean_lock bit-exact, free of
    * reduction-order wobble - and streams that point's row out (one writer at a
    * time; flush so the file grows as the sweep runs). */
   trial_result *results =
@@ -821,15 +763,13 @@ int main(int argc, char **argv) {
       if (left == 0) {
         const point_model m =
             make_model(codes[item.code_idx], item.channel_axis, item.rate, var);
-        trial_result agg = {0, 0, 0, 0, 0.0, 0.0};
+        trial_result agg = {0, 0, 0, 0.0};
         for (int t = 0; t < trials; ++t) {
           const trial_result *s = &results[(size_t)point * trials + t];
           agg.edits += s->edits;
           agg.ref_bits += s->ref_bits;
           agg.lock_bits += s->lock_bits;
-          agg.detect_samples += s->detect_samples;
           agg.lock_sum += s->lock_sum;
-          agg.detect_sum += s->detect_sum;
         }
         char row[256];
         format_row(row, sizeof(row), CODES[item.code_idx].name,

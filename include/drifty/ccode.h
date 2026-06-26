@@ -42,8 +42,8 @@ typedef struct dt_ccode dt_ccode;
 /* Ready-made codes. More output per input bit corrects more errors but uses
  * more bandwidth; when unsure, pick DT_CODE_K7_RATE_1_2. Each rate/K family is
  * a default plus a few alternates, all picked to be mutually distinguishable: a
- * decoder (or dt_compare) for one will not lock onto another's stream (see
- * dt_decode_details' c_lock). How many alternates a family has depends
+ * decoder for one will not lock onto another's stream. How many alternates a
+ * family has depends
  * on how many distinguishable codes its generator space actually holds - the
  * rate-1/2 families support three apiece, the rate-1/3 and rate-1/5 families
  * five. The alternates trade a little free distance for that separation. The

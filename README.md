@@ -1,57 +1,79 @@
 # drifty
 
-A small C library for **error correction on a bit stream**. You add redundancy
-when you encode; on the other end you decode and get your bits back with errors
-corrected — including bits that were **flipped, inserted, dropped, or lost**.
-Inserted and dropped bits normally knock an error-correcting code out of sync;
-this one stays aligned through them.
+A small C library for **forward error correction on a bit stream**. You add
+redundancy when you encode; on the other end you decode and recover your bits with
+errors corrected — including bits that were **flipped, inserted, dropped, or
+lost**. Inserted and dropped bits normally knock an error-correcting code out of
+sync; this one stays aligned through them.
 
-It works on a continuous stream: feed received bits in, read corrected bits out
-at a fixed delay, with no message lengths or frame boundaries to manage.
+It works on a continuous stream: feed received bits in, read corrected bits out at
+a fixed delay, with no message lengths or frame boundaries to manage.
 
-## API
+## Concepts
 
-Pick a code, encode your bits, then stream-decode the received bits.
+A **code** (`dt_ccode`) is the redundancy scheme — pick a ready-made one or define
+your own; the sender and receiver must use the same code. Encoding and decoding go
+through small **interfaces** you call by function pointer:
+
+- `dt_encoder` — turn input bits into coded bits.
+- `dt_decoder` — turn received bits back into input bits (a hard decision).
+- `dt_soft_decoder` — the same, but report per-bit *consistencies* rather than a
+  hard decision.
+
+drifty's convolutional, drift-tolerant codec — the **hybrid** codec — implements
+these interfaces; the `dt_hybrid_*_create` functions build one over a `dt_ccode`.
+
+Bits are carried one per byte as `dt_t` symbols: `DT_FALSE`, `DT_TRUE`, or
+`DT_ERASURE` to mark a received bit as lost (defined in `<drifty/bit.h>`).
+
+Everything you need is in one header:
 
 ```c
-#include "drifty/hybrid/drifty.h"
-
-/* 1. Pick a code (sender and receiver must use the same one). */
-dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
-/* or define your own: dt_ccode_create(K, generators, num_generators) */
-
-/* 2. Encode, in as many chunks as you like; carry `state` across calls. */
-int state = 0, len = 0;
-len += dt_ccode_encode(code, chunk1, n1, &state, out + len);
-len += dt_ccode_encode(code, chunk2, n2, &state, out + len);
-len += dt_ccode_encode_flush(code, &state, out + len);   /* finish the stream */
-
-/* 3. Decode the received bits. */
-dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_hybrid_stream_params){
-    .decision_depth = 40,   /* output delay; try ~6 * the code's K       */
-    .max_drift      = 4,    /* set 0 to correct flips only                */
-    .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
-});
-
-uint8_t decoded[OUT];
-int n = dt_stream_decode(d, in, n_in, decoded, NULL, OUT); /* feed + collect bits */
-/* ... repeat as more bits arrive ... */
-while (dt_stream_decode_flush(d, decoded, OUT) > 0)    /* drain at the end */
-    /* use the decoded bits */ ;
-
-dt_stream_decoder_destroy(d);
-dt_ccode_destroy(code);
+#include <drifty/hybrid.h>
 ```
 
-`dt_ccode` and `dt_stream_decoder` are opaque handles (`_create` / `_destroy`).
-Functions return `DT_OK` (0) or a count on success, or a negative `DT_ERR_*`
-code. Each bit is `DT_FALSE` or `DT_TRUE`, or `DT_ERASURE` to mark a received bit
-as lost. `dt_ccode_n()` gives output-bits-per-input-bit for sizing encode buffers.
+## Quick start
 
-The decoder starts producing output after a short delay (`decision_depth` bits),
-and it locks on whether you decode from the start of a stream or join one already
-in progress — so discard the first ~`decision_depth` decoded bits (or send a
-known preamble you can skip).
+```c
+/* 1. Pick a code (sender and receiver must agree). */
+dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+/* or roll your own: dt_ccode_create(K, generators, num_generators) */
+
+/* 2. Encode. Each interface is a vtable you call through: begin writes any
+ *    preamble, encode appends coded bits, finalize flushes the tail. */
+dt_encoder *enc = dt_hybrid_encoder_create(code);
+dt_t coded[CAP];                  /* size ~ (n_bits + K) * dt_ccode_n(code) */
+int clen  = enc->begin(enc, coded, CAP);
+clen     += enc->encode(enc, coded + clen, CAP - clen, bits, n_bits);
+clen     += enc->finalize(enc, coded + clen, CAP - clen);
+dt_hybrid_encoder_destroy(enc);
+
+/* 3. Decode the received bits. */
+dt_decoder *dec = dt_hybrid_decoder_create(code, &(dt_hybrid_stream_params){
+    .decision_depth = 40,   /* output delay; try ~6 * the code's K */
+    .max_drift      = 4,    /* set 0 to correct flips only         */
+    .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
+});
+dt_t out[OUT];
+int n  = dec->begin(dec, out, OUT);
+n     += dec->decode(dec, out + n, OUT - n, received, n_received);
+/* ... call decode again as more bits arrive ... */
+n     += dec->finalize(dec, out + n, OUT - n);   /* drain the tail at end-of-stream */
+dt_hybrid_decoder_destroy(dec);
+
+dt_ccode_destroy(code);   /* the code must outlive everything built from it */
+```
+
+`dt_ccode`, `dt_encoder`, and `dt_decoder` are made with `_create` and freed with
+`_destroy`. Every `begin` / `encode` / `decode` / `finalize` call returns the
+number of bits it wrote into the output buffer, or a negative value on a bad
+argument (such as too little room). `dt_ccode_n()` gives output-bits-per-input-bit
+for sizing buffers.
+
+The decoder produces output after a short delay (`decision_depth` bits) and locks
+on whether you start at the beginning of a stream or join one mid-flight — so
+discard the first ~`decision_depth` decoded bits (or send a known preamble you can
+skip).
 
 ## Decoder settings
 
@@ -70,82 +92,36 @@ You don't need exact probabilities — rough, order-of-magnitude values are fine
 only their relative sizes matter. They mainly control how readily the decoder
 assumes an inserted/dropped bit versus a plain flipped one:
 
-- **Insert/drop probability too low:** the decoder resists realigning and tries
-  to explain a real inserted/dropped bit as a run of flipped bits. A badly missed
-  one can throw it out of sync for a stretch. Lean this way only if inserts and
-  drops are genuinely rare.
+- **Insert/drop probability too low:** the decoder resists realigning and tries to
+  explain a real inserted/dropped bit as a run of flipped bits. A badly missed one
+  can throw it out of sync for a stretch. Lean this way only if inserts and drops
+  are genuinely rare.
 - **Insert/drop probability too high:** the decoder over-corrects, imagining
   inserts/drops to explain ordinary noise and adding a few extra errors. This
   degrades gently.
 
 When unsure, tune on representative data rather than chasing exact numbers.
 
-## Decoding against several codes at once
+## Soft decoding
 
-When you don't know which of a few candidate codes produced a stream — they
-share a rate and constraint length but differ in their generator polynomials —
-decode against all of them at once. For each output bit the multi-decoder
-combines the codes' decoded bits weighted by how well each code fits the stream,
-emitting the value the weight favours, and marks the bit `DT_ERASURE` when no
-code is locked or the weighted vote is too close to call.
+When a hard 0/1 isn't enough — for example to feed an outer code — a soft decoder
+reports, per bit position, a set of *consistencies* in `[0, 1]`: the goodness-of-fit
+of each hypothesis, not a probability split (they need not sum to 1).
 
 ```c
-const dt_ccode *codes[] = { code_a, code_b, code_c };   /* same rate */
-
-dt_multi_decoder *m = dt_multi_create(&(dt_multi_params){
-    .codes = codes, .codes_len = 3,
-    .stream = { .decision_depth = 40, .max_drift = 4,
-                .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01 },
-});
-
-uint8_t decoded[OUT];
-int which[OUT];                                /* winning code per bit, -1 = erased */
-int n = dt_multi_decode(m, in, n_in, decoded, which, OUT);  /* feed + collect bits */
-/* ... repeat as more bits arrive ... */
-while (dt_multi_decode_flush(m, decoded, OUT) > 0)        /* drain at the end */
-    /* use the decoded bits */ ;
-
-dt_multi_destroy(m);   /* frees the decoders it built; you still own the codes */
+dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &params);
+dt_soft_decoder_out soft[OUT];
+int n  = sd->begin(sd, NULL, 0);     /* the hybrid codec emits no preamble */
+n     += sd->decode(sd, soft + n, OUT - n, received, n_received);
+n     += sd->finalize(sd, soft + n, OUT - n);
+/* soft[i].c_true / c_false - consistency the bit was true / false
+ * soft[i].c_erasure        - consistency its value is unrecoverable
+ * soft[i].c_locked         - consistency the decoder is tracking this code   */
+dt_hybrid_soft_decoder_destroy(sd);
 ```
 
-`dt_multi_decoder` is an opaque handle. It builds one stream decoder per code from
-the shared `stream` settings, so the codes must share a rate (`dt_ccode_n`) and a
-constraint length (`dt_ccode_k`), and must outlive the multi-decoder. The optional
-`locked_decoder` array (here `which`) reports, per output bit, the index of the
-likeliest code or `-1` where the bit was erased. `lock_floor` / `lock_margin` set
-how confident the combiner must be — in the best code's absolute lock probability,
-and in the winning bit value's lead over the other as a share of the total
-likelihood weight — to commit a bit rather than abstain (defaults 0.6 and 0.2).
-
-## Encoding with a selectable code
-
-The sender's mirror of the multi-decoder. Hold a family of codes that share a
-rate and constraint length, and on each call encode with the one you pick by
-index. The encoder keeps a single state shared across the codes — which is well
-defined because a convolutional encoder's state depends only on the constraint
-length and the input bits, not the generator polynomials — so you can even switch
-codes partway through one message and the stream stays continuous.
-
-```c
-const dt_ccode *codes[] = { code_a, code_b, code_c };   /* same rate and K */
-
-dt_multi_encoder *e = dt_multi_encode_create(&(dt_multi_encode_params){
-    .codes = codes, .codes_len = 3,
-});
-
-uint8_t coded[OUT];
-int len  = dt_multi_encode(e, idx, bits, n_bits, coded, OUT);  /* emit codes[idx] */
-/* ... more chunks, optionally with a different idx ... */
-len += dt_multi_encode_flush(e, idx, coded + len, OUT - len);  /* finish the stream */
-
-dt_multi_encode_destroy(e);   /* you still own the codes */
-```
-
-`dt_multi_encoder` is an opaque handle. The codes must share a rate (`dt_ccode_n`)
-and a constraint length (`dt_ccode_k`) and must outlive the encoder, which borrows
-them (it copies the array, frees neither). Each call writes `n_bits * dt_ccode_n`
-bits for the selected code; `max_out` caps the write. Feed the resulting stream to
-a `dt_multi_decoder` over the same family to decode it without knowing the index.
+`dt_soft_decoder_out` also carries `c_invalid` and `c_absent`; the hybrid codec
+does not model those and leaves them 0.
 
 ## Build
 
@@ -153,6 +129,11 @@ a `dt_multi_decoder` over the same family to decode it without knowing the index
 cmake -S . -B build
 cmake --build build
 ```
+
+This produces `libdrifty.a` (self-contained) and `libdrifty_bare.a` (the
+freestanding core, with the few libc shims left for you to supply). Only the
+public API — `dt_ccode_*` and `dt_hybrid_*` — is exported; the engine internals
+are hidden.
 
 ## Test
 
@@ -162,14 +143,18 @@ ctest --test-dir build --output-on-failure
 
 ## Metrics
 
-A Monte-Carlo harness measures decoding-mistake rates against flip / insert /
-drop channels for each standard code — see [metrics/METRICS.md](metrics/METRICS.md).
+A Monte-Carlo harness measures decoding-mistake rates against flip / insert / drop
+/ erase channels for each standard code — see
+[metrics/METRICS.md](metrics/METRICS.md).
 
 ## Install
 
 ```sh
 cmake --install build --prefix /your/prefix
 ```
+
+Installs `libdrifty.a`, `libdrifty_bare.a`, and the public headers under
+`include/drifty/`.
 
 ## License
 

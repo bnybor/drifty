@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 /*
- * The freestanding core (encode.c, decode.c, compare.c) is built -nostdlib
+ * The freestanding core (encode.c, decode.c) is built -nostdlib
  * -ffreestanding -fno-builtin and must not pull in the C standard library
  * directly. It reaches the few libc facilities it needs through these dt_*
  * proxies instead, so this translation unit (stdlib.c) is the single, explicit

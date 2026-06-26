@@ -13,25 +13,22 @@ the other rates at zero, so each curve isolates one impairment.
 > whole remaining stream the way a position-by-position bit comparison would. A
 > clean decode scores 0; total failure approaches ~1 edit per info bit.
 
-The harness runs in four variations (see [Variations](#variations) and
-[Detection](#detection) below). Three measure decoding performance — `matched`,
-where the decoder anticipates the channel, `pegged`, where it does not, and
-`overmatched`, where the decoder braces for corruption that never comes (a clean
-channel) — and `detect` measures blind detection, which uses no decoder model.
-They write to `metrics/tuned/`, `metrics/untuned/`, `metrics/overmatched/`, and
-`metrics/detect/`.
+The harness runs in three variations (see [Variations](#variations) below), all
+measuring decoding performance — `matched`, where the decoder anticipates the
+channel, `pegged`, where it does not, and `overmatched`, where the decoder braces
+for corruption that never comes (a clean channel). They write to `metrics/tuned/`,
+`metrics/untuned/`, and `metrics/overmatched/`.
 
 ```sh
 # Build the harness (off by default) and run each variation to its own CSV.
 cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
 cmake --build build --target dt_metrics
 # dt_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
-#   variation = pegged|matched|overmatched|detect   (defaults: 50 1000 0xC0FFEE pegged)
+#   variation = pegged|matched|overmatched   (defaults: 50 1000 0xC0FFEE pegged)
 #   rate_grids_file defaults to metrics/rate_grids.txt (so run from the repo root)
 build/metrics/dt_metrics 30 4000 0xC0FFEE matched     > metrics/tuned/metrics.csv
 build/metrics/dt_metrics 30 4000 0xC0FFEE pegged      > metrics/untuned/metrics.csv
 build/metrics/dt_metrics 30 4000 0xC0FFEE overmatched > metrics/overmatched/metrics.csv
-build/metrics/dt_metrics 30 4000 0xC0FFEE detect      > metrics/detect/metrics.csv
 
 # Plot the metrics each CSV carries (one curve per code). Needs matplotlib:
 python3 -m venv .venv && .venv/bin/pip install matplotlib
@@ -40,11 +37,10 @@ python3 -m venv .venv && .venv/bin/pip install matplotlib
 .venv/bin/python metrics/plot_metrics.py metrics/tuned/metrics.csv   -o metrics/tuned/plots/   --match metrics/untuned/metrics.csv
 .venv/bin/python metrics/plot_metrics.py metrics/untuned/metrics.csv -o metrics/untuned/plots/ --match metrics/tuned/metrics.csv
 .venv/bin/python metrics/plot_metrics.py metrics/overmatched/metrics.csv -o metrics/overmatched/plots/
-.venv/bin/python metrics/plot_metrics.py metrics/detect/metrics.csv  -o metrics/detect/plots/ --metric detect
 ```
 
 All share a `seed`, so every run is reproducible. The corrupted-channel
-variations (`pegged`, `matched`, `detect`) also see the *same* channel
+variations (`pegged`, `matched`) also see the *same* channel
 realizations at a given (code, axis, rate), since the seed drives the impairments
 identically; `overmatched`'s channel is clean, so there its seed only drives the
 message. The decoding variations sample different rate grids — each tuned to its
@@ -68,11 +64,11 @@ grows as it runs), which means their order follows completion, not the code /
 axis / rate grid — sort the file if you want a stable order; the plotter is
 order-independent.
 
-By default the plotter writes, per axis, the four metrics below. The first two
+By default the plotter writes, per axis, the three metrics below. The first two
 are per info bit —
 `tuned/plots/{edit,runlen}_vs_{flip,insert,delete,erase}_per_info_bit.png` —
-and the two probabilities are unitless, one plot per axis —
-`tuned/plots/{lock,detect}_vs_{flip,insert,delete,erase}.png`:
+and the probability is unitless, one plot per axis —
+`tuned/plots/lock_vs_{flip,insert,delete,erase}.png`:
 
 - **edit** — edit distance per bit (mistakes per bit).
 - **runlen** — mean run length between edits (`1 / edit_rate`): the average bits
@@ -81,19 +77,16 @@ and the two probabilities are unitless, one plot per axis —
   value there is only a lower bound, not infinity).
 - **lock** — mean lock probability (0–1): the decoder's own running confidence
   that it is tracking a valid coded stream, averaged over the kept bits.
-- **detect** — mean detect probability (0–1): `dt_detect`'s blind confidence that
-  the received buffer still carries *any* rate-1/n, constraint-length-k code,
-  knowing neither the generators nor the sent bits.
 
 Plots are per info bit (the payload delivered, which is what matters). Run-length
 plots are linear with an adaptive y-cap (the low-rate spikes run off the top);
 pass `--logy` for a log axis or `--ymax N` to set the cap. Pass `--metric
-edit|runlength|lock|detect` to emit just one, or `--unit coded` for the
-per-coded-bit view (each edit/runlen curve ÷ its rate `n`, for comparing codes of
-different rates on the wire). Pass `--match OTHER.csv` to size each edit/runlen
-plot's y-axis to whichever of the two CSVs has the larger range, so the
-side-by-side untuned/tuned plots below share a vertical scale and compare by eye
-(the lock/detect plots already do, fixed to `[0, 1]`).
+edit|runlength|lock` to emit just one, or `--unit coded` for the per-coded-bit
+view (each edit/runlen curve ÷ its rate `n`, for comparing codes of different
+rates on the wire). Pass `--match OTHER.csv` to size each edit/runlen plot's
+y-axis to whichever of the two CSVs has the larger range, so the side-by-side
+untuned/tuned plots below share a vertical scale and compare by eye (the lock
+plots already do, fixed to `[0, 1]`).
 
 ## Variations
 
@@ -127,9 +120,7 @@ pegged one; the gap is widest where a pegged probability is most wrong (high
 flip/indel rates, where the matched edit knees fall much later and matched lock
 barely dips) and narrowest for erasures, which carry no wrong information for
 either model to misjudge. Overmatched is the opposite stress — the same matched
-model, but nothing wrong to correct. Blind detection is none of these — it uses
-no decoder model, lives in `metrics/detect/`, and is described under
-[Detection](#detection).
+model, but nothing wrong to correct.
 
 ## Generated plots
 
@@ -153,7 +144,7 @@ figure on the left and its **tuned** (matched-model) counterpart on the right �
 the same metric with the decoder unable to anticipate the channel (left) versus
 anticipating it (right). The captions describe the untuned (left) case, the
 harder one; see [Variations](#variations) for how the tuned column
-differs. Detection has its own section after these.
+differs.
 
 ### Edit distance (decoding mistakes per bit)
 
@@ -248,33 +239,3 @@ bits. The x-axes run to ~0.97 because nothing happens until the threshold.
 0.5 singularity with the high-redundancy `K5_R1_5` tail, and the erasure-lock
 collapse. The insert/erase edit and insert/delete lock plots are flat and omitted
 here; the full set is in `metrics/overmatched/plots/`.)
-
-## Detection
-
-Detection stands apart from the three decoding variations: it uses no decoder
-model, so it is computed once and lives in `metrics/detect/`, shared by both.
-
-`dt_detect`'s blind confidence that the received buffer still carries *any*
-rate-1/n, constraint-length-k code, knowing neither the generators nor the sent
-bits. It is the opposite story from lock: it falls well before decoding with a
-known code fails, so it is an early warning, not a correctness measure. How early
-is ordered by each code's relation window `n*(k+1)` (the span of bits its parity
-checks couple): the wider the window, the more of the impaired stream it spans,
-so the more fragile blind recovery is — the reverse of the decoder's redundancy
-ranking. The short-window codes (`K3_R1_2` most of all) therefore stay detectable
-far longer, which is why the flip/insert/delete axes run out past 20% to follow
-their descent while the wide-window codes have long since collapsed.
-
-Erasures follow the same window ordering and largely collapse: the wide-window
-codes (`K7_R1_3`, `K5_R1_5`) are gone below ~5%, `K7_R1_2` drops off by ~8%, and
-`K3_R1_2` holds longest — near 1.0 out to ~9%, then fading to zero by ~45%. Near
-total erasure a small **spurious rebound** appears, this time for the wide-window
-rate-1/3 and 1/5 codes (`K7_R1_3` reaches ~0.30, `K5_R1_5` ~0.11 at 92% erasure):
-with almost every symbol blanked the recovered parity-check space degenerates and
-trivially self-satisfies, so read that tail as a detector artifact, not a stream
-becoming detectable again.
-
-<img src="detect/plots/detect_vs_flip.png" alt="detection probability vs flip rate" width="600">
-<img src="detect/plots/detect_vs_insert.png" alt="detection probability vs insert rate" width="600">
-<img src="detect/plots/detect_vs_delete.png" alt="detection probability vs delete rate" width="600">
-<img src="detect/plots/detect_vs_erase.png" alt="detection probability vs erase rate" width="600">

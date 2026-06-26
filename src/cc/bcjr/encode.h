@@ -56,8 +56,9 @@ extern "C" {
  *
  *   // encode (in one or more chunks)
  *   int state = 0;
- *   int len  = dt_bcjr_encode(code, bits, n_bits, &state, out);
- *   len     += dt_bcjr_encode_flush(code, &state, out + len);
+ *   unsigned int unknown = 0;
+ *   int len  = dt_bcjr_encode(code, bits, n_bits, &state, &unknown, out);
+ *   len     += dt_bcjr_encode_flush(code, &state, &unknown, out + len);
  *
  *   dt_ccode_destroy(code);
  *
@@ -78,25 +79,31 @@ enum {
 /* ------------------------------------------------------------------------- */
 
 /*
- * Encode `n_bits` input bits (each DT_FALSE or DT_TRUE) into `out`, which needs
- * room for n_bits * dt_ccode_n(code) bits.
+ * Encode `n_bits` input bits into `out`, which needs room for
+ * n_bits * dt_ccode_n(code) bits. Each input is normally DT_FALSE or DT_TRUE; a
+ * non-boolean input (DT_ERASURE / DT_INVALID) has no recoverable value and is
+ * poisoned - the coded bits that would carry it are emitted as DT_INVALID, which
+ * the BCJR decoder reads back as a deliberate erasure at that position.
  *
- * Encoding is one continuous stream: keep an `int state`, set it to 0 before
- * the first call, and pass the same variable to every call - so you can encode
+ * Encoding is one continuous stream: keep an `int state` and an
+ * `unsigned int unknown` (the in-flight poison register), set both to 0 before
+ * the first call, and pass the same variables to every call - so you can encode
  * in as many chunks as you like. When the whole message is encoded, call
  * dt_bcjr_encode_flush() once to finish it.
  *
  * Returns the number of bits written, or DT_ERR_ARG.
  */
 int dt_bcjr_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
-                   int *state, uint8_t *out);
+                   int *state, unsigned int *unknown, uint8_t *out);
 
 /*
  * Finish an encoded stream: writes (K-1) * dt_ccode_n(code) trailing bits so the
- * decoder can recover the last input bits cleanly. Pass the same `state` you
- * gave dt_bcjr_encode(). Returns the number of bits written, or DT_ERR_ARG.
+ * decoder can recover the last input bits cleanly. Pass the same `state` and
+ * `unknown` you gave dt_bcjr_encode(). Returns the number of bits written, or
+ * DT_ERR_ARG.
  */
-int dt_bcjr_encode_flush(const dt_ccode *code, int *state, uint8_t *out);
+int dt_bcjr_encode_flush(const dt_ccode *code, int *state, unsigned int *unknown,
+                         uint8_t *out);
 
 #ifdef __cplusplus
 }

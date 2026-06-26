@@ -104,8 +104,9 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 static inline int bcjr_encode_all(const dt_ccode *code, const uint8_t *msg,
                                   int info_bits, uint8_t *out) {
   int state = 0;
-  int len = dt_bcjr_encode(code, msg, info_bits, &state, out);
-  len += dt_bcjr_encode_flush(code, &state, out + len);
+  unsigned int unknown = 0;
+  int len = dt_bcjr_encode(code, msg, info_bits, &state, &unknown, out);
+  len += dt_bcjr_encode_flush(code, &state, &unknown, out + len);
   return len;
 }
 

@@ -45,13 +45,15 @@
 /* -- encoder --------------------------------------------------------------- */
 
 typedef struct {
-  const dt_ccode *code; /* the convolutional code this encoder emits */
-  int state;            /* running shift-register state across encode calls */
+  const dt_ccode *code;  /* the convolutional code this encoder emits */
+  int state;             /* running shift-register state across encode calls */
+  unsigned int unknown;  /* in-flight poison register (non-boolean inputs) */
 } maxir_encoder;
 
 static int maxir_encoder_begin(dt_encoder *enc, dt_t *dst, size_t dst_len) {
   maxir_encoder *st = enc->data;
   st->state = 0; /* fresh stream; the convolutional encoder needs no preamble */
+  st->unknown = 0;
   (void)dst;
   (void)dst_len;
   return 0;
@@ -65,7 +67,8 @@ static int maxir_encoder_encode(dt_encoder *enc, dt_t *dst, size_t dst_len,
   if ((size_t)dt_ccode_n(st->code) * src_len > dst_len) {
     return DT_ERR_ARG;
   }
-  return dt_maxir_encode(st->code, src, (int)src_len, &st->state, dst);
+  return dt_maxir_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
+                        dst);
 }
 
 static int maxir_encoder_finalize(dt_encoder *enc, dt_t *dst, size_t dst_len) {
@@ -75,7 +78,7 @@ static int maxir_encoder_finalize(dt_encoder *enc, dt_t *dst, size_t dst_len) {
       dst_len) {
     return DT_ERR_ARG;
   }
-  return dt_maxir_encode_flush(st->code, &st->state, dst);
+  return dt_maxir_encode_flush(st->code, &st->state, &st->unknown, dst);
 }
 
 dt_encoder *dt_maxir_encoder_create(const dt_ccode *code) {
@@ -91,6 +94,7 @@ dt_encoder *dt_maxir_encoder_create(const dt_ccode *code) {
   }
   st->code = code;
   st->state = 0;
+  st->unknown = 0;
   enc->begin = maxir_encoder_begin;
   enc->encode = maxir_encoder_encode;
   enc->finalize = maxir_encoder_finalize;

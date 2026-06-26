@@ -75,9 +75,10 @@ static void test_encode_length_and_chunked(void) {
 
     /* Same message, encoded as 80 + 120 through one running state, then flush. */
     int state = 0, len_two = 0;
-    len_two += dt_bcjr_encode(code, msg, 80, &state, two);
-    len_two += dt_bcjr_encode(code, msg + 80, 120, &state, two + len_two);
-    int flushed = dt_bcjr_encode_flush(code, &state, two + len_two);
+    unsigned int unknown = 0;
+    len_two += dt_bcjr_encode(code, msg, 80, &state, &unknown, two);
+    len_two += dt_bcjr_encode(code, msg + 80, 120, &state, &unknown, two + len_two);
+    int flushed = dt_bcjr_encode_flush(code, &state, &unknown, two + len_two);
     len_two += flushed;
 
     check(PRESET_NAMES[p], 1);
@@ -103,20 +104,23 @@ static void test_encode_error_paths(void) {
   uint8_t msg[4] = {DT_TRUE, DT_FALSE, DT_TRUE, DT_TRUE};
   uint8_t out[64];
   int state = 0;
+  unsigned int unknown = 0;
 
   check("encode rejects NULL code",
-        dt_bcjr_encode(NULL, msg, 4, &state, out) == DT_ERR_ARG);
+        dt_bcjr_encode(NULL, msg, 4, &state, &unknown, out) == DT_ERR_ARG);
   check("encode rejects NULL state",
-        dt_bcjr_encode(code, msg, 4, NULL, out) == DT_ERR_ARG);
+        dt_bcjr_encode(code, msg, 4, NULL, &unknown, out) == DT_ERR_ARG);
+  check("encode rejects NULL unknown",
+        dt_bcjr_encode(code, msg, 4, &state, NULL, out) == DT_ERR_ARG);
   check("encode rejects NULL out",
-        dt_bcjr_encode(code, msg, 4, &state, NULL) == DT_ERR_ARG);
+        dt_bcjr_encode(code, msg, 4, &state, &unknown, NULL) == DT_ERR_ARG);
   check("encode rejects negative n_bits",
-        dt_bcjr_encode(code, msg, -1, &state, out) == DT_ERR_ARG);
+        dt_bcjr_encode(code, msg, -1, &state, &unknown, out) == DT_ERR_ARG);
   int bad_state = 999999;
   check("encode rejects out-of-range state",
-        dt_bcjr_encode(code, msg, 4, &bad_state, out) == DT_ERR_ARG);
+        dt_bcjr_encode(code, msg, 4, &bad_state, &unknown, out) == DT_ERR_ARG);
   check("flush rejects NULL code",
-        dt_bcjr_encode_flush(NULL, &state, out) == DT_ERR_ARG);
+        dt_bcjr_encode_flush(NULL, &state, &unknown, out) == DT_ERR_ARG);
 
   dt_ccode_destroy(code);
 }

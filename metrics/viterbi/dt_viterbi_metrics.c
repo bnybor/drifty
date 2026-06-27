@@ -50,7 +50,7 @@
  * Usage: dt_cc_viterbi_metrics [trials] [info_bits] [seed] [rate_grids_file]
  */
 
-#include <drifty/cc/encoders.h>
+#include <drifty/cc/encoder.h>
 #include <drifty/cc/viterbi.h>
 
 #include <limits.h>

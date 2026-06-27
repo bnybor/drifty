@@ -74,7 +74,7 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # full archive still resolves libc at the consumer's final link.
 # The public API is the abstract surface in include/: the dt_cc_code descriptor
 # (cc/ccode.h, implemented in src/cc/ccode.c), the standalone encoder
-# (cc/encoders.h, dt_cc_encoder_*) that every codec encodes through, plus the
+# (cc/encoder.h, dt_cc_encoder_*) that every codec encodes through, plus the
 # per-codec decoder factories dt_cc_hybrid_* / dt_cc_vindel_* / dt_cc_viterbi_* /
 # dt_cc_bcjr_* / dt_cc_maxir_* (cc/hybrid.h, cc/vindel.h, cc/viterbi.h, cc/bcjr.h,
 # cc/maxir.h). The encoder (src/cc/encoder/) is the only encoder

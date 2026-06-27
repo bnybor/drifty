@@ -43,8 +43,8 @@ extern "C" {
  *
  * Build a decoder over a dt_cc_code with the factory below, drive it through its
  * vtable (see decoder.h), and free it with the matching _destroy(). The code
- * must outlive everything built from it. To encode, use the standalone basic
- * encoder in <drifty/cc/encoders.h>.
+ * must outlive everything built from it. To encode, use the standalone encoder
+ * in <drifty/cc/encoder.h>.
  */
 
 /* Build a hard-decision Viterbi decoder over `code`. Takes no channel-model

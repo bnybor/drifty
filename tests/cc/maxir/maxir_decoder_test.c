@@ -37,7 +37,7 @@
 
 #include "dt_test_util.h"
 
-#include <drifty/cc/encoders.h>
+#include <drifty/cc/encoder.h>
 #include <drifty/cc/maxir.h>
 
 #include <math.h>

@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_CC_ENCODERS_H
-#define DRIFTY_CC_ENCODERS_H
+#ifndef DRIFTY_CC_ENCODER_H
+#define DRIFTY_CC_ENCODER_H
 
 #include <drifty/cc/ccode.h>
 #include <drifty/encoder.h>
@@ -48,4 +48,4 @@ void dt_cc_encoder_destroy(dt_encoder *enc);
 }
 #endif
 
-#endif /* DRIFTY_CC_ENCODERS_H */
+#endif /* DRIFTY_CC_ENCODER_H */

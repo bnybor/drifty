@@ -58,7 +58,7 @@
  * Usage: dt_cc_maxir_metrics [trials] [info_bits] [seed]
  */
 
-#include <drifty/cc/encoders.h>
+#include <drifty/cc/encoder.h>
 #include <drifty/cc/maxir.h>
 
 #include <limits.h>

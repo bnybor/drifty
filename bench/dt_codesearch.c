@@ -54,7 +54,7 @@
  * Usage: dt_codesearch [trials] [info_bits] [seed] [pool]
  */
 
-#include <drifty/cc/encoders.h>
+#include <drifty/cc/encoder.h>
 #include <drifty/cc/hybrid.h>
 
 #include <stdint.h>

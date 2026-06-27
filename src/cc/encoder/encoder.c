@@ -35,7 +35,7 @@
  * adapts it to the abstract interface.
  */
 
-#include <drifty/cc/encoders.h>
+#include <drifty/cc/encoder.h>
 
 #include "encode.h" /* dt_cc_encoder_encode + dt_cc_encoder_flush */
 #include <drifty/stdlib.h>

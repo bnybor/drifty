@@ -58,7 +58,7 @@
  * Usage: dt_metrics [trials] [info_bits] [seed]
  */
 
-#include <drifty/cc/encoders.h>
+#include <drifty/cc/encoder.h>
 #include <drifty/cc/hybrid.h>
 
 #include <limits.h>

@@ -52,7 +52,7 @@
  */
 
 #include <drifty/cc/bcjr.h>
-#include <drifty/cc/encoders.h>
+#include <drifty/cc/encoder.h>
 
 #include <limits.h>
 #include <stdint.h>

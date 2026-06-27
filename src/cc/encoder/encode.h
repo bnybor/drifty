@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_CC_ENCODER_H
-#define DRIFTY_CC_ENCODER_H
+#ifndef DRIFTY_CC_ENCODER_ENCODE_H
+#define DRIFTY_CC_ENCODER_ENCODE_H
 
 #include <stddef.h>
 #include <stdint.h>

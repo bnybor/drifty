@@ -225,14 +225,14 @@ static long edit_distance(const uint8_t *seq_a, int len_a, const uint8_t *seq_b,
 
 typedef struct {
   const char *name;
-  dt_standard_code which;
+  dt_cc_standard_code which;
 } code_entry;
 
 static const code_entry CODES[] = {
-    {"K3_R1_2", DT_CODE_K3_RATE_1_2},
-    {"K7_R1_2", DT_CODE_K7_RATE_1_2},
-    {"K7_R1_3", DT_CODE_K7_RATE_1_3},
-    {"K5_R1_5", DT_CODE_K5_RATE_1_5},
+    {"K3_R1_2", DT_CC_CODE_K3_RATE_1_2},
+    {"K7_R1_2", DT_CC_CODE_K7_RATE_1_2},
+    {"K7_R1_3", DT_CC_CODE_K7_RATE_1_3},
+    {"K5_R1_5", DT_CC_CODE_K5_RATE_1_5},
 };
 #define N_CODES ((int)(sizeof(CODES) / sizeof(CODES[0])))
 
@@ -369,7 +369,7 @@ static const double *metric_axis_rates(variation var, metric which_metric,
  * axis, rate, and variation but not the trial, so both the trial worker and the
  * row formatter derive them the same way from make_model(). */
 typedef struct {
-  dt_hybrid_stream_params params;
+  dt_cc_hybrid_stream_params params;
   int code_n;
   int constraint_len;
   int decision_depth;
@@ -383,11 +383,11 @@ typedef struct {
   double lock_sum;
 } trial_result;
 
-static point_model make_model(const dt_ccode *code, axis channel_axis,
+static point_model make_model(const dt_cc_code *code, axis channel_axis,
                               double rate, variation var) {
   point_model m;
-  m.code_n = dt_ccode_n(code);
-  m.constraint_len = dt_ccode_k(code);
+  m.code_n = dt_cc_code_n(code);
+  m.constraint_len = dt_cc_code_k(code);
   m.decision_depth = 8 * m.constraint_len;
 
   if (var != VAR_MATCHED && var != VAR_OVERMATCHED) {
@@ -398,7 +398,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
      * something increasingly unexpected - the stress this variation measures. */
     const double pegged = 0.01;
     m.max_drift = 8;
-    m.params = (dt_hybrid_stream_params){
+    m.params = (dt_cc_hybrid_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = pegged,
@@ -427,7 +427,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
     const double ins_total = (m.max_drift > 0)
                                  ? clamp_double(channel_ins, min_prob, drift_max)
                                  : 0.0;
-    m.params = (dt_hybrid_stream_params){
+    m.params = (dt_cc_hybrid_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = (channel_axis == AXIS_FLIP)
@@ -452,7 +452,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
  * distance and lock probability both come from a single decode; the metric
  * selects which post-processing the trial does and each skips the other's. Each
  * trial is fully independent, so trials parallelize across cores (see main). */
-static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
+static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
                                   metric which_metric, double rate,
                                   int info_bits, uint64_t seed,
                                   variation var) {
@@ -508,7 +508,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   int n_stream = 0, n_decoded;
   if (which_metric == METRIC_EDIT) {
     decoded = xmalloc((size_t)decoded_cap);
-    dt_decoder *dec = dt_hybrid_decoder_create(code, &m.params);
+    dt_decoder *dec = dt_cc_hybrid_decoder_create(code, &m.params);
     if (!dec) {
       fprintf(stderr, "dt_metrics: decoder create failed\n");
       exit(1);
@@ -532,10 +532,10 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                                (size_t)(decoded_cap - n_decoded));
       n_decoded = tail < 0 ? tail : n_decoded + tail;
     }
-    dt_hybrid_decoder_destroy(dec);
+    dt_cc_hybrid_decoder_destroy(dec);
   } else { /* METRIC_LOCK */
     soft = xmalloc((size_t)decoded_cap * sizeof(*soft));
-    dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &m.params);
+    dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &m.params);
     if (!sd) {
       fprintf(stderr, "dt_metrics: decoder create failed\n");
       exit(1);
@@ -557,7 +557,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                               (size_t)(decoded_cap - n_decoded));
       n_decoded = tail < 0 ? tail : n_decoded + tail;
     }
-    dt_hybrid_soft_decoder_destroy(sd);
+    dt_cc_hybrid_soft_decoder_destroy(sd);
   }
   free(received);
   if (n_decoded < 0) {
@@ -669,11 +669,11 @@ int main(int argc, char **argv) {
   const metric run_metrics[] = {METRIC_EDIT, METRIC_LOCK};
   const int n_run_metrics = (int)(sizeof(run_metrics) / sizeof(run_metrics[0]));
 
-  /* The trellis tables in a dt_ccode are read-only once built, so all threads
+  /* The trellis tables in a dt_cc_code are read-only once built, so all threads
    * share the four codes; each decode allocates its own decoder state. */
-  dt_ccode *codes[N_CODES];
+  dt_cc_code *codes[N_CODES];
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    codes[code_idx] = dt_ccode_create_standard(CODES[code_idx].which);
+    codes[code_idx] = dt_cc_code_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
       fprintf(stderr, "dt_metrics: code create failed\n");
       return 1;
@@ -806,7 +806,7 @@ int main(int argc, char **argv) {
   free(remaining);
   free(items);
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    dt_ccode_destroy(codes[code_idx]);
+    dt_cc_code_destroy(codes[code_idx]);
   }
   return 0;
 }

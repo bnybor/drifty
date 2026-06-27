@@ -26,13 +26,13 @@
 
 /*
  * Hybrid codec: realizes the abstract dt_decoder / dt_soft_decoder interfaces
- * over the drift-tolerant stream-decode engine. The code handle is dt_ccode
+ * over the drift-tolerant stream-decode engine. The code handle is dt_cc_code
  * throughout. To encode, use the standalone basic encoder (src/cc/basic_encoder).
  */
 
 #include <drifty/cc/hybrid.h>
 
-#include "hybrid/decode.h" /* dt_stream_decoder + dt_stream_decode* */
+#include "hybrid/decode.h" /* dt_cc_stream_decoder + dt_cc_stream_decode* */
 #include <drifty/stdlib.h>
 
 /* dt_bit is uint8_t (bit.h), the same element type the engine's decode buffers
@@ -49,27 +49,27 @@ static int hybrid_decoder_begin(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
 
 static int hybrid_decoder_decode(dt_decoder *dec, dt_bit *dst, size_t dst_len,
                                  const dt_bit *src, size_t src_len) {
-  dt_stream_decoder *sd = dec->data;
-  return dt_stream_decode(sd, src, (int)src_len, dst, NULL, (int)dst_len);
+  dt_cc_stream_decoder *sd = dec->data;
+  return dt_cc_stream_decode(sd, src, (int)src_len, dst, NULL, (int)dst_len);
 }
 
 static int hybrid_decoder_finalize(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
-  dt_stream_decoder *sd = dec->data;
-  return dt_stream_decode_flush(sd, dst, NULL, (int)dst_len);
+  dt_cc_stream_decoder *sd = dec->data;
+  return dt_cc_stream_decode_flush(sd, dst, NULL, (int)dst_len);
 }
 
-dt_decoder *dt_hybrid_decoder_create(const dt_ccode *code,
-                                     const dt_hybrid_stream_params *params) {
+dt_decoder *dt_cc_hybrid_decoder_create(const dt_cc_code *code,
+                                     const dt_cc_hybrid_stream_params *params) {
   if (!code || !params) {
     return NULL;
   }
-  dt_stream_decoder *sd = dt_stream_decoder_create(code, params);
+  dt_cc_stream_decoder *sd = dt_cc_stream_decoder_create(code, params);
   if (!sd) {
     return NULL;
   }
   dt_decoder *dec = dt_malloc(sizeof(*dec));
   if (!dec) {
-    dt_stream_decoder_destroy(sd);
+    dt_cc_stream_decoder_destroy(sd);
     return NULL;
   }
   dec->begin = hybrid_decoder_begin;
@@ -79,11 +79,11 @@ dt_decoder *dt_hybrid_decoder_create(const dt_ccode *code,
   return dec;
 }
 
-void dt_hybrid_decoder_destroy(dt_decoder *dec) {
+void dt_cc_hybrid_decoder_destroy(dt_decoder *dec) {
   if (!dec) {
     return;
   }
-  dt_stream_decoder_destroy(dec->data);
+  dt_cc_stream_decoder_destroy(dec->data);
   dt_free(dec);
 }
 
@@ -94,7 +94,7 @@ void dt_hybrid_decoder_destroy(dt_decoder *dec) {
  * it wins), so c_lost is the "erasure / unknowable value" consistency; it does
  * not separately model a stuck non-truth value or a per-position deletion, so
  * c_invalid and c_absent are left 0. */
-static void details_to_soft(const dt_decode_details *d,
+static void details_to_soft(const dt_cc_decode_details *d,
                             dt_soft_decoder_out *o) {
   o->c_false = d->c_false;
   o->c_true = d->c_true;
@@ -117,8 +117,8 @@ static int hybrid_soft_begin(dt_soft_decoder *dec, dt_bit *dst, size_t dst_len) 
 
 static int hybrid_soft_decode(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
                               size_t dst_len, const dt_bit *src, size_t src_len) {
-  dt_stream_decoder *sd = dec->data;
-  dt_decode_details chunk[HYBRID_SOFT_CHUNK];
+  dt_cc_stream_decoder *sd = dec->data;
+  dt_cc_decode_details chunk[HYBRID_SOFT_CHUNK];
   size_t written = 0;
   int fed = 0; /* feed src on the first collect only; drain on later ones */
   /* do/while, not while: src must be handed to the engine even when dst_len is
@@ -128,7 +128,7 @@ static int hybrid_soft_decode(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
     const size_t remain = dst_len - written;
     const int want =
         remain > HYBRID_SOFT_CHUNK ? HYBRID_SOFT_CHUNK : (int)remain;
-    const int got = dt_stream_decode(sd, fed ? NULL : src,
+    const int got = dt_cc_stream_decode(sd, fed ? NULL : src,
                                      fed ? 0 : (int)src_len, NULL, chunk, want);
     fed = 1;
     if (got < 0) {
@@ -147,14 +147,14 @@ static int hybrid_soft_decode(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
 
 static int hybrid_soft_finalize(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
                                 size_t dst_len) {
-  dt_stream_decoder *sd = dec->data;
-  dt_decode_details chunk[HYBRID_SOFT_CHUNK];
+  dt_cc_stream_decoder *sd = dec->data;
+  dt_cc_decode_details chunk[HYBRID_SOFT_CHUNK];
   size_t written = 0;
   while (written < dst_len) {
     const size_t remain = dst_len - written;
     const int want =
         remain > HYBRID_SOFT_CHUNK ? HYBRID_SOFT_CHUNK : (int)remain;
-    const int got = dt_stream_decode_flush(sd, NULL, chunk, want);
+    const int got = dt_cc_stream_decode_flush(sd, NULL, chunk, want);
     if (got < 0) {
       return got;
     }
@@ -169,18 +169,18 @@ static int hybrid_soft_finalize(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
   return (int)written;
 }
 
-dt_soft_decoder *dt_hybrid_soft_decoder_create(
-    const dt_ccode *code, const dt_hybrid_stream_params *params) {
+dt_soft_decoder *dt_cc_hybrid_soft_decoder_create(
+    const dt_cc_code *code, const dt_cc_hybrid_stream_params *params) {
   if (!code || !params) {
     return NULL;
   }
-  dt_stream_decoder *sd = dt_stream_decoder_create(code, params);
+  dt_cc_stream_decoder *sd = dt_cc_stream_decoder_create(code, params);
   if (!sd) {
     return NULL;
   }
   dt_soft_decoder *dec = dt_malloc(sizeof(*dec));
   if (!dec) {
-    dt_stream_decoder_destroy(sd);
+    dt_cc_stream_decoder_destroy(sd);
     return NULL;
   }
   dec->begin = hybrid_soft_begin;
@@ -190,10 +190,10 @@ dt_soft_decoder *dt_hybrid_soft_decoder_create(
   return dec;
 }
 
-void dt_hybrid_soft_decoder_destroy(dt_soft_decoder *dec) {
+void dt_cc_hybrid_soft_decoder_destroy(dt_soft_decoder *dec) {
   if (!dec) {
     return;
   }
-  dt_stream_decoder_destroy(dec->data);
+  dt_cc_stream_decoder_destroy(dec->data);
   dt_free(dec);
 }

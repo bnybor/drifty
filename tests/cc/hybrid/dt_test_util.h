@@ -180,16 +180,16 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 /* Encode `info_bits` message bits with the given standard code into out[]
  * (which must hold MAX_CODED(info_bits)), reporting the code's n and k. Returns
  * the coded length. */
-static inline size_t encode(dt_standard_code which, const uint8_t *msg,
+static inline size_t encode(dt_cc_standard_code which, const uint8_t *msg,
                             int info_bits, uint8_t *out, int *n, int *k) {
-  dt_ccode *code = dt_ccode_create_standard(which);
+  dt_cc_code *code = dt_cc_code_create_standard(which);
   assert(code);
-  *n = dt_ccode_n(code);
-  *k = dt_ccode_k(code);
+  *n = dt_cc_code_n(code);
+  *k = dt_cc_code_k(code);
   int state = 0;
-  int len = dt_ccode_encode(code, msg, info_bits, &state, out);
-  len += dt_ccode_encode_flush(code, &state, out + len);
-  dt_ccode_destroy(code);
+  int len = dt_cc_code_encode(code, msg, info_bits, &state, out);
+  len += dt_cc_code_encode_flush(code, &state, out + len);
+  dt_cc_code_destroy(code);
   return (size_t)len;
 }
 
@@ -258,11 +258,11 @@ static inline size_t prepend_prefix(size_t plen, const uint8_t *body,
 /* -- decoder helpers ------------------------------------------------------- */
 
 /* Build a decoder from positional settings (keeps tests concise). */
-static inline dt_stream_decoder *make_decoder(const dt_ccode *code, int depth,
+static inline dt_cc_stream_decoder *make_decoder(const dt_cc_code *code, int depth,
                                               int drift, double p_flip,
                                               double p_ins, double p_del,
                                               double p_erase) {
-  dt_hybrid_stream_params params = {
+  dt_cc_hybrid_stream_params params = {
       .decision_depth = depth,
       .max_drift = drift,
       .p_flip = p_flip,
@@ -273,23 +273,23 @@ static inline dt_stream_decoder *make_decoder(const dt_ccode *code, int depth,
       .p_del = p_del,
       .p_ovr_erase = p_erase,
   };
-  return dt_stream_decoder_create(code, &params);
+  return dt_cc_stream_decoder_create(code, &params);
 }
 
 /* Push a whole received buffer through the streaming decoder in small chunks,
  * then drain. Returns the number of decoded bits collected. */
-static inline int stream_decode_all(dt_stream_decoder *sd, const uint8_t *rx,
+static inline int stream_decode_all(dt_cc_stream_decoder *sd, const uint8_t *rx,
                                     int rl, uint8_t *out, int cap) {
   int got = 0;
   for (int pos = 0; pos < rl;) {
     int chunk = (rl - pos < 41) ? (rl - pos) : 41;
-    int w = dt_stream_decode(sd, rx + pos, chunk, out + got, NULL, cap - got);
+    int w = dt_cc_stream_decode(sd, rx + pos, chunk, out + got, NULL, cap - got);
     assert(w >= 0);
     got += w;
     pos += chunk;
   }
   for (;;) {
-    int w = dt_stream_decode_flush(sd, out + got, NULL, cap - got);
+    int w = dt_cc_stream_decode_flush(sd, out + got, NULL, cap - got);
     assert(w >= 0);
     if (w == 0) break;
     got += w;
@@ -301,20 +301,20 @@ static inline int stream_decode_all(dt_stream_decoder *sd, const uint8_t *rx,
  * `dec` at the given decision depth, and return the mean lock probability over
  * the settled second half. When enc != dec this measures whether one code's
  * stream is mistaken for the other's. */
-static inline double decoder_lock_mean(const dt_ccode *enc, const dt_ccode *dec,
+static inline double decoder_lock_mean(const dt_cc_code *enc, const dt_cc_code *dec,
                                        const uint8_t *msg, int info_bits,
                                        int depth) {
-  int clen = info_bits * dt_ccode_n(enc);
+  int clen = info_bits * dt_cc_code_n(enc);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dt_ccode_encode(enc, msg, info_bits, &st, coded);
+  dt_cc_code_encode(enc, msg, info_bits, &st, coded);
 
-  dt_stream_decoder *sd = make_decoder(dec, depth, 4, 0.01, 0.01, 0.01, 0.0);
+  dt_cc_stream_decoder *sd = make_decoder(dec, depth, 4, 0.01, 0.01, 0.01, 0.0);
   assert(sd != NULL);
   int cap = info_bits + 64;
   uint8_t *out = malloc((size_t)cap);
-  dt_decode_details *details = malloc((size_t)cap * sizeof(dt_decode_details));
-  int got = dt_stream_decode(sd, coded, clen, out, details, cap);
+  dt_cc_decode_details *details = malloc((size_t)cap * sizeof(dt_cc_decode_details));
+  int got = dt_cc_stream_decode(sd, coded, clen, out, details, cap);
   assert(got > 0);
 
   double sum = 0.0;
@@ -324,7 +324,7 @@ static inline double decoder_lock_mean(const dt_ccode *enc, const dt_ccode *dec,
     ++count;
   }
 
-  dt_stream_decoder_destroy(sd);
+  dt_cc_stream_decoder_destroy(sd);
   free(coded);
   free(out);
   free(details);

@@ -92,7 +92,7 @@ plots already do, fixed to `[0, 1]`).
 
 The decoding metrics — edit distance, run length, lock — come in three variations
 that differ in the decoder's channel model: what the decoder believes about the
-impairment it is facing. The codes and seed are the same; the `dt_hybrid_stream_params`
+impairment it is facing. The codes and seed are the same; the `dt_cc_hybrid_stream_params`
 probabilities the decoder is built with change (and, for `overmatched`, the
 channel goes clean), and because that reshapes the curves, each variation samples
 its **own rate grid** tuned to where its curves actually move.

@@ -26,7 +26,7 @@
 
 /*
  * Tests for the viterbi codec - a plain Viterbi hard-decision decoder - through
- * its encoder (dt_viterbi_encode) and streaming decoder (dt_viterbi_stream_*):
+ * its encoder (dt_cc_viterbi_encode) and streaming decoder (dt_cc_viterbi_stream_*):
  * chunked encoding, clean decoding, flip correction, erasure handling, the
  * standard presets, and argument handling. Bits crossing the API are dt_bit
  * symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
@@ -50,10 +50,10 @@ static const unsigned int GENERATORS[] = {037, 033, 025, 027, 035};
  * must match encoding the whole message in one call, and end in state 0. */
 static void test_encode_stream(void) {
   printf("test_encode_stream\n");
-  dt_ccode *code = dt_ccode_create(K, GENERATORS, N_GEN);
+  dt_cc_code *code = dt_cc_code_create(K, GENERATORS, N_GEN);
   REQUIRE("code created", code != NULL);
-  check("code n", dt_ccode_n(code) == N_GEN);
-  check("code k", dt_ccode_k(code) == K);
+  check("code n", dt_cc_code_n(code) == N_GEN);
+  check("code k", dt_cc_code_k(code) == K);
 
   const int n_info = 200;
   uint8_t *msg = malloc((size_t)n_info);
@@ -64,20 +64,20 @@ static void test_encode_stream(void) {
 
   uint8_t *ref = malloc((size_t)total_len);
   int rstate = 0, ri = 0;
-  ri += dt_viterbi_encode(code, msg, n_info, &rstate, ref);
-  ri += dt_viterbi_encode_flush(code, &rstate, ref + ri);
+  ri += dt_cc_viterbi_encode(code, msg, n_info, &rstate, ref);
+  ri += dt_cc_viterbi_encode_flush(code, &rstate, ref + ri);
   check("one-shot length and end state", ri == total_len && rstate == 0);
 
   uint8_t *out = malloc((size_t)total_len);
   int state = 0, oi = 0;
   const int n1 = 80, n2 = n_info - n1;
-  int w = dt_viterbi_encode(code, msg, n1, &state, out);
+  int w = dt_cc_viterbi_encode(code, msg, n1, &state, out);
   check("chunk 1 length", w == n1 * N_GEN);
   oi += w;
-  w = dt_viterbi_encode(code, msg + n1, n2, &state, out + oi);
+  w = dt_cc_viterbi_encode(code, msg + n1, n2, &state, out + oi);
   check("chunk 2 length", w == n2 * N_GEN);
   oi += w;
-  w = dt_viterbi_encode_flush(code, &state, out + oi);
+  w = dt_cc_viterbi_encode_flush(code, &state, out + oi);
   check("flush length", w == FLUSH * N_GEN);
   oi += w;
 
@@ -88,14 +88,14 @@ static void test_encode_stream(void) {
   free(out);
   free(ref);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* A clean continuously-encoded stream, pushed through the decoder in small
  * chunks, must come back out exactly - from bit 0, no warm-up. */
 static void test_stream_clean(void) {
   printf("test_stream_clean\n");
-  dt_ccode *code = dt_ccode_create(K, GENERATORS, N_GEN);
+  dt_cc_code *code = dt_cc_code_create(K, GENERATORS, N_GEN);
   REQUIRE("code created", code != NULL);
 
   const int n_info = 300;
@@ -105,7 +105,7 @@ static void test_stream_clean(void) {
   uint8_t *coded = malloc((size_t)(n_info + FLUSH) * N_GEN);
   int clen = viterbi_encode_all(code, msg, n_info, coded);
 
-  dt_viterbi_stream_decoder *sd = dt_viterbi_stream_decoder_create(code);
+  dt_cc_viterbi_stream_decoder *sd = dt_cc_viterbi_stream_decoder_create(code);
   REQUIRE("decoder created", sd != NULL);
 
   uint8_t *outbuf = malloc((size_t)n_info + 16);
@@ -117,11 +117,11 @@ static void test_stream_clean(void) {
          FLUSH, errors);
   check("clean stream recovered exactly", got == n_info + FLUSH && errors == 0);
 
-  dt_viterbi_stream_decoder_destroy(sd);
+  dt_cc_viterbi_stream_decoder_destroy(sd);
   free(outbuf);
   free(coded);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* A clean stream with a burst of received bits marked erased: an erasure gives
@@ -129,7 +129,7 @@ static void test_stream_clean(void) {
  * recovers the message. */
 static void test_stream_erasures(void) {
   printf("test_stream_erasures\n");
-  dt_ccode *code = dt_ccode_create(K, GENERATORS, N_GEN);
+  dt_cc_code *code = dt_cc_code_create(K, GENERATORS, N_GEN);
   REQUIRE("code created", code != NULL);
 
   const int n_info = 300;
@@ -140,7 +140,7 @@ static void test_stream_erasures(void) {
   int clen = viterbi_encode_all(code, msg, n_info, rx);
   for (int i = 700; i < 720; ++i) rx[i] = DT_ERASURE; /* 20-bit burst */
 
-  dt_viterbi_stream_decoder *sd = dt_viterbi_stream_decoder_create(code);
+  dt_cc_viterbi_stream_decoder *sd = dt_cc_viterbi_stream_decoder_create(code);
   REQUIRE("decoder created", sd != NULL);
 
   uint8_t *outbuf = malloc((size_t)n_info + 16);
@@ -152,18 +152,18 @@ static void test_stream_erasures(void) {
   check("recovered through erasure burst",
         got == n_info + FLUSH && errors == 0);
 
-  dt_viterbi_stream_decoder_destroy(sd);
+  dt_cc_viterbi_stream_decoder_destroy(sd);
   free(outbuf);
   free(rx);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Scattered bit flips are corrected: the survivor path stays on the true
  * codeword as long as the errors are within the code's correction power. */
 static void test_stream_flips(void) {
   printf("test_stream_flips\n");
-  dt_ccode *code = dt_ccode_create(K, GENERATORS, N_GEN);
+  dt_cc_code *code = dt_cc_code_create(K, GENERATORS, N_GEN);
   REQUIRE("code created", code != NULL);
 
   const int n_info = 300;
@@ -178,7 +178,7 @@ static void test_stream_flips(void) {
   for (int i = 0; i < nflip; ++i)
     rx[flips[i]] ^= DT_VALUE; /* toggle DT_TRUE <-> DT_FALSE */
 
-  dt_viterbi_stream_decoder *sd = dt_viterbi_stream_decoder_create(code);
+  dt_cc_viterbi_stream_decoder *sd = dt_cc_viterbi_stream_decoder_create(code);
   REQUIRE("decoder created", sd != NULL);
 
   uint8_t *outbuf = malloc((size_t)n_info + 16);
@@ -189,20 +189,20 @@ static void test_stream_flips(void) {
   printf("  %d flips, decoded %d bits, errors=%d\n", nflip, got, errors);
   check("flips corrected", got == n_info + FLUSH && errors == 0);
 
-  dt_viterbi_stream_decoder_destroy(sd);
+  dt_cc_viterbi_stream_decoder_destroy(sd);
   free(outbuf);
   free(rx);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* A built-in standard code (K=7 rate 1/2) encodes and decodes cleanly. */
 static void test_standard_code(void) {
   printf("test_standard_code\n");
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  check("standard code n", dt_ccode_n(code) == 2);
-  check("standard code k", dt_ccode_k(code) == 7);
+  check("standard code n", dt_cc_code_n(code) == 2);
+  check("standard code k", dt_cc_code_k(code) == 7);
 
   const int n_info = 150;
   uint8_t *msg = malloc((size_t)n_info);
@@ -211,7 +211,7 @@ static void test_standard_code(void) {
   uint8_t *coded = malloc((size_t)(n_info + 6) * 2);
   int clen = viterbi_encode_all(code, msg, n_info, coded);
 
-  dt_viterbi_stream_decoder *sd = dt_viterbi_stream_decoder_create(code);
+  dt_cc_viterbi_stream_decoder *sd = dt_cc_viterbi_stream_decoder_create(code);
   REQUIRE("decoder created", sd != NULL);
 
   uint8_t *outbuf = malloc((size_t)n_info + 16);
@@ -223,13 +223,13 @@ static void test_standard_code(void) {
   check("standard code recovered exactly", got == n_info + 6 && errors == 0);
 
   check("bad preset rejected",
-        dt_ccode_create_standard((dt_standard_code)999) == NULL);
+        dt_cc_code_create_standard((dt_cc_standard_code)999) == NULL);
 
-  dt_viterbi_stream_decoder_destroy(sd);
+  dt_cc_viterbi_stream_decoder_destroy(sd);
   free(outbuf);
   free(coded);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Every standard preset (the four defaults plus their alternates) must create,
@@ -237,26 +237,26 @@ static void test_standard_code(void) {
 static void test_all_presets(void) {
   printf("test_all_presets\n");
   struct {
-    dt_standard_code code;
+    dt_cc_standard_code code;
     int n, k;
   } presets[] = {
-      {DT_CODE_K3_RATE_1_2, 2, 3},      {DT_CODE_K3_RATE_1_2_ALT1, 2, 3},
-      {DT_CODE_K3_RATE_1_2_ALT2, 2, 3}, {DT_CODE_K7_RATE_1_2, 2, 7},
-      {DT_CODE_K7_RATE_1_2_ALT1, 2, 7}, {DT_CODE_K7_RATE_1_2_ALT2, 2, 7},
-      {DT_CODE_K7_RATE_1_3, 3, 7},      {DT_CODE_K7_RATE_1_3_ALT1, 3, 7},
-      {DT_CODE_K7_RATE_1_3_ALT2, 3, 7}, {DT_CODE_K7_RATE_1_3_ALT3, 3, 7},
-      {DT_CODE_K7_RATE_1_3_ALT4, 3, 7}, {DT_CODE_K5_RATE_1_5, 5, 5},
-      {DT_CODE_K5_RATE_1_5_ALT1, 5, 5}, {DT_CODE_K5_RATE_1_5_ALT2, 5, 5},
-      {DT_CODE_K5_RATE_1_5_ALT3, 5, 5}, {DT_CODE_K5_RATE_1_5_ALT4, 5, 5},
+      {DT_CC_CODE_K3_RATE_1_2, 2, 3},      {DT_CC_CODE_K3_RATE_1_2_ALT1, 2, 3},
+      {DT_CC_CODE_K3_RATE_1_2_ALT2, 2, 3}, {DT_CC_CODE_K7_RATE_1_2, 2, 7},
+      {DT_CC_CODE_K7_RATE_1_2_ALT1, 2, 7}, {DT_CC_CODE_K7_RATE_1_2_ALT2, 2, 7},
+      {DT_CC_CODE_K7_RATE_1_3, 3, 7},      {DT_CC_CODE_K7_RATE_1_3_ALT1, 3, 7},
+      {DT_CC_CODE_K7_RATE_1_3_ALT2, 3, 7}, {DT_CC_CODE_K7_RATE_1_3_ALT3, 3, 7},
+      {DT_CC_CODE_K7_RATE_1_3_ALT4, 3, 7}, {DT_CC_CODE_K5_RATE_1_5, 5, 5},
+      {DT_CC_CODE_K5_RATE_1_5_ALT1, 5, 5}, {DT_CC_CODE_K5_RATE_1_5_ALT2, 5, 5},
+      {DT_CC_CODE_K5_RATE_1_5_ALT3, 5, 5}, {DT_CC_CODE_K5_RATE_1_5_ALT4, 5, 5},
   };
   const int np = (int)(sizeof(presets) / sizeof(presets[0]));
 
   int all_ok = 1;
   for (int idx = 0; idx < np; ++idx) {
-    dt_ccode *code = dt_ccode_create_standard(presets[idx].code);
+    dt_cc_code *code = dt_cc_code_create_standard(presets[idx].code);
     REQUIRE("preset created", code != NULL);
-    if (dt_ccode_n(code) != presets[idx].n ||
-        dt_ccode_k(code) != presets[idx].k) {
+    if (dt_cc_code_n(code) != presets[idx].n ||
+        dt_cc_code_k(code) != presets[idx].k) {
       all_ok = 0;
     }
 
@@ -266,7 +266,7 @@ static void test_all_presets(void) {
     uint8_t *coded = malloc((size_t)(n_info + kk) * presets[idx].n);
     int clen = viterbi_encode_all(code, msg, n_info, coded);
 
-    dt_viterbi_stream_decoder *sd = dt_viterbi_stream_decoder_create(code);
+    dt_cc_viterbi_stream_decoder *sd = dt_cc_viterbi_stream_decoder_create(code);
     REQUIRE("preset decoder created", sd != NULL);
     int cap = n_info + 32;
     uint8_t *out = malloc((size_t)cap);
@@ -277,10 +277,10 @@ static void test_all_presets(void) {
       all_ok = 0;
     }
 
-    dt_viterbi_stream_decoder_destroy(sd);
+    dt_cc_viterbi_stream_decoder_destroy(sd);
     free(out);
     free(coded);
-    dt_ccode_destroy(code);
+    dt_cc_code_destroy(code);
   }
   printf("  %d presets create, report rate/K, and round-trip cleanly\n", np);
   check("all presets round-trip cleanly", all_ok);
@@ -289,39 +289,39 @@ static void test_all_presets(void) {
 static void test_error_paths(void) {
   printf("test_error_paths\n");
   /* Code creation rejects bad arguments by returning NULL. */
-  check("create rejects K<2", dt_ccode_create(1, GENERATORS, N_GEN) == NULL);
-  check("create rejects n<1", dt_ccode_create(K, GENERATORS, 0) == NULL);
-  check("dt_ccode_n(NULL) is -1", dt_ccode_n(NULL) == -1);
+  check("create rejects K<2", dt_cc_code_create(1, GENERATORS, N_GEN) == NULL);
+  check("create rejects n<1", dt_cc_code_create(K, GENERATORS, 0) == NULL);
+  check("dt_cc_code_n(NULL) is -1", dt_cc_code_n(NULL) == -1);
 
-  dt_ccode *code = dt_ccode_create(K, GENERATORS, N_GEN);
+  dt_cc_code *code = dt_cc_code_create(K, GENERATORS, N_GEN);
   REQUIRE("code created", code != NULL);
 
   /* Encoder rejects an out-of-range carried-in state. */
   uint8_t bit = DT_TRUE, obuf[N_GEN];
   int badstate = 1 << 20;
   check("encode rejects bad state",
-        dt_viterbi_encode(code, &bit, 1, &badstate, obuf) == DT_ERR_ARG);
+        dt_cc_viterbi_encode(code, &bit, 1, &badstate, obuf) == DT_CC_ERR_ARG);
 
   /* Decoder creation rejects a null code (it takes no other arguments). */
   check("decoder rejects null code",
-        dt_viterbi_stream_decoder_create(NULL) == NULL);
-  dt_viterbi_stream_decoder_destroy(NULL); /* must not crash */
+        dt_cc_viterbi_stream_decoder_create(NULL) == NULL);
+  dt_cc_viterbi_stream_decoder_destroy(NULL); /* must not crash */
   check("destroy(NULL) is safe", 1);
 
-  dt_viterbi_stream_decoder *sd = dt_viterbi_stream_decoder_create(code);
+  dt_cc_viterbi_stream_decoder *sd = dt_cc_viterbi_stream_decoder_create(code);
   REQUIRE("decoder created", sd != NULL);
 
   /* Streaming decode argument checks. */
   uint8_t out8 = 0;
   check("decode rejects null decoder",
-        dt_viterbi_stream_decode(NULL, &bit, 1, &out8, 1) == DT_ERR_ARG);
+        dt_cc_viterbi_stream_decode(NULL, &bit, 1, &out8, 1) == DT_CC_ERR_ARG);
   check("decode rejects null input",
-        dt_viterbi_stream_decode(sd, NULL, 1, &out8, 1) == DT_ERR_ARG);
+        dt_cc_viterbi_stream_decode(sd, NULL, 1, &out8, 1) == DT_CC_ERR_ARG);
   check("flush rejects null decoder",
-        dt_viterbi_stream_decode_flush(NULL, &out8, 1) == DT_ERR_ARG);
+        dt_cc_viterbi_stream_decode_flush(NULL, &out8, 1) == DT_CC_ERR_ARG);
 
-  dt_viterbi_stream_decoder_destroy(sd);
-  dt_ccode_destroy(code);
+  dt_cc_viterbi_stream_decoder_destroy(sd);
+  dt_cc_code_destroy(code);
 }
 
 int main(void) {

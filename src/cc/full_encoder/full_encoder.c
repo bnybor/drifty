@@ -28,7 +28,7 @@
  * Full encoder: realizes the abstract dt_encoder interface over a standalone
  * convolutional encode engine (encode.c in this directory) that also carries
  * non-boolean inputs (DT_ERASURE / DT_INVALID) through to marked coded bits. The
- * code handle is dt_ccode throughout. Like the basic encoder this is
+ * code handle is dt_cc_code throughout. Like the basic encoder this is
  * self-contained - it shares no engine with maxir, bcjr, or any other codec.
  *
  * The encode engine is complete; this file is just the vtable plumbing that
@@ -37,7 +37,7 @@
 
 #include <drifty/cc/encoders.h>
 
-#include "encode.h" /* dt_full_encode + dt_full_encode_flush */
+#include "encode.h" /* dt_cc_full_encode + dt_cc_full_encode_flush */
 #include <drifty/stdlib.h>
 
 /* dt_bit is uint8_t (bit.h), the same element type the engine's encode buffers
@@ -46,7 +46,7 @@
 /* -- encoder --------------------------------------------------------------- */
 
 typedef struct {
-  const dt_ccode *code; /* the convolutional code this encoder emits */
+  const dt_cc_code *code; /* the convolutional code this encoder emits */
   int state;            /* running shift-register state across encode calls */
   unsigned int unknown; /* in-flight poison register (non-boolean inputs) */
 } cc_full_encoder;
@@ -65,24 +65,24 @@ static int cc_full_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
   cc_full_encoder *st = enc->data;
   /* The engine writes src_len * n coded bits and does not bound-check, so gate
    * it on the caller's capacity here. */
-  if ((size_t)dt_ccode_n(st->code) * src_len > dst_len) {
-    return DT_ERR_ARG;
+  if ((size_t)dt_cc_code_n(st->code) * src_len > dst_len) {
+    return DT_CC_ERR_ARG;
   }
-  return dt_full_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
+  return dt_cc_full_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
                         dst);
 }
 
 static int cc_full_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
   cc_full_encoder *st = enc->data;
   /* Flush writes (K-1) * n trailing bits to drain the register back to state 0. */
-  if ((size_t)(dt_ccode_k(st->code) - 1) * (size_t)dt_ccode_n(st->code) >
+  if ((size_t)(dt_cc_code_k(st->code) - 1) * (size_t)dt_cc_code_n(st->code) >
       dst_len) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
-  return dt_full_encode_flush(st->code, &st->state, &st->unknown, dst);
+  return dt_cc_full_encode_flush(st->code, &st->state, &st->unknown, dst);
 }
 
-dt_encoder *dt_cc_full_encoder_create(const dt_ccode *code) {
+dt_encoder *dt_cc_full_encoder_create(const dt_cc_code *code) {
   if (!code) {
     return NULL;
   }

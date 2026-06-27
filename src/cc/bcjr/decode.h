@@ -27,9 +27,9 @@
 #ifndef DRIFTY_BCJR_DECODE_H
 #define DRIFTY_BCJR_DECODE_H
 
-/* The decoder is built from a dt_ccode and shares the result codes defined
- * alongside the encoder. dt_bcjr_stream_decoder_create takes the
- * dt_bcjr_stream_params channel model, which lives in <drifty/cc/bcjr.h>. */
+/* The decoder is built from a dt_cc_code and shares the result codes defined
+ * alongside the encoder. dt_cc_bcjr_stream_decoder_create takes the
+ * dt_cc_bcjr_stream_params channel model, which lives in <drifty/cc/bcjr.h>. */
 #include <drifty/cc/bcjr.h>
 #include "encode.h"
 
@@ -49,14 +49,14 @@ extern "C" {
  * give each input bit's a-posteriori probability - so a soft decision falls out
  * of the same recursions.
  *
- *   dt_bcjr_stream_decoder *d = dt_bcjr_stream_decoder_create(code,
- *       &(dt_bcjr_stream_params){ .decision_depth = 40, .p_flip = 0.01 });
- *   int n = dt_bcjr_stream_decode(d, in, n_in, out, NULL, out_cap);
- *   while (dt_bcjr_stream_decode_flush(d, out, NULL, out_cap) > 0) { }
- *   dt_bcjr_stream_decoder_destroy(d);
+ *   dt_cc_bcjr_stream_decoder *d = dt_cc_bcjr_stream_decoder_create(code,
+ *       &(dt_cc_bcjr_stream_params){ .decision_depth = 40, .p_flip = 0.01 });
+ *   int n = dt_cc_bcjr_stream_decode(d, in, n_in, out, NULL, out_cap);
+ *   while (dt_cc_bcjr_stream_decode_flush(d, out, NULL, out_cap) > 0) { }
+ *   dt_cc_bcjr_stream_decoder_destroy(d);
  *
  * `code` must be the same one the sender used, and must stay alive until the
- * decoder is freed. dt_bcjr_stream_decoder is an opaque handle. Bits crossing
+ * decoder is freed. dt_cc_bcjr_stream_decoder is an opaque handle. Bits crossing
  * this boundary are dt_bit symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  *
  * Decisions are committed on a sliding window: a bit is emitted only once the
@@ -64,7 +64,7 @@ extern "C" {
  * the first ~decision_depth decoded bits are unreliable warm-up.
  */
 /* clang-format on */
-typedef struct dt_bcjr_stream_decoder dt_bcjr_stream_decoder;
+typedef struct dt_cc_bcjr_stream_decoder dt_cc_bcjr_stream_decoder;
 
 /*
  * Per-bit soft output the BCJR decoder produces alongside (or instead of) the
@@ -87,31 +87,31 @@ typedef struct {
   float c_absent;
   /* Consistency that the decoder is tracking a valid stream of this code. */
   float c_lock;
-} dt_bcjr_decode_details;
+} dt_cc_bcjr_decode_details;
 
 /*
  * Make a decoder for `code` (which must stay alive until the decoder is freed)
  * using `params`. Returns NULL on invalid settings or out of memory; free it
- * with dt_bcjr_stream_decoder_destroy().
+ * with dt_cc_bcjr_stream_decoder_destroy().
  */
-dt_bcjr_stream_decoder *dt_bcjr_stream_decoder_create(
-    const dt_ccode *code, const dt_bcjr_stream_params *params);
+dt_cc_bcjr_stream_decoder *dt_cc_bcjr_stream_decoder_create(
+    const dt_cc_code *code, const dt_cc_bcjr_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
-void dt_bcjr_stream_decoder_destroy(dt_bcjr_stream_decoder *d);
+void dt_cc_bcjr_stream_decoder_destroy(dt_cc_bcjr_stream_decoder *d);
 
 /*
  * Feed `n_in` received bits (each DT_FALSE, DT_TRUE, or DT_ERASURE) and collect
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
- * written (0 or more), or a negative DT_ERR_* code. If `out` fills up (return
+ * written (0 or more), or a negative DT_CC_ERR_* code. If `out` fills up (return
  * value == max_out), call again to collect more before feeding more input.
  *
  * `out` and `details` may both be NULL. If supplied, they must be arrays of
  * length max_out: `out` receives the hard decision (DT_TRUE / DT_FALSE /
  * DT_ERASURE) and `details` the per-bit soft output for the same positions.
  */
-int dt_bcjr_stream_decode(dt_bcjr_stream_decoder *d, const uint8_t *in, int n_in,
-                          uint8_t *out, dt_bcjr_decode_details *details,
+int dt_cc_bcjr_stream_decode(dt_cc_bcjr_stream_decoder *d, const uint8_t *in, int n_in,
+                          uint8_t *out, dt_cc_bcjr_decode_details *details,
                           int max_out);
 
 /*
@@ -119,8 +119,8 @@ int dt_bcjr_stream_decode(dt_bcjr_stream_decoder *d, const uint8_t *in, int n_in
  * Returns how many bits were written (0..max_out); call it repeatedly until it
  * returns 0, after which every bit has been decoded.
  */
-int dt_bcjr_stream_decode_flush(dt_bcjr_stream_decoder *d, uint8_t *out,
-                                dt_bcjr_decode_details *details, int max_out);
+int dt_cc_bcjr_stream_decode_flush(dt_cc_bcjr_stream_decoder *d, uint8_t *out,
+                                dt_cc_bcjr_decode_details *details, int max_out);
 
 #ifdef __cplusplus
 }

@@ -36,12 +36,12 @@ extern "C" {
 
 /*
  * The viterbi codec - a plain convolutional encoder and Viterbi hard-decision
- * decoder over a dt_ccode. Unlike the hybrid and vindel codecs it does not
+ * decoder over a dt_cc_code. Unlike the hybrid and vindel codecs it does not
  * track drift (inserted or dropped bits) and takes no channel-model parameters:
  * the decoder is built from the code alone. This is the single header to
  * include for its public API.
  *
- * Build a decoder over a dt_ccode with the factory below, drive it through its
+ * Build a decoder over a dt_cc_code with the factory below, drive it through its
  * vtable (see decoder.h), and free it with the matching _destroy(). The code
  * must outlive everything built from it. To encode, use the standalone basic
  * encoder in <drifty/cc/encoders.h>.
@@ -49,9 +49,9 @@ extern "C" {
 
 /* Build a hard-decision Viterbi decoder over `code`. Takes no channel-model
  * parameters. Returns NULL on a bad argument or out of memory. */
-dt_decoder *dt_viterbi_decoder_create(const dt_ccode *code);
-/* Free a decoder from dt_viterbi_decoder_create(). Passing NULL is fine. */
-void dt_viterbi_decoder_destroy(dt_decoder *dec);
+dt_decoder *dt_cc_viterbi_decoder_create(const dt_cc_code *code);
+/* Free a decoder from dt_cc_viterbi_decoder_create(). Passing NULL is fine. */
+void dt_cc_viterbi_decoder_destroy(dt_decoder *dec);
 
 #ifdef __cplusplus
 }

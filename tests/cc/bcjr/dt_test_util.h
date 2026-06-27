@@ -32,8 +32,8 @@
  * warning.
  */
 
-#ifndef DT_BCJR_TEST_UTIL_H
-#define DT_BCJR_TEST_UTIL_H
+#ifndef DT_CC_BCJR_TEST_UTIL_H
+#define DT_CC_BCJR_TEST_UTIL_H
 
 #include <cc/bcjr/decode.h>
 #include <cc/bcjr/encode.h>
@@ -98,15 +98,15 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 /* -- encode ---------------------------------------------------------------- */
 
 /* Encode `info_bits` message bits (each DT_FALSE/DT_TRUE) with `code` into out[]
- * (which must hold info_bits * dt_ccode_n(code) + flush slack), including the
+ * (which must hold info_bits * dt_cc_code_n(code) + flush slack), including the
  * end-of-stream flush. Returns the coded length. */
-static inline int bcjr_encode_all(const dt_ccode *code, const uint8_t *msg,
+static inline int bcjr_encode_all(const dt_cc_code *code, const uint8_t *msg,
                                   int info_bits, uint8_t *out) {
   int state = 0;
   unsigned int unknown = 0;
-  int len = dt_bcjr_encode(code, msg, info_bits, &state, &unknown, out);
-  len += dt_bcjr_encode_flush(code, &state, &unknown, out + len);
+  int len = dt_cc_bcjr_encode(code, msg, info_bits, &state, &unknown, out);
+  len += dt_cc_bcjr_encode_flush(code, &state, &unknown, out + len);
   return len;
 }
 
-#endif /* DT_BCJR_TEST_UTIL_H */
+#endif /* DT_CC_BCJR_TEST_UTIL_H */

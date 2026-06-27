@@ -31,7 +31,7 @@
 #include <stdint.h>
 
 #include <drifty/bit.h>
-#include <drifty/cc/ccode.h> /* dt_ccode (the code handle these functions take) */
+#include <drifty/cc/ccode.h> /* dt_cc_code (the code handle these functions take) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,30 +47,30 @@ extern "C" {
  * This header is the sender's half: pick a code, then encode your bits (this
  * adds redundancy). The receiver's half - feeding the received bits to a decoder
  * and reading your bits back, with errors corrected - is in decode.h. The code
- * picked here (dt_ccode) is shared by both; sender and receiver must use the same
+ * picked here (dt_cc_code) is shared by both; sender and receiver must use the same
  * one. The encoder is the ordinary convolutional encoder, identical to the other
  * codecs' (the decoder is what differs).
  *
- *   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+ *   dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
  *
  *   // encode (in one or more chunks)
  *   int state = 0;
  *   unsigned int unknown = 0;
- *   int len  = dt_bcjr_encode(code, bits, n_bits, &state, &unknown, out);
- *   len     += dt_bcjr_encode_flush(code, &state, &unknown, out + len);
+ *   int len  = dt_cc_bcjr_encode(code, bits, n_bits, &state, &unknown, out);
+ *   len     += dt_cc_bcjr_encode_flush(code, &state, &unknown, out + len);
  *
- *   dt_ccode_destroy(code);
+ *   dt_cc_code_destroy(code);
  *
- * dt_ccode is an opaque handle - create and free it with the matching functions.
- * Functions return DT_OK (0) or a count on success, or a negative DT_ERR_* code.
+ * dt_cc_code is an opaque handle - create and free it with the matching functions.
+ * Functions return DT_CC_OK (0) or a count on success, or a negative DT_CC_ERR_* code.
  */
 /* clang-format on */
 
 /* Result codes for functions that don't return a count. */
 enum {
-  DT_OK = 0,
-  DT_ERR_ARG = -1,  /* a bad argument was passed */
-  DT_ERR_ALLOC = -2 /* ran out of memory         */
+  DT_CC_OK = 0,
+  DT_CC_ERR_ARG = -1,  /* a bad argument was passed */
+  DT_CC_ERR_ALLOC = -2 /* ran out of memory         */
 };
 
 /* ------------------------------------------------------------------------- */
@@ -79,7 +79,7 @@ enum {
 
 /*
  * Encode `n_bits` input bits into `out`, which needs room for
- * n_bits * dt_ccode_n(code) bits. Each input is normally DT_FALSE or DT_TRUE; a
+ * n_bits * dt_cc_code_n(code) bits. Each input is normally DT_FALSE or DT_TRUE; a
  * non-boolean input has no boolean value to encode, and the coded bits that
  * would carry it are marked per kind: a DT_INVALID input emits DT_INVALID
  * (structural poison the decoder reads as a deliberate tie at that position),
@@ -90,20 +90,20 @@ enum {
  * `unsigned int unknown` (the in-flight poison register), set both to 0 before
  * the first call, and pass the same variables to every call - so you can encode
  * in as many chunks as you like. When the whole message is encoded, call
- * dt_bcjr_encode_flush() once to finish it.
+ * dt_cc_bcjr_encode_flush() once to finish it.
  *
- * Returns the number of bits written, or DT_ERR_ARG.
+ * Returns the number of bits written, or DT_CC_ERR_ARG.
  */
-int dt_bcjr_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
+int dt_cc_bcjr_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits,
                    int *state, unsigned int *unknown, uint8_t *out);
 
 /*
- * Finish an encoded stream: writes (K-1) * dt_ccode_n(code) trailing bits so the
+ * Finish an encoded stream: writes (K-1) * dt_cc_code_n(code) trailing bits so the
  * decoder can recover the last input bits cleanly. Pass the same `state` and
- * `unknown` you gave dt_bcjr_encode(). Returns the number of bits written, or
- * DT_ERR_ARG.
+ * `unknown` you gave dt_cc_bcjr_encode(). Returns the number of bits written, or
+ * DT_CC_ERR_ARG.
  */
-int dt_bcjr_encode_flush(const dt_ccode *code, int *state, unsigned int *unknown,
+int dt_cc_bcjr_encode_flush(const dt_cc_code *code, int *state, unsigned int *unknown,
                          uint8_t *out);
 
 #ifdef __cplusplus

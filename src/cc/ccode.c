@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * The dt_ccode code type: building the convolutional code (its precomputed
+ * The dt_cc_code code type: building the convolutional code (its precomputed
  * trellis tables) and the accessors for it. This is the public ccode.h API,
  * shared by every codec built over a code (encode.c and decode.c consume the
  * tables this file fills in).
@@ -48,7 +48,7 @@ static int parity(unsigned int bits) {
   return (int)(bits & 1u);
 }
 
-dt_ccode *dt_ccode_create(int K, const unsigned int *generators,
+dt_cc_code *dt_cc_code_create(int K, const unsigned int *generators,
                         int num_generators) {
   /* K is documented as 2..9 (ccode.h). The upper bound also keeps 1 << (K-1)
    * well clear of int-shift UB and the trellis a sane size. */
@@ -56,7 +56,7 @@ dt_ccode *dt_ccode_create(int K, const unsigned int *generators,
     return NULL;
   }
 
-  dt_ccode *code = dt_calloc(1, sizeof(*code));
+  dt_cc_code *code = dt_calloc(1, sizeof(*code));
   if (!code) {
     return NULL;
   }
@@ -69,7 +69,7 @@ dt_ccode *dt_ccode_create(int K, const unsigned int *generators,
   code->next_state = dt_malloc((size_t)code->n_states * 2 * sizeof(int));
   code->output = dt_malloc((size_t)code->n_states * 2 * code->n * sizeof(uint8_t));
   if (!code->generators || !code->next_state || !code->output) {
-    dt_ccode_destroy(code);
+    dt_cc_code_destroy(code);
     return NULL;
   }
 
@@ -94,81 +94,81 @@ dt_ccode *dt_ccode_create(int K, const unsigned int *generators,
   return code;
 }
 
-dt_ccode *dt_ccode_create_standard(dt_standard_code which) {
+dt_cc_code *dt_cc_code_create_standard(dt_cc_standard_code which) {
   switch (which) {
     /* These generator sets and the d_free values in ccode.h are produced by
      * bench/dt_codesearch, which selects, per family, the codes that are
      * mutually distinguishable under the decoder's lock metric (rate-1/2 tops
      * out at three such codes; the wider rates reach five). */
-    case DT_CODE_K3_RATE_1_2: {
+    case DT_CC_CODE_K3_RATE_1_2: {
       static const unsigned int generators[] = {005, 007};
-      return dt_ccode_create(3, generators, 2);
+      return dt_cc_code_create(3, generators, 2);
     }
-    case DT_CODE_K3_RATE_1_2_ALT1: {
+    case DT_CC_CODE_K3_RATE_1_2_ALT1: {
       static const unsigned int generators[] = {001, 007};
-      return dt_ccode_create(3, generators, 2);
+      return dt_cc_code_create(3, generators, 2);
     }
-    case DT_CODE_K3_RATE_1_2_ALT2: {
+    case DT_CC_CODE_K3_RATE_1_2_ALT2: {
       static const unsigned int generators[] = {003, 007};
-      return dt_ccode_create(3, generators, 2);
+      return dt_cc_code_create(3, generators, 2);
     }
-    case DT_CODE_K7_RATE_1_2: {
+    case DT_CC_CODE_K7_RATE_1_2: {
       static const unsigned int generators[] = {0171, 0133};
-      return dt_ccode_create(7, generators, 2);
+      return dt_cc_code_create(7, generators, 2);
     }
-    case DT_CODE_K7_RATE_1_2_ALT1: {
+    case DT_CC_CODE_K7_RATE_1_2_ALT1: {
       static const unsigned int generators[] = {0043, 0175};
-      return dt_ccode_create(7, generators, 2);
+      return dt_cc_code_create(7, generators, 2);
     }
-    case DT_CODE_K7_RATE_1_2_ALT2: {
+    case DT_CC_CODE_K7_RATE_1_2_ALT2: {
       static const unsigned int generators[] = {0107, 0156};
-      return dt_ccode_create(7, generators, 2);
+      return dt_cc_code_create(7, generators, 2);
     }
-    case DT_CODE_K7_RATE_1_3: {
+    case DT_CC_CODE_K7_RATE_1_3: {
       static const unsigned int generators[] = {0113, 0135, 0157};
-      return dt_ccode_create(7, generators, 3);
+      return dt_cc_code_create(7, generators, 3);
     }
-    case DT_CODE_K7_RATE_1_3_ALT1: {
+    case DT_CC_CODE_K7_RATE_1_3_ALT1: {
       static const unsigned int generators[] = {0112, 0153, 0157};
-      return dt_ccode_create(7, generators, 3);
+      return dt_cc_code_create(7, generators, 3);
     }
-    case DT_CODE_K7_RATE_1_3_ALT2: {
+    case DT_CC_CODE_K7_RATE_1_3_ALT2: {
       static const unsigned int generators[] = {0037, 0135, 0153};
-      return dt_ccode_create(7, generators, 3);
+      return dt_cc_code_create(7, generators, 3);
     }
-    case DT_CODE_K7_RATE_1_3_ALT3: {
+    case DT_CC_CODE_K7_RATE_1_3_ALT3: {
       static const unsigned int generators[] = {0012, 0145, 0177};
-      return dt_ccode_create(7, generators, 3);
+      return dt_cc_code_create(7, generators, 3);
     }
-    case DT_CODE_K7_RATE_1_3_ALT4: {
+    case DT_CC_CODE_K7_RATE_1_3_ALT4: {
       static const unsigned int generators[] = {0042, 0133, 0172};
-      return dt_ccode_create(7, generators, 3);
+      return dt_cc_code_create(7, generators, 3);
     }
-    case DT_CODE_K5_RATE_1_5: {
+    case DT_CC_CODE_K5_RATE_1_5: {
       static const unsigned int generators[] = {025, 027, 033, 035, 037};
-      return dt_ccode_create(5, generators, 5);
+      return dt_cc_code_create(5, generators, 5);
     }
-    case DT_CODE_K5_RATE_1_5_ALT1: {
+    case DT_CC_CODE_K5_RATE_1_5_ALT1: {
       static const unsigned int generators[] = {007, 017, 025, 027, 035};
-      return dt_ccode_create(5, generators, 5);
+      return dt_cc_code_create(5, generators, 5);
     }
-    case DT_CODE_K5_RATE_1_5_ALT2: {
+    case DT_CC_CODE_K5_RATE_1_5_ALT2: {
       static const unsigned int generators[] = {011, 032, 033, 035, 037};
-      return dt_ccode_create(5, generators, 5);
+      return dt_cc_code_create(5, generators, 5);
     }
-    case DT_CODE_K5_RATE_1_5_ALT3: {
+    case DT_CC_CODE_K5_RATE_1_5_ALT3: {
       static const unsigned int generators[] = {013, 021, 023, 033, 037};
-      return dt_ccode_create(5, generators, 5);
+      return dt_cc_code_create(5, generators, 5);
     }
-    case DT_CODE_K5_RATE_1_5_ALT4: {
+    case DT_CC_CODE_K5_RATE_1_5_ALT4: {
       static const unsigned int generators[] = {013, 024, 032, 033, 037};
-      return dt_ccode_create(5, generators, 5);
+      return dt_cc_code_create(5, generators, 5);
     }
   }
   return NULL;
 }
 
-void dt_ccode_destroy(dt_ccode *code) {
+void dt_cc_code_destroy(dt_cc_code *code) {
   if (!code) {
     return;
   }
@@ -178,6 +178,6 @@ void dt_ccode_destroy(dt_ccode *code) {
   dt_free(code);
 }
 
-int dt_ccode_n(const dt_ccode *code) { return code ? code->n : -1; }
+int dt_cc_code_n(const dt_cc_code *code) { return code ? code->n : -1; }
 
-int dt_ccode_k(const dt_ccode *code) { return code ? code->K : -1; }
+int dt_cc_code_k(const dt_cc_code *code) { return code ? code->K : -1; }

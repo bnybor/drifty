@@ -1,6 +1,6 @@
 # bcjr metrics
 
-`metrics/bcjr/dt_bcjr_metrics.c` measures the decoding-mistake rate as a function
+`metrics/bcjr/dt_cc_bcjr_metrics.c` measures the decoding-mistake rate as a function
 of the channel's flip and erase rates, for all four standard codes, for the
 **bcjr** codec (a max-log-MAP / forward-backward hard-decision decoder). It is the
 bcjr counterpart of [../hybrid/METRICS.md](../hybrid/METRICS.md) and
@@ -32,11 +32,11 @@ probability** (`c_locked`); this harness measures edit distance only.
 ```sh
 # Build the harness (off by default) and run the sweep to a CSV.
 cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
-cmake --build build --target dt_bcjr_metrics
-# dt_bcjr_metrics <trials> <info_bits> <seed> <rate_grids_file>
+cmake --build build --target dt_cc_bcjr_metrics
+# dt_cc_bcjr_metrics <trials> <info_bits> <seed> <rate_grids_file>
 #   defaults: 50 1000 0xC0FFEE, rate_grids_file = metrics/bcjr/rate_grids.txt
 #   (so run from the repo root)
-build/metrics/bcjr/dt_bcjr_metrics 30 4000 0xC0FFEE > metrics/bcjr/metrics.csv
+build/metrics/bcjr/dt_cc_bcjr_metrics 30 4000 0xC0FFEE > metrics/bcjr/metrics.csv
 
 # Plot the edit and run-length metrics (one curve per code). Needs matplotlib:
 python3 -m venv .venv && .venv/bin/pip install matplotlib

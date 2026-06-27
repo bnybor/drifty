@@ -27,7 +27,7 @@
 /*
  * BCJR encoder: the ordinary convolutional encoder (the same one viterbi and
  * vindel use). BCJR differs only in how it decodes; the transmitted codeword is
- * the plain convolutional code over the shared dt_ccode trellis tables.
+ * the plain convolutional code over the shared dt_cc_code trellis tables.
  */
 
 #include "encode.h"
@@ -40,10 +40,10 @@
 
 /* The encoder carries two independent "no clean value" registers, each with the
  * same K-1-bit shift geometry as *state, packed into the single *unknown word:
- * the erasure register in the low DT_ENC_MASK_BITS bits, the invalid register
+ * the erasure register in the low DT_CC_ENC_MASK_BITS bits, the invalid register
  * just above it. K <= 9 keeps each register <= 8 bits, so both fit in 16 bits. */
-#define DT_ENC_MASK_BITS 8u
-#define DT_ENC_MASK ((1u << DT_ENC_MASK_BITS) - 1u)
+#define DT_CC_ENC_MASK_BITS 8u
+#define DT_CC_ENC_MASK ((1u << DT_CC_ENC_MASK_BITS) - 1u)
 
 /* Encode one input bit's coded group from the running registers and advance
  * them. `bit` is the 0/1 value driving the trellis. A non-boolean input carries
@@ -60,10 +60,10 @@
  * `bit` (a definite 0 for a non-boolean input) only keeps the trellis advancing;
  * it never reaches a clean output, since exactly the taps that would carry it are
  * marked instead. Returns the number of bits written (the code's n). */
-static int emit_group(const dt_ccode *code, int *state, unsigned int *unknown,
+static int emit_group(const dt_cc_code *code, int *state, unsigned int *unknown,
                       int bit, int in_erasure, int in_invalid, uint8_t *out) {
-  const unsigned int era_carried = *unknown & DT_ENC_MASK;
-  const unsigned int inv_carried = (*unknown >> DT_ENC_MASK_BITS) & DT_ENC_MASK;
+  const unsigned int era_carried = *unknown & DT_CC_ENC_MASK;
+  const unsigned int inv_carried = (*unknown >> DT_CC_ENC_MASK_BITS) & DT_CC_ENC_MASK;
   /* Full K-bit registers: the new input at the top (input_tap == 1 << (K-1))
    * over the carried-forward positions, one register per kind of unknown. */
   const unsigned int era_reg = (in_erasure ? code->input_tap : 0u) | era_carried;
@@ -89,18 +89,18 @@ static int emit_group(const dt_ccode *code, int *state, unsigned int *unknown,
       ((era_carried >> 1) | (in_erasure ? top_bit : 0u)) & state_mask;
   const unsigned int inv_next =
       ((inv_carried >> 1) | (in_invalid ? top_bit : 0u)) & state_mask;
-  *unknown = (inv_next << DT_ENC_MASK_BITS) | era_next;
+  *unknown = (inv_next << DT_CC_ENC_MASK_BITS) | era_next;
   return code->n;
 }
 
-int dt_bcjr_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
+int dt_cc_bcjr_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits,
                    int *state, unsigned int *unknown, uint8_t *out) {
   if (!code || !state || !unknown || n_bits < 0 || (n_bits > 0 && !bits) ||
       !out) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   if (*state < 0 || *state >= code->n_states) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   int current_state = *state, written = 0;
@@ -121,13 +121,13 @@ int dt_bcjr_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
   return written;
 }
 
-int dt_bcjr_encode_flush(const dt_ccode *code, int *state, unsigned int *unknown,
+int dt_cc_bcjr_encode_flush(const dt_cc_code *code, int *state, unsigned int *unknown,
                          uint8_t *out) {
   if (!code || !state || !unknown || !out) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   if (*state < 0 || *state >= code->n_states) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   /* Feed K-1 known zero bits, which shift the state register back to 0 and clear

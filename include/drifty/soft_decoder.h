@@ -75,7 +75,7 @@ struct dt_soft_decoder_out_t {
  * `begin` writes any preamble into `dst`; the hybrid codec emits none, so
  * begin(dec, NULL, 0) is fine. `src` is the received transmit-domain stream
  * (DT_TRUE / DT_FALSE / DT_ERASURE / DT_INVALID); `data` is private state - do
- * not touch it. Build one with dt_hybrid_soft_decoder_create() and free it with
+ * not touch it. Build one with dt_cc_hybrid_soft_decoder_create() and free it with
  * the matching _destroy().
  */
 typedef struct dt_soft_decoder_t dt_soft_decoder;

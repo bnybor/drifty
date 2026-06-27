@@ -1,4 +1,4 @@
-# The viterbi tests exercise the private engine API (dt_ccode / dt_viterbi_stream),
+# The viterbi tests exercise the private engine API (dt_cc_code / dt_cc_viterbi_stream),
 # so they link the non-localized engine objects directly (not the localized
 # drifty::drifty archive) and reach the private headers under src/ via -Isrc.
 # drifty_bare_obj propagates the public include dir; drifty_stdlib supplies the

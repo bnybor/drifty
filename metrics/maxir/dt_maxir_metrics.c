@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * dt_maxir_metrics - Monte-Carlo measurement of decoding-mistake rate as a function
+ * dt_cc_maxir_metrics - Monte-Carlo measurement of decoding-mistake rate as a function
  * of the channel's flip / insert / delete / erase rates, for each standard code.
  *
  * For one data point we: generate a random message, encode it (with a flush so
@@ -55,7 +55,7 @@
  *
  * Output is CSV on stdout (see header row); feed it to metrics/maxir/plot_metrics.py.
  *
- * Usage: dt_maxir_metrics [trials] [info_bits] [seed]
+ * Usage: dt_cc_maxir_metrics [trials] [info_bits] [seed]
  */
 
 #include <drifty/cc/encoders.h>
@@ -103,7 +103,7 @@ static uint64_t derive_seed(uint64_t base, int index) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dt_maxir_metrics: out of memory\n");
+    fprintf(stderr, "dt_cc_maxir_metrics: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -133,7 +133,7 @@ static int apply_channel(const uint8_t *coded, int coded_len, double p_flip,
       uint8_t *grown = realloc(received, (size_t)capacity);
       if (!grown) {
         free(received);
-        fprintf(stderr, "dt_maxir_metrics: out of memory\n");
+        fprintf(stderr, "dt_cc_maxir_metrics: out of memory\n");
         exit(1);
       }
       received = grown;
@@ -225,14 +225,14 @@ static long edit_distance(const uint8_t *seq_a, int len_a, const uint8_t *seq_b,
 
 typedef struct {
   const char *name;
-  dt_standard_code which;
+  dt_cc_standard_code which;
 } code_entry;
 
 static const code_entry CODES[] = {
-    {"K3_R1_2", DT_CODE_K3_RATE_1_2},
-    {"K7_R1_2", DT_CODE_K7_RATE_1_2},
-    {"K7_R1_3", DT_CODE_K7_RATE_1_3},
-    {"K5_R1_5", DT_CODE_K5_RATE_1_5},
+    {"K3_R1_2", DT_CC_CODE_K3_RATE_1_2},
+    {"K7_R1_2", DT_CC_CODE_K7_RATE_1_2},
+    {"K7_R1_3", DT_CC_CODE_K7_RATE_1_3},
+    {"K5_R1_5", DT_CC_CODE_K5_RATE_1_5},
 };
 #define N_CODES ((int)(sizeof(CODES) / sizeof(CODES[0])))
 
@@ -297,7 +297,7 @@ static int parse_variation(const char *s) {
 static int load_grids(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) {
-    fprintf(stderr, "dt_maxir_metrics: cannot open rate-grid file '%s'\n", path);
+    fprintf(stderr, "dt_cc_maxir_metrics: cannot open rate-grid file '%s'\n", path);
     return -1;
   }
   char line[8192];
@@ -314,7 +314,7 @@ static int load_grids(const char *path) {
     int m = mn ? name_index(mn, METRIC_NAME, N_METRICS) : -1;
     int a = an ? name_index(an, AXIS_NAME, N_AXES) : -1;
     if (v < 0 || m < 0 || a < 0) {
-      fprintf(stderr, "dt_maxir_metrics: %s:%d: bad variation/metric/axis\n", path,
+      fprintf(stderr, "dt_cc_maxir_metrics: %s:%d: bad variation/metric/axis\n", path,
               lineno);
       ok = 0;
       break;
@@ -325,7 +325,7 @@ static int load_grids(const char *path) {
       char *end;
       double value = strtod(t, &end);
       if (*end != '\0') {
-        fprintf(stderr, "dt_maxir_metrics: %s:%d: bad rate '%s'\n", path, lineno, t);
+        fprintf(stderr, "dt_cc_maxir_metrics: %s:%d: bad rate '%s'\n", path, lineno, t);
         ok = 0;
         break;
       }
@@ -333,7 +333,7 @@ static int load_grids(const char *path) {
         cap *= 2;
         double *grown = realloc(rates, (size_t)cap * sizeof(double));
         if (!grown) {
-          fprintf(stderr, "dt_maxir_metrics: out of memory\n");
+          fprintf(stderr, "dt_cc_maxir_metrics: out of memory\n");
           exit(1);
         }
         rates = grown;
@@ -345,7 +345,7 @@ static int load_grids(const char *path) {
       break;
     }
     if (n == 0) {
-      fprintf(stderr, "dt_maxir_metrics: %s:%d: grid has no rates\n", path, lineno);
+      fprintf(stderr, "dt_cc_maxir_metrics: %s:%d: grid has no rates\n", path, lineno);
       free(rates);
       ok = 0;
       break;
@@ -369,7 +369,7 @@ static const double *metric_axis_rates(variation var, metric which_metric,
  * axis, rate, and variation but not the trial, so both the trial worker and the
  * row formatter derive them the same way from make_model(). */
 typedef struct {
-  dt_maxir_stream_params params;
+  dt_cc_maxir_stream_params params;
   int code_n;
   int constraint_len;
   int decision_depth;
@@ -383,11 +383,11 @@ typedef struct {
   double lock_sum;
 } trial_result;
 
-static point_model make_model(const dt_ccode *code, axis channel_axis,
+static point_model make_model(const dt_cc_code *code, axis channel_axis,
                               double rate, variation var) {
   point_model m;
-  m.code_n = dt_ccode_n(code);
-  m.constraint_len = dt_ccode_k(code);
+  m.code_n = dt_cc_code_n(code);
+  m.constraint_len = dt_cc_code_k(code);
   m.decision_depth = 8 * m.constraint_len;
 
   if (var != VAR_MATCHED && var != VAR_OVERMATCHED) {
@@ -398,7 +398,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
      * something increasingly unexpected - the stress this variation measures. */
     const double pegged = 0.01;
     m.max_drift = 8;
-    m.params = (dt_maxir_stream_params){
+    m.params = (dt_cc_maxir_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = pegged,
@@ -427,7 +427,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
     const double ins_total = (m.max_drift > 0)
                                  ? clamp_double(channel_ins, min_prob, drift_max)
                                  : 0.0;
-    m.params = (dt_maxir_stream_params){
+    m.params = (dt_cc_maxir_stream_params){
         .decision_depth = m.decision_depth,
         .max_drift = m.max_drift,
         .p_flip = (channel_axis == AXIS_FLIP)
@@ -452,7 +452,7 @@ static point_model make_model(const dt_ccode *code, axis channel_axis,
  * distance and lock probability both come from a single decode; the metric
  * selects which post-processing the trial does and each skips the other's. Each
  * trial is fully independent, so trials parallelize across cores (see main). */
-static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
+static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
                                   metric which_metric, double rate,
                                   int info_bits, uint64_t seed,
                                   variation var) {
@@ -482,7 +482,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   const int coded_cap = (info_bits + m.constraint_len) * m.code_n;
   dt_encoder *encoder = dt_cc_full_encoder_create(code);
   if (!encoder) {
-    fprintf(stderr, "dt_maxir_metrics: encoder create failed\n");
+    fprintf(stderr, "dt_cc_maxir_metrics: encoder create failed\n");
     exit(1);
   }
   int coded_len = encoder->begin(encoder, coded, (size_t)coded_cap);
@@ -508,9 +508,9 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   int n_stream = 0, n_decoded;
   if (which_metric == METRIC_EDIT) {
     decoded = xmalloc((size_t)decoded_cap);
-    dt_decoder *dec = dt_maxir_decoder_create(code, &m.params);
+    dt_decoder *dec = dt_cc_maxir_decoder_create(code, &m.params);
     if (!dec) {
-      fprintf(stderr, "dt_maxir_metrics: decoder create failed\n");
+      fprintf(stderr, "dt_cc_maxir_metrics: decoder create failed\n");
       exit(1);
     }
     /* Feed in 64-bit chunks (the decoder's output depends on feed granularity),
@@ -532,12 +532,12 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                                (size_t)(decoded_cap - n_decoded));
       n_decoded = tail < 0 ? tail : n_decoded + tail;
     }
-    dt_maxir_decoder_destroy(dec);
+    dt_cc_maxir_decoder_destroy(dec);
   } else { /* METRIC_LOCK */
     soft = xmalloc((size_t)decoded_cap * sizeof(*soft));
-    dt_soft_decoder *sd = dt_maxir_soft_decoder_create(code, &m.params);
+    dt_soft_decoder *sd = dt_cc_maxir_soft_decoder_create(code, &m.params);
     if (!sd) {
-      fprintf(stderr, "dt_maxir_metrics: decoder create failed\n");
+      fprintf(stderr, "dt_cc_maxir_metrics: decoder create failed\n");
       exit(1);
     }
     for (int read_pos = 0; read_pos < received_len && n_stream < decoded_cap;) {
@@ -557,11 +557,11 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                               (size_t)(decoded_cap - n_decoded));
       n_decoded = tail < 0 ? tail : n_decoded + tail;
     }
-    dt_maxir_soft_decoder_destroy(sd);
+    dt_cc_maxir_soft_decoder_destroy(sd);
   }
   free(received);
   if (n_decoded < 0) {
-    fprintf(stderr, "dt_maxir_metrics: decode error %d\n", n_decoded);
+    fprintf(stderr, "dt_cc_maxir_metrics: decode error %d\n", n_decoded);
     exit(1);
   }
 
@@ -650,7 +650,7 @@ int main(int argc, char **argv) {
     int parsed = parse_variation(argv[4]);
     if (parsed < 0) {
       fprintf(stderr,
-              "dt_maxir_metrics: unknown variation '%s' "
+              "dt_cc_maxir_metrics: unknown variation '%s' "
               "(use pegged|matched|overmatched)\n",
               argv[4]);
       return 2;
@@ -669,13 +669,13 @@ int main(int argc, char **argv) {
   const metric run_metrics[] = {METRIC_EDIT, METRIC_LOCK};
   const int n_run_metrics = (int)(sizeof(run_metrics) / sizeof(run_metrics[0]));
 
-  /* The trellis tables in a dt_ccode are read-only once built, so all threads
+  /* The trellis tables in a dt_cc_code are read-only once built, so all threads
    * share the four codes; each decode allocates its own decoder state. */
-  dt_ccode *codes[N_CODES];
+  dt_cc_code *codes[N_CODES];
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    codes[code_idx] = dt_ccode_create_standard(CODES[code_idx].which);
+    codes[code_idx] = dt_cc_code_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
-      fprintf(stderr, "dt_maxir_metrics: code create failed\n");
+      fprintf(stderr, "dt_cc_maxir_metrics: code create failed\n");
       return 1;
     }
   }
@@ -690,7 +690,7 @@ int main(int argc, char **argv) {
       int count;
       metric_axis_rates(var, run_metrics[mi], (axis)axis_idx, &count);
       if (count == 0) {
-        fprintf(stderr, "dt_maxir_metrics: %s: no grid for %s %s %s\n", grids_path,
+        fprintf(stderr, "dt_cc_maxir_metrics: %s: no grid for %s %s %s\n", grids_path,
                 argc > 4 ? argv[4] : "pegged", METRIC_NAME[run_metrics[mi]],
                 AXIS_NAME[axis_idx]);
         return 2;
@@ -806,7 +806,7 @@ int main(int argc, char **argv) {
   free(remaining);
   free(items);
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    dt_ccode_destroy(codes[code_idx]);
+    dt_cc_code_destroy(codes[code_idx]);
   }
   return 0;
 }

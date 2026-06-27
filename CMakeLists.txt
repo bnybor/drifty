@@ -71,7 +71,7 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 
 # Only the public API - the symbols declared in the installed include/ headers -
 # should be exported from the archives. The decoder shares internal helpers across
-# translation units (dt_decode_step, dt_trellis_*, dt_decode_ctx_*), and the full
+# translation units (dt_cc_decode_step, dt_cc_trellis_*, dt_cc_decode_ctx_*), and the full
 # library also bundles the stdlib shims (dt_malloc, dt_memcpy, dt_log, ...); both
 # are internal plumbing that would otherwise land in the archive's symbol table.
 # Because they are referenced across object boundaries, hiding them needs a partial
@@ -79,27 +79,27 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # every *defined* symbol except the public API. Undefined references are left
 # alone, so the bare archive still asks the consumer to supply the shims and the
 # full archive still resolves libc at the consumer's final link.
-# The public API is the abstract surface in include/: the dt_ccode descriptor
+# The public API is the abstract surface in include/: the dt_cc_code descriptor
 # (cc/ccode.h, implemented in src/cc/ccode.c), the two standalone encoders
 # (cc/encoders.h, dt_cc_basic_encoder_* / dt_cc_full_encoder_*) that every codec
-# encodes through, plus the per-codec decoder factories dt_hybrid_* / dt_vindel_* /
-# dt_viterbi_* / dt_bcjr_* / dt_maxir_* (cc/hybrid.h, cc/vindel.h, cc/viterbi.h,
-# cc/bcjr.h, cc/maxir.h). Each codec's engine functions (dt_stream_* /
-# dt_vindel_stream_* / dt_viterbi_stream_* / dt_bcjr_stream_* / dt_maxir_stream_*,
-# dt_ccode_encode* / dt_vindel_encode* / dt_viterbi_encode* / dt_bcjr_encode* /
-# dt_maxir_encode*, dt_basic_encode* / dt_full_encode*) are private - their headers
+# encodes through, plus the per-codec decoder factories dt_cc_hybrid_* / dt_cc_vindel_* /
+# dt_cc_viterbi_* / dt_cc_bcjr_* / dt_cc_maxir_* (cc/hybrid.h, cc/vindel.h, cc/viterbi.h,
+# cc/bcjr.h, cc/maxir.h). Each codec's engine functions (dt_cc_stream_* /
+# dt_cc_vindel_stream_* / dt_cc_viterbi_stream_* / dt_cc_bcjr_stream_* / dt_cc_maxir_stream_*,
+# dt_cc_code_encode* / dt_cc_vindel_encode* / dt_cc_viterbi_encode* / dt_cc_bcjr_encode* /
+# dt_cc_maxir_encode*, dt_cc_basic_encode* / dt_cc_full_encode*) are private - their headers
 # live under src/cc/<codec>/ - so they are localized, not exported.
 set(_dt_public_symbols
-    dt_ccode_create dt_ccode_create_standard dt_ccode_destroy
-    dt_ccode_k dt_ccode_n
-    dt_hybrid_decoder_create dt_hybrid_decoder_destroy
-    dt_hybrid_soft_decoder_create dt_hybrid_soft_decoder_destroy
-    dt_vindel_decoder_create dt_vindel_decoder_destroy
-    dt_viterbi_decoder_create dt_viterbi_decoder_destroy
-    dt_bcjr_decoder_create dt_bcjr_decoder_destroy
-    dt_bcjr_soft_decoder_create dt_bcjr_soft_decoder_destroy
-    dt_maxir_decoder_create dt_maxir_decoder_destroy
-    dt_maxir_soft_decoder_create dt_maxir_soft_decoder_destroy
+    dt_cc_code_create dt_cc_code_create_standard dt_cc_code_destroy
+    dt_cc_code_k dt_cc_code_n
+    dt_cc_hybrid_decoder_create dt_cc_hybrid_decoder_destroy
+    dt_cc_hybrid_soft_decoder_create dt_cc_hybrid_soft_decoder_destroy
+    dt_cc_vindel_decoder_create dt_cc_vindel_decoder_destroy
+    dt_cc_viterbi_decoder_create dt_cc_viterbi_decoder_destroy
+    dt_cc_bcjr_decoder_create dt_cc_bcjr_decoder_destroy
+    dt_cc_bcjr_soft_decoder_create dt_cc_bcjr_soft_decoder_destroy
+    dt_cc_maxir_decoder_create dt_cc_maxir_decoder_destroy
+    dt_cc_maxir_soft_decoder_create dt_cc_maxir_soft_decoder_destroy
     dt_cc_basic_encoder_create dt_cc_basic_encoder_destroy
     dt_cc_full_encoder_create dt_cc_full_encoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")

@@ -100,13 +100,13 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 /* -- encode ---------------------------------------------------------------- */
 
 /* Encode `info_bits` message bits (each DT_FALSE/DT_TRUE) with `code` into
- * out[] (which must hold info_bits * dt_ccode_n(code) + flush slack), including
+ * out[] (which must hold info_bits * dt_cc_code_n(code) + flush slack), including
  * the end-of-stream flush. Returns the coded length. */
-static inline int viterbi_encode_all(const dt_ccode *code, const uint8_t *msg,
+static inline int viterbi_encode_all(const dt_cc_code *code, const uint8_t *msg,
                                      int info_bits, uint8_t *out) {
   int state = 0;
-  int len = dt_viterbi_encode(code, msg, info_bits, &state, out);
-  len += dt_viterbi_encode_flush(code, &state, out + len);
+  int len = dt_cc_viterbi_encode(code, msg, info_bits, &state, out);
+  len += dt_cc_viterbi_encode_flush(code, &state, out + len);
   return len;
 }
 
@@ -115,19 +115,19 @@ static inline int viterbi_encode_all(const dt_ccode *code, const uint8_t *msg,
 /* Push a whole received buffer through the streaming decoder in small chunks,
  * then drain. Returns the number of decoded bits collected. The viterbi decoder
  * takes no parameters, so it is built from the code alone. */
-static inline int stream_decode_all(dt_viterbi_stream_decoder *sd,
+static inline int stream_decode_all(dt_cc_viterbi_stream_decoder *sd,
                                     const uint8_t *rx, int rl, uint8_t *out,
                                     int cap) {
   int got = 0;
   for (int pos = 0; pos < rl;) {
     int chunk = (rl - pos < 41) ? (rl - pos) : 41;
-    int w = dt_viterbi_stream_decode(sd, rx + pos, chunk, out + got, cap - got);
+    int w = dt_cc_viterbi_stream_decode(sd, rx + pos, chunk, out + got, cap - got);
     assert(w >= 0);
     got += w;
     pos += chunk;
   }
   for (;;) {
-    int w = dt_viterbi_stream_decode_flush(sd, out + got, cap - got);
+    int w = dt_cc_viterbi_stream_decode_flush(sd, out + got, cap - got);
     assert(w >= 0);
     if (w == 0) break;
     got += w;

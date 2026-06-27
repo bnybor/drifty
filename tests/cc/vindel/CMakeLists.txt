@@ -3,7 +3,7 @@
 # ignored and the tests simply run single-threaded.
 find_package(OpenMP COMPONENTS C QUIET)
 
-# The vindel tests exercise the private engine API (dt_ccode / dt_vindel_stream),
+# The vindel tests exercise the private engine API (dt_cc_code / dt_cc_vindel_stream),
 # so they link the non-localized engine objects directly (not the localized
 # drifty::drifty archive) and reach the private headers under src/ via -Isrc.
 # drifty_bare_obj propagates the public include dir; drifty_stdlib supplies the

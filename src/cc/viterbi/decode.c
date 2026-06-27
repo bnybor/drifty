@@ -27,7 +27,7 @@
 /*
  * Viterbi hard-decision decoder.
  *
- * A plain sliding-window Viterbi decoder over a dt_ccode. Unlike vindel/hybrid
+ * A plain sliding-window Viterbi decoder over a dt_cc_code. Unlike vindel/hybrid
  * it tracks no drift: received index == transmitted index, so each group of n
  * received bits is exactly one trellis step. It takes no channel-model
  * parameters - the trellis is the code's alone, the branch metric is Hamming
@@ -73,7 +73,7 @@ static dt_bit vit_to_dt(unsigned int bit) { return bit ? DT_TRUE : DT_FALSE; }
 
 /* Backpointer for one destination node: the predecessor state it came from and
  * the input bit of the winning edge, packed into one 16-bit word (layout
- * bit:1 | prev_state:15). dt_ccode_create caps K <= 9, so prev_state < 256 and
+ * bit:1 | prev_state:15). dt_cc_code_create caps K <= 9, so prev_state < 256 and
  * the packed value stays well under 16 bits; uint16_t halves the ring vs a
  * 32-bit word, which matters on the Cortex-M7 target. */
 typedef uint16_t vit_backpointer;
@@ -84,8 +84,8 @@ static inline vit_backpointer vit_bp_pack(int prev_state, unsigned int bit) {
 static inline unsigned int vit_bp_bit(vit_backpointer b) { return b & 1u; }
 static inline int vit_bp_state(vit_backpointer b) { return (int)(b >> 1); }
 
-struct dt_viterbi_stream_decoder {
-  const dt_ccode *code; /* borrowed; must outlive the decoder */
+struct dt_cc_viterbi_stream_decoder {
+  const dt_cc_code *code; /* borrowed; must outlive the decoder */
 
   int n;              /* code->n: coded bits per step / per group       */
   int num_states;     /* code->n_states: 1 << (K-1)                     */
@@ -116,7 +116,7 @@ struct dt_viterbi_stream_decoder {
 
 /* Append `n_in` received symbols. No drift means no history is needed below
  * read_base, so the consumed prefix is dropped first; then grow if needed. */
-static int vit_feed(dt_viterbi_stream_decoder *d, const uint8_t *in, int n_in) {
+static int vit_feed(dt_cc_viterbi_stream_decoder *d, const uint8_t *in, int n_in) {
   if (d->read_base > 0) {
     dt_memmove(d->received, d->received + d->read_base,
                (size_t)(d->received_length - d->read_base));
@@ -130,7 +130,7 @@ static int vit_feed(dt_viterbi_stream_decoder *d, const uint8_t *in, int n_in) {
     }
     uint8_t *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_ERR_ALLOC;
+      return DT_CC_ERR_ALLOC;
     }
     d->received = new_buffer;
     d->received_capacity = new_capacity;
@@ -138,7 +138,7 @@ static int vit_feed(dt_viterbi_stream_decoder *d, const uint8_t *in, int n_in) {
   for (int i = 0; i < n_in; ++i) {
     d->received[d->received_length++] = in[i];
   }
-  return DT_OK;
+  return DT_CC_OK;
 }
 
 /* -- forward pass ---------------------------------------------------------- */
@@ -163,8 +163,8 @@ static int branch_metric(const uint8_t *expected, const uint8_t *group, int n) {
  * add-compare-select scatter from each (state, bit) edge to its successor,
  * recording backpointers into this step's ring layer, then renormalise the new
  * frontier so the metrics stay bounded. */
-static void vit_step(dt_viterbi_stream_decoder *d, const uint8_t *group) {
-  const dt_ccode *code = d->code;
+static void vit_step(dt_cc_viterbi_stream_decoder *d, const uint8_t *group) {
+  const dt_cc_code *code = d->code;
   const int ns = d->num_states, n = d->n;
   vit_backpointer *layer =
       d->backpointers + (size_t)(d->steps % d->decision_depth) * ns;
@@ -214,7 +214,7 @@ static void vit_step(dt_viterbi_stream_decoder *d, const uint8_t *group) {
 }
 
 /* Lowest-cost state at the current frontier. */
-static int vit_frontier(const dt_viterbi_stream_decoder *d) {
+static int vit_frontier(const dt_cc_viterbi_stream_decoder *d) {
   int best_state = 0, best = d->metric[0];
   for (int s = 1; s < d->num_states; ++s) {
     if (d->metric[s] < best) {
@@ -228,7 +228,7 @@ static int vit_frontier(const dt_viterbi_stream_decoder *d) {
 /* Input bit decided at step `target`, traced from frontier node `frontier`
  * (the state after the most recent step). Walks the backpointer ring from the
  * frontier back to `target`; the edge into step `target` carries the bit. */
-static unsigned int vit_trace(const dt_viterbi_stream_decoder *d, int frontier,
+static unsigned int vit_trace(const dt_cc_viterbi_stream_decoder *d, int frontier,
                               long long target) {
   const int ns = d->num_states, dd = d->decision_depth;
   int cur = frontier;
@@ -245,7 +245,7 @@ static unsigned int vit_trace(const dt_viterbi_stream_decoder *d, int frontier,
 /* Process whole received groups, emitting each step's decision decision_depth
  * steps after it is seen (once the survivors have merged), until input or
  * output runs out. Returns the number of decoded bits written. */
-static int vit_run(dt_viterbi_stream_decoder *d, uint8_t *out, int max_out) {
+static int vit_run(dt_cc_viterbi_stream_decoder *d, uint8_t *out, int max_out) {
   int output_count = 0;
   while (d->received_length - d->read_base >= d->n) {
     /* Processing the next step overwrites the backpointer layer of step
@@ -267,12 +267,12 @@ static int vit_run(dt_viterbi_stream_decoder *d, uint8_t *out, int max_out) {
 
 /* -- public API ------------------------------------------------------------ */
 
-dt_viterbi_stream_decoder *dt_viterbi_stream_decoder_create(
-    const dt_ccode *code) {
+dt_cc_viterbi_stream_decoder *dt_cc_viterbi_stream_decoder_create(
+    const dt_cc_code *code) {
   if (!code) {
     return NULL;
   }
-  dt_viterbi_stream_decoder *d = dt_calloc(1, sizeof(*d));
+  dt_cc_viterbi_stream_decoder *d = dt_calloc(1, sizeof(*d));
   if (!d) {
     return NULL;
   }
@@ -286,7 +286,7 @@ dt_viterbi_stream_decoder *dt_viterbi_stream_decoder_create(
   d->backpointers = dt_malloc((size_t)d->decision_depth * d->num_states *
                               sizeof(vit_backpointer));
   if (!d->metric || !d->next_metric || !d->backpointers) {
-    dt_viterbi_stream_decoder_destroy(d);
+    dt_cc_viterbi_stream_decoder_destroy(d);
     return NULL;
   }
 
@@ -299,7 +299,7 @@ dt_viterbi_stream_decoder *dt_viterbi_stream_decoder_create(
   return d;
 }
 
-void dt_viterbi_stream_decoder_destroy(dt_viterbi_stream_decoder *d) {
+void dt_cc_viterbi_stream_decoder_destroy(dt_cc_viterbi_stream_decoder *d) {
   if (!d) {
     return;
   }
@@ -310,11 +310,11 @@ void dt_viterbi_stream_decoder_destroy(dt_viterbi_stream_decoder *d) {
   dt_free(d); /* dt_free(NULL) is a no-op */
 }
 
-int dt_viterbi_stream_decode(dt_viterbi_stream_decoder *d, const uint8_t *in,
+int dt_cc_viterbi_stream_decode(dt_cc_viterbi_stream_decoder *d, const uint8_t *in,
                              int n_in, uint8_t *out, int max_out) {
   if (!d || n_in < 0 || (n_in > 0 && !in) || max_out < 0 ||
       (max_out > 0 && !out)) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   int status = vit_feed(d, in, n_in);
   if (status < 0) {
@@ -323,10 +323,10 @@ int dt_viterbi_stream_decode(dt_viterbi_stream_decoder *d, const uint8_t *in,
   return vit_run(d, out, max_out);
 }
 
-int dt_viterbi_stream_decode_flush(dt_viterbi_stream_decoder *d, uint8_t *out,
+int dt_cc_viterbi_stream_decode_flush(dt_cc_viterbi_stream_decoder *d, uint8_t *out,
                                    int max_out) {
   if (!d || max_out < 0 || (max_out > 0 && !out)) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   /* First commit anything that crossed the decision-depth threshold but did not

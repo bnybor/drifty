@@ -28,8 +28,8 @@
 #define DRIFTY_VINDEL_DECODE_H
 
 /* The vindel decoder is a drift-tolerant Viterbi decoder. It is built from a
- * dt_ccode and shares the result codes defined alongside the encoder;
- * dt_vindel_stream_decoder_create takes the dt_vindel_stream_params channel
+ * dt_cc_code and shares the result codes defined alongside the encoder;
+ * dt_cc_vindel_stream_decoder_create takes the dt_cc_vindel_stream_params channel
  * model, which lives in <drifty/cc/vindel.h>. */
 #include <drifty/cc/vindel.h>
 #include "encode.h"
@@ -48,46 +48,46 @@ extern "C" {
  * decoder and read the bits back, with flipped, inserted and dropped bits
  * corrected.
  *
- *   dt_vindel_stream_decoder *d = dt_vindel_stream_decoder_create(code,
- *       &(dt_vindel_stream_params){
+ *   dt_cc_vindel_stream_decoder *d = dt_cc_vindel_stream_decoder_create(code,
+ *       &(dt_cc_vindel_stream_params){
  *           .decision_depth = 40, .max_drift = 4,
  *           .p_sub = 0.01, .p_ins = 0.01, .p_del = 0.01,
  *       });
- *   int n = dt_vindel_stream_decode(d, in, n_in, out, NULL, out_cap);
- *   while (dt_vindel_stream_decode_flush(d, out, out_cap) > 0) { }
+ *   int n = dt_cc_vindel_stream_decode(d, in, n_in, out, NULL, out_cap);
+ *   while (dt_cc_vindel_stream_decode_flush(d, out, out_cap) > 0) { }
  *
- *   dt_vindel_stream_decoder_destroy(d);
+ *   dt_cc_vindel_stream_decoder_destroy(d);
  *
  * `code` must be the same one the sender used, and must stay alive until the
- * decoder is freed. dt_vindel_stream_decoder is an opaque handle.
+ * decoder is freed. dt_cc_vindel_stream_decoder is an opaque handle.
  *
  * Bits crossing this boundary are dt_bit symbols (DT_FALSE / DT_TRUE, and
  * DT_ERASURE on input to mark a lost bit); the engine converts to and from its
  * internal representation at the edges.
  */
 /* clang-format on */
-typedef struct dt_vindel_stream_decoder dt_vindel_stream_decoder;
+typedef struct dt_cc_vindel_stream_decoder dt_cc_vindel_stream_decoder;
 
-/* dt_vindel_stream_params (the decoder channel-model settings) is defined in
+/* dt_cc_vindel_stream_params (the decoder channel-model settings) is defined in
  * <drifty/cc/vindel.h>, included above. */
 
 /*
  * Make a decoder for `code` (which must stay alive until the decoder is freed)
  * using `params`. Returns NULL on invalid settings or out of memory; free it
- * with dt_vindel_stream_decoder_destroy().
+ * with dt_cc_vindel_stream_decoder_destroy().
  */
-dt_vindel_stream_decoder *dt_vindel_stream_decoder_create(
-    const dt_ccode *code, const dt_vindel_stream_params *params);
+dt_cc_vindel_stream_decoder *dt_cc_vindel_stream_decoder_create(
+    const dt_cc_code *code, const dt_cc_vindel_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
-void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d);
+void dt_cc_vindel_stream_decoder_destroy(dt_cc_vindel_stream_decoder *d);
 
 /*
  * Feed `n_in` received bits (each DT_FALSE, DT_TRUE, or DT_ERASURE) and collect
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
- * written (0 or more), or a negative DT_ERR_* code.
+ * written (0 or more), or a negative DT_CC_ERR_* code.
  *
- * You get about one decoded bit per dt_ccode_n(code) received bits. If `out`
+ * You get about one decoded bit per dt_cc_code_n(code) received bits. If `out`
  * fills up (return value == max_out), call again to collect more before feeding
  * more input.
  *
@@ -95,7 +95,7 @@ void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d);
  * position that the decoder is locked onto a valid coded bit stream. Same size
  * as `out`.
  */
-int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in,
+int dt_cc_vindel_stream_decode(dt_cc_vindel_stream_decoder *d, const uint8_t *in,
                             int n_in, uint8_t *out, float *lock_probability,
                             int max_out);
 
@@ -104,7 +104,7 @@ int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in,
  * Returns how many bits were written (0..max_out); call it repeatedly until it
  * returns 0, after which every bit has been decoded.
  */
-int dt_vindel_stream_decode_flush(dt_vindel_stream_decoder *d, uint8_t *out,
+int dt_cc_vindel_stream_decode_flush(dt_cc_vindel_stream_decoder *d, uint8_t *out,
                                   int max_out);
 
 #ifdef __cplusplus

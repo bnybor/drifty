@@ -71,7 +71,7 @@ static dt_bit vin_to_dt(unsigned char bit) { return bit ? DT_TRUE : DT_FALSE; }
  * and the input bit that got there, packed into one 32-bit word to shrink the
  * backpointer ring (~3x vs a struct) and make each forward-pass write a single
  * store. Layout: bit:1 | prev_drift_index:15 | prev_state:16. The field widths
- * dwarf the validated ranges (dt_ccode_create caps K <= 9, so prev_state < 256;
+ * dwarf the validated ranges (dt_cc_code_create caps K <= 9, so prev_state < 256;
  * decoder_init guards prev_drift_index/prev_state against overflow). */
 typedef uint32_t vin_backpointer;
 
@@ -117,7 +117,7 @@ static inline int vin_bp_state(vin_backpointer b) { return (int)(b >> 16); }
  *
  * All decoder state - the received buffer and cadence, the channel-derived cost
  * constants, and the trellis working arrays over the [num_states][drift_width]
- * node grid - lives in one dt_vindel_stream_decoder. Many of a code's 2*num_states
+ * node grid - lives in one dt_cc_vindel_stream_decoder. Many of a code's 2*num_states
  * edges share the same n-bit output row, so the per-step alignment DP is computed
  * once per distinct output pattern (align_precompute) and the forward pass scatters
  * those shared rows, indexing them by each edge's pattern (group_of).
@@ -127,8 +127,8 @@ static inline int vin_bp_state(vin_backpointer b) { return (int)(b >> 16); }
 /* The decoder is one shared context plus one trellis, merged: a received buffer
  * and step cadence, the channel-derived cost constants, the per-step alignment
  * scratch, and the trellis metric/backpointers over the node grid. */
-struct dt_vindel_stream_decoder {
-  const dt_ccode *code; /* borrowed; must outlive the decoder */
+struct dt_cc_vindel_stream_decoder {
+  const dt_cc_code *code; /* borrowed; must outlive the decoder */
 
   int n, max_drift, num_states, drift_width, decision_depth;
   /* Branch-metric constants, in cost (negative-log-likelihood) units. */
@@ -184,7 +184,7 @@ static size_t node_at(int state, int drift_index, int drift_width) {
 
 /* Drop the dead prefix. Keep 2*max_drift bits of history below read_base so a
  * re-anchor that steps the cursor back still has its window buffered. */
-static void compact_received(dt_vindel_stream_decoder *d) {
+static void compact_received(dt_cc_vindel_stream_decoder *d) {
   int keep_from = d->read_base - 2 * d->max_drift;
   if (keep_from <= 0) {
     return;
@@ -196,7 +196,7 @@ static void compact_received(dt_vindel_stream_decoder *d) {
 }
 
 /* Ensure room for `extra` more bits, compacting then growing as needed. */
-static int reserve_received(dt_vindel_stream_decoder *d, int extra) {
+static int reserve_received(dt_cc_vindel_stream_decoder *d, int extra) {
   compact_received(d);
   if (d->received_length + extra > d->received_capacity) {
     int new_capacity = d->received_capacity * 2;
@@ -205,19 +205,19 @@ static int reserve_received(dt_vindel_stream_decoder *d, int extra) {
     }
     uint8_t *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_ERR_ALLOC;
+      return DT_CC_ERR_ALLOC;
     }
     d->received = new_buffer;
     d->received_capacity = new_capacity;
   }
-  return DT_OK;
+  return DT_CC_OK;
 }
 
 /* -- core trellis ---------------------------------------------------------- */
 
 /* Flat index of the lowest-cost node at the current frontier (the node states
  * one step past the last one processed). */
-static int frontier(const dt_vindel_stream_decoder *d) {
+static int frontier(const dt_cc_vindel_stream_decoder *d) {
   const size_t count = (size_t)d->num_states * d->drift_width;
   float best_cost = INFINITY;
   int best = 0;
@@ -233,7 +233,7 @@ static int frontier(const dt_vindel_stream_decoder *d) {
 /* Choose this step's re-anchor shift: nudge the window one step toward centre
  * when the best node's drift leaves a deadband, so its drift stays well inside
  * the window even as cumulative drift grows. */
-static int pick_shift(const dt_vindel_stream_decoder *d) {
+static int pick_shift(const dt_cc_vindel_stream_decoder *d) {
   if (d->max_drift == 0) {
     return 0; /* no drift tracking: window is one wide, nothing to shift */
   }
@@ -265,7 +265,7 @@ static int pick_shift(const dt_vindel_stream_decoder *d) {
  * per-bit "not an indel" cost), so the model is fully bit-level rather than
  * per-group. */
 /* clang-format on */
-static void align_fill_into(const dt_vindel_stream_decoder *d,
+static void align_fill_into(const dt_cc_vindel_stream_decoder *d,
                             const uint8_t *expected, int base,
                             float *final_out) {
   const int n = d->n, max_consume = d->n + 2 * d->max_drift,
@@ -318,7 +318,7 @@ static void align_fill_into(const dt_vindel_stream_decoder *d,
  * of the buffer (where only deletion is available - see align_fill_into). The
  * window spans every (source drift, consumed) an edge can touch: n + 4*max_drift
  * wide. */
-static void fill_match_costs(dt_vindel_stream_decoder *d) {
+static void fill_match_costs(dt_cc_vindel_stream_decoder *d) {
   const int window = d->n + 4 * d->max_drift;
   const float keep = d->cost_keep, match = d->cost_match, miss = d->cost_miss,
                erase = d->cost_erase;
@@ -374,7 +374,7 @@ static float normalize(float *metric, size_t count) {
  * emptied edge can never be recorded as a backpointer's prev_drift_index - which
  * is exactly what keeps trace's `prev_drift_index + sigma` inside
  * [0, drift_width) when it steps back across this re-anchor. */
-static void reanchor_metric(dt_vindel_stream_decoder *d, int sigma) {
+static void reanchor_metric(dt_cc_vindel_stream_decoder *d, int sigma) {
   const int num_states = d->num_states, drift_width = d->drift_width;
   for (int state = 0; state < num_states; ++state) {
     for (int drift_index = 0; drift_index < drift_width; ++drift_index) {
@@ -395,7 +395,7 @@ static void reanchor_metric(dt_vindel_stream_decoder *d, int sigma) {
  * patterns rather than once per edge. A drift is computed only when some state is
  * live there; dead-drift rows are never read by the scatter (it skips dead
  * nodes). */
-static void align_precompute(dt_vindel_stream_decoder *d) {
+static void align_precompute(dt_cc_vindel_stream_decoder *d) {
   const int n = d->n, max_drift = d->max_drift, num_states = d->num_states,
             drift_width = d->drift_width;
   const int stride = d->n + 2 * d->max_drift + 1;
@@ -427,8 +427,8 @@ static void align_precompute(dt_vindel_stream_decoder *d) {
  * step's backpointers, then normalise, update the smoothed cost, and swap. The
  * node/edge order (state, drift, bit, ending drift) matches the per-edge form, so
  * the `<` tie-break - and the decoded bits - are identical. */
-static void forward_pass(dt_vindel_stream_decoder *d) {
-  const dt_ccode *code = d->code;
+static void forward_pass(dt_cc_vindel_stream_decoder *d) {
+  const dt_cc_code *code = d->code;
   const int n = d->n, num_states = d->num_states, drift_width = d->drift_width;
   const size_t count = (size_t)num_states * drift_width;
   const int stride = d->n + 2 * d->max_drift + 1;
@@ -495,8 +495,8 @@ static void forward_pass(dt_vindel_stream_decoder *d) {
  * per-bit match costs - a plain Viterbi butterfly with no alignment DP and no
  * drift loops. This yields exactly the general path's branch cost (final_row[n])
  * in the same (state, bit) order, so output is identical. */
-static void forward_pass_nodrift(dt_vindel_stream_decoder *d) {
-  const dt_ccode *code = d->code;
+static void forward_pass_nodrift(dt_cc_vindel_stream_decoder *d) {
+  const dt_cc_code *code = d->code;
   const int n = d->n, num_states = d->num_states;
   const int base = d->read_base;
   const int in_range = base >= 0 && base + n <= d->received_length;
@@ -552,7 +552,7 @@ static void forward_pass_nodrift(dt_vindel_stream_decoder *d) {
  * the window and the read cursor), then run the forward pass. With no drift
  * window and indels disabled the alignment is forced diagonal; a dedicated
  * butterfly skips the DP entirely (identical result). */
-static void decode_step(dt_vindel_stream_decoder *d) {
+static void decode_step(dt_cc_vindel_stream_decoder *d) {
   const int sigma = pick_shift(d);
   if (sigma != 0) {
     reanchor_metric(d, sigma);
@@ -580,7 +580,7 @@ static void decode_step(dt_vindel_stream_decoder *d) {
  * and return the input bit decided there. Each step's backpointer is stored in
  * that step's drift frame, so when stepping back across a re-anchor we shift the
  * predecessor's drift index by that step's recorded sigma. */
-static unsigned char trace(const dt_vindel_stream_decoder *d, int frontier_node,
+static unsigned char trace(const dt_cc_vindel_stream_decoder *d, int frontier_node,
                            long long target) {
   const size_t count = (size_t)d->num_states * d->drift_width;
   /* Traceback only reaches back through retained ring layers; a deeper target
@@ -618,7 +618,7 @@ static unsigned char trace(const dt_vindel_stream_decoder *d, int frontier_node,
  * path dominant?" confidence: a confidently decoded WRONG code is dominant but
  * expensive, so it reads as unlocked. (Two encoders for the SAME code are not
  * "wrong" - they share codewords - and correctly read as locked.) */
-static float lock_estimate(const dt_vindel_stream_decoder *d) {
+static float lock_estimate(const dt_cc_vindel_stream_decoder *d) {
   const float gap = d->expected_unlock - d->expected_lock;
   if (gap <= 0.0f) {
     return 0.0f;
@@ -635,7 +635,7 @@ static float lock_estimate(const dt_vindel_stream_decoder *d) {
 /* Process steps, emitting forced decisions, until input/output limits hit. Each
  * emitted bit's lock probability is written to lock_out[] when non-NULL.
  * `draining` relaxes the look-ahead requirement for end-of-stream. */
-static int run(dt_vindel_stream_decoder *d, uint8_t *out, float *lock_out,
+static int run(dt_cc_vindel_stream_decoder *d, uint8_t *out, float *lock_out,
                int max_out, int draining) {
   int output_count = 0;
   for (;;) {
@@ -670,7 +670,7 @@ static int run(dt_vindel_stream_decoder *d, uint8_t *out, float *lock_out,
 /* Initialise the metric for blind acquisition: every encoder state is equally
  * likely (all at zero drift), so the decoder locks on whether it starts at the
  * stream's beginning or is tapped partway through. */
-static void init_metric(dt_vindel_stream_decoder *d) {
+static void init_metric(dt_cc_vindel_stream_decoder *d) {
   const size_t count = (size_t)d->num_states * d->drift_width;
   for (size_t i = 0; i < count; ++i) {
     d->metric[i] = INFINITY;
@@ -685,7 +685,7 @@ static void init_metric(dt_vindel_stream_decoder *d) {
  * output rows into pattern_bits, and fill group_of[edge] with each edge's pattern
  * index. The pattern list cannot exceed the edge count, so pattern_bits (sized to
  * 2*num_states rows in decoder_init) never needs to grow. */
-static void register_patterns(dt_vindel_stream_decoder *d) {
+static void register_patterns(dt_cc_vindel_stream_decoder *d) {
   const int n = d->n, edges = d->num_states * 2;
   d->n_patterns = 0;
   for (int edge = 0; edge < edges; ++edge) {
@@ -717,11 +717,11 @@ static void register_patterns(dt_vindel_stream_decoder *d) {
 /* -- lifecycle ------------------------------------------------------------- */
 
 /* Validate `params`, take dimensions from `code`, derive the cost constants, and
- * allocate every buffer. Returns DT_OK or a negative DT_ERR_*. A decoder that
+ * allocate every buffer. Returns DT_CC_OK or a negative DT_CC_ERR_*. A decoder that
  * failed (or was zero-initialised) is safe to pass to decoder_free. */
-static int decoder_init(dt_vindel_stream_decoder *d,
-                        const dt_vindel_stream_params *params,
-                        const dt_ccode *code) {
+static int decoder_init(dt_cc_vindel_stream_decoder *d,
+                        const dt_cc_vindel_stream_params *params,
+                        const dt_cc_code *code) {
   const int decision_depth = params->decision_depth;
   const int max_drift = params->max_drift;
   const float p_sub = params->p_sub;
@@ -730,16 +730,16 @@ static int decoder_init(dt_vindel_stream_decoder *d,
   const float p_erase = params->p_erase;
 
   if (decision_depth < 1 || max_drift < 0) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   if (!(p_sub > 0.0f && p_sub < 1.0f) || !(p_erase >= 0.0f && p_erase < 1.0f) ||
       !(p_ins + p_del < 1.0f) || p_ins < 0.0f || p_del < 0.0f) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   /* Insertion/deletion probabilities are only consulted when tracking drift;
    * with max_drift == 0 they may be left 0 (correct flips only). */
   if (max_drift > 0 && (p_ins <= 0.0f || p_del <= 0.0f)) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   d->code = code;
@@ -750,12 +750,12 @@ static int decoder_init(dt_vindel_stream_decoder *d,
   d->decision_depth = decision_depth;
 
   /* The packed backpointer (above) carries prev_state in 16 bits and
-   * prev_drift_index in 15. dt_ccode_create caps K (num_states <= 256) and real
+   * prev_drift_index in 15. dt_cc_code_create caps K (num_states <= 256) and real
    * max_drift is tiny, but guard the packing invariant rather than silently
    * truncating. */
   if (d->num_states - 1 > VIN_BP_MAX_STATE ||
       d->drift_width - 1 > VIN_BP_MAX_DRIFT) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   /* Channel model: a coded bit is erased with prob p_erase; otherwise it is
@@ -814,7 +814,7 @@ static int decoder_init(dt_vindel_stream_decoder *d,
   if (!d->shift || !d->received || !d->alignment || !d->match_cost0 ||
       !d->match_cost1 || !d->in_range || !d->metric || !d->next_metric ||
       !d->backpointers || !d->group_of || !d->pattern_bits) {
-    return DT_ERR_ALLOC;
+    return DT_CC_ERR_ALLOC;
   }
 
   register_patterns(d);
@@ -822,14 +822,14 @@ static int decoder_init(dt_vindel_stream_decoder *d,
   d->align_shared = dt_malloc((size_t)d->n_patterns * d->drift_width *
                               (size_t)stride * sizeof(float));
   if (!d->align_shared) {
-    return DT_ERR_ALLOC;
+    return DT_CC_ERR_ALLOC;
   }
 
   init_metric(d);
-  return DT_OK;
+  return DT_CC_OK;
 }
 
-static void decoder_free(dt_vindel_stream_decoder *d) {
+static void decoder_free(dt_cc_vindel_stream_decoder *d) {
   dt_free(d->shift);
   dt_free(d->received);
   dt_free(d->alignment);
@@ -844,7 +844,7 @@ static void decoder_free(dt_vindel_stream_decoder *d) {
   dt_free(d->align_shared);
 }
 
-static int decode_feed(dt_vindel_stream_decoder *d, const uint8_t *in,
+static int decode_feed(dt_cc_vindel_stream_decoder *d, const uint8_t *in,
                        int n_in) {
   int status = reserve_received(d, n_in);
   if (status < 0) {
@@ -855,17 +855,17 @@ static int decode_feed(dt_vindel_stream_decoder *d, const uint8_t *in,
     d->received[d->received_length + i] = vin_from_dt(in[i]);
   }
   d->received_length += n_in;
-  return DT_OK;
+  return DT_CC_OK;
 }
 
 /* -- public single-stream decoder ------------------------------------------ */
 
-dt_vindel_stream_decoder *dt_vindel_stream_decoder_create(
-    const dt_ccode *code, const dt_vindel_stream_params *params) {
+dt_cc_vindel_stream_decoder *dt_cc_vindel_stream_decoder_create(
+    const dt_cc_code *code, const dt_cc_vindel_stream_params *params) {
   if (!code || !params) {
     return NULL;
   }
-  dt_vindel_stream_decoder *d = dt_calloc(1, sizeof(*d));
+  dt_cc_vindel_stream_decoder *d = dt_calloc(1, sizeof(*d));
   if (!d) {
     return NULL;
   }
@@ -877,7 +877,7 @@ dt_vindel_stream_decoder *dt_vindel_stream_decoder_create(
   return d;
 }
 
-void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d) {
+void dt_cc_vindel_stream_decoder_destroy(dt_cc_vindel_stream_decoder *d) {
   if (!d) {
     return;
   }
@@ -885,12 +885,12 @@ void dt_vindel_stream_decoder_destroy(dt_vindel_stream_decoder *d) {
   dt_free(d);
 }
 
-int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in,
+int dt_cc_vindel_stream_decode(dt_cc_vindel_stream_decoder *d, const uint8_t *in,
                             int n_in, uint8_t *out, float *lock_probability,
                             int max_out) {
   if (!d || (n_in > 0 && !in) || n_in < 0 || (max_out > 0 && !out) ||
       max_out < 0) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   int status = decode_feed(d, in, n_in);
   if (status < 0) {
@@ -899,10 +899,10 @@ int dt_vindel_stream_decode(dt_vindel_stream_decoder *d, const uint8_t *in,
   return run(d, out, lock_probability, max_out, /*draining=*/0);
 }
 
-int dt_vindel_stream_decode_flush(dt_vindel_stream_decoder *d, uint8_t *out,
+int dt_cc_vindel_stream_decode_flush(dt_cc_vindel_stream_decoder *d, uint8_t *out,
                                   int max_out) {
   if (!d || (max_out > 0 && !out) || max_out < 0) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   int output_count = run(d, out, /*lock=*/NULL, max_out, /*draining=*/1);
 

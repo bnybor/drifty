@@ -35,7 +35,7 @@
 /* Encode one input bit `bit` from state *state: copy the code's n output bits
  * to `out`, advance *state, and return the number of bits written (the code's
  * n). */
-static int emit_group(const dt_ccode *code, int *state, int bit, uint8_t *out) {
+static int emit_group(const dt_cc_code *code, int *state, int bit, uint8_t *out) {
   const uint8_t *group = &code->output[((size_t)(*state * 2 + bit)) * code->n];
   for (int j = 0; j < code->n; ++j) {
     /* code->output holds the codeword as raw 0/1; emit it as bit symbols. */
@@ -45,13 +45,13 @@ static int emit_group(const dt_ccode *code, int *state, int bit, uint8_t *out) {
   return code->n;
 }
 
-int dt_vindel_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
+int dt_cc_vindel_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits,
                    int *state, uint8_t *out) {
   if (!code || !state || n_bits < 0 || (n_bits > 0 && !bits) || !out) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   if (*state < 0 || *state >= code->n_states) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   int current_state = *state, written = 0;
@@ -62,12 +62,12 @@ int dt_vindel_encode(const dt_ccode *code, const uint8_t *bits, int n_bits,
   return written;
 }
 
-int dt_vindel_encode_flush(const dt_ccode *code, int *state, uint8_t *out) {
+int dt_cc_vindel_encode_flush(const dt_cc_code *code, int *state, uint8_t *out) {
   if (!code || !state || !out) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   if (*state < 0 || *state >= code->n_states) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   /* Feed K-1 zero bits, which shift the state register back to 0. */

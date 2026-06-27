@@ -43,16 +43,16 @@
 #include <math.h>
 
 /* The four default standard codes, spanning n = 2, 3, 5 and K = 3, 5, 7. */
-static const dt_standard_code PRESETS[] = {
-    DT_CODE_K3_RATE_1_2, DT_CODE_K7_RATE_1_2, DT_CODE_K7_RATE_1_3,
-    DT_CODE_K5_RATE_1_5};
+static const dt_cc_standard_code PRESETS[] = {
+    DT_CC_CODE_K3_RATE_1_2, DT_CC_CODE_K7_RATE_1_2, DT_CC_CODE_K7_RATE_1_3,
+    DT_CC_CODE_K5_RATE_1_5};
 static const char *PRESET_NAMES[] = {"K3_R1_2", "K7_R1_2", "K7_R1_3",
                                      "K5_R1_5"};
 #define NUM_PRESETS ((int)(sizeof(PRESETS) / sizeof(PRESETS[0])))
 
 /* A valid channel model for the decoder (synchronous: no drift). */
-static dt_maxir_stream_params good_params(void) {
-  return (dt_maxir_stream_params){.decision_depth = 40, .p_flip = 0.01f};
+static dt_cc_maxir_stream_params good_params(void) {
+  return (dt_cc_maxir_stream_params){.decision_depth = 40, .p_flip = 0.01f};
 }
 
 /* -- encoder (implemented) ------------------------------------------------- */
@@ -64,9 +64,9 @@ static void test_encode_length_and_chunked(void) {
   const int info_bits = 200;
 
   for (int p = 0; p < NUM_PRESETS; ++p) {
-    dt_ccode *code = dt_ccode_create_standard(PRESETS[p]);
+    dt_cc_code *code = dt_cc_code_create_standard(PRESETS[p]);
     REQUIRE("code created", code != NULL);
-    const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+    const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
 
     uint8_t *msg = malloc((size_t)info_bits);
     uint8_t *one = malloc((size_t)(info_bits + K) * (size_t)n);
@@ -78,9 +78,9 @@ static void test_encode_length_and_chunked(void) {
     /* Same message, encoded as 80 + 120 through one running state, then flush. */
     int state = 0, len_two = 0;
     unsigned int unknown = 0;
-    len_two += dt_maxir_encode(code, msg, 80, &state, &unknown, two);
-    len_two += dt_maxir_encode(code, msg + 80, 120, &state, &unknown, two + len_two);
-    int flushed = dt_maxir_encode_flush(code, &state, &unknown, two + len_two);
+    len_two += dt_cc_maxir_encode(code, msg, 80, &state, &unknown, two);
+    len_two += dt_cc_maxir_encode(code, msg + 80, 120, &state, &unknown, two + len_two);
+    int flushed = dt_cc_maxir_encode_flush(code, &state, &unknown, two + len_two);
     len_two += flushed;
 
     check(PRESET_NAMES[p], 1);
@@ -95,13 +95,13 @@ static void test_encode_length_and_chunked(void) {
     free(msg);
     free(one);
     free(two);
-    dt_ccode_destroy(code);
+    dt_cc_code_destroy(code);
   }
 }
 
 /* Bad arguments are rejected rather than crashing. */
 static void test_encode_error_paths(void) {
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
   uint8_t msg[4] = {DT_TRUE, DT_FALSE, DT_TRUE, DT_TRUE};
   uint8_t out[64];
@@ -109,22 +109,22 @@ static void test_encode_error_paths(void) {
   unsigned int unknown = 0;
 
   check("encode rejects NULL code",
-        dt_maxir_encode(NULL, msg, 4, &state, &unknown, out) == DT_ERR_ARG);
+        dt_cc_maxir_encode(NULL, msg, 4, &state, &unknown, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL state",
-        dt_maxir_encode(code, msg, 4, NULL, &unknown, out) == DT_ERR_ARG);
+        dt_cc_maxir_encode(code, msg, 4, NULL, &unknown, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL unknown",
-        dt_maxir_encode(code, msg, 4, &state, NULL, out) == DT_ERR_ARG);
+        dt_cc_maxir_encode(code, msg, 4, &state, NULL, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL out",
-        dt_maxir_encode(code, msg, 4, &state, &unknown, NULL) == DT_ERR_ARG);
+        dt_cc_maxir_encode(code, msg, 4, &state, &unknown, NULL) == DT_CC_ERR_ARG);
   check("encode rejects negative n_bits",
-        dt_maxir_encode(code, msg, -1, &state, &unknown, out) == DT_ERR_ARG);
+        dt_cc_maxir_encode(code, msg, -1, &state, &unknown, out) == DT_CC_ERR_ARG);
   int bad_state = 999999;
   check("encode rejects out-of-range state",
-        dt_maxir_encode(code, msg, 4, &bad_state, &unknown, out) == DT_ERR_ARG);
+        dt_cc_maxir_encode(code, msg, 4, &bad_state, &unknown, out) == DT_CC_ERR_ARG);
   check("flush rejects NULL code",
-        dt_maxir_encode_flush(NULL, &state, &unknown, out) == DT_ERR_ARG);
+        dt_cc_maxir_encode_flush(NULL, &state, &unknown, out) == DT_CC_ERR_ARG);
 
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* The full encoder vtable drives begin/encode/finalize and produces the same
@@ -133,9 +133,9 @@ static void test_encoder_vtable(void) {
   check("encoder_create rejects NULL code",
         dt_cc_full_encoder_create(NULL) == NULL);
 
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 64;
 
   dt_encoder *enc = dt_cc_full_encoder_create(code);
@@ -158,13 +158,13 @@ static void test_encoder_vtable(void) {
   REQUIRE("encoder created", enc2 != NULL);
   enc2->begin(enc2, out, 1);
   check("vtable encode rejects too-small dst",
-        enc2->encode(enc2, out, 1, msg, info_bits) == DT_ERR_ARG);
+        enc2->encode(enc2, out, 1, msg, info_bits) == DT_CC_ERR_ARG);
 
   dt_cc_full_encoder_destroy(enc);
   dt_cc_full_encoder_destroy(enc2);
   free(msg);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* -- decoder --------------------------------------------------------------- */
@@ -172,10 +172,10 @@ static void test_encoder_vtable(void) {
 /* Decode an entire received buffer, feeding it in two chunks and then flushing,
  * to exercise the streaming pump. Fills out[]/details[] (details may be NULL)
  * and returns the number of decisions produced. */
-static int maxir_decode_all(const dt_ccode *code, const dt_maxir_stream_params *p,
+static int maxir_decode_all(const dt_cc_code *code, const dt_cc_maxir_stream_params *p,
                            const uint8_t *rx, int rx_len, uint8_t *out,
-                           dt_maxir_decode_details *details, int out_cap) {
-  dt_maxir_stream_decoder *d = dt_maxir_stream_decoder_create(code, p);
+                           dt_cc_maxir_decode_details *details, int out_cap) {
+  dt_cc_maxir_stream_decoder *d = dt_cc_maxir_stream_decoder_create(code, p);
   if (!d) {
     return -1;
   }
@@ -184,18 +184,18 @@ static int maxir_decode_all(const dt_ccode *code, const dt_maxir_stream_params *
   const int chunks[2] = {split, rx_len - split};
   int off = 0;
   for (int c = 0; c < 2 && total < out_cap; ++c) {
-    int got = dt_maxir_stream_decode(
+    int got = dt_cc_maxir_stream_decode(
         d, rx + off, chunks[c], out + total,
         details ? details + total : NULL, out_cap - total);
     if (got < 0) {
-      dt_maxir_stream_decoder_destroy(d);
+      dt_cc_maxir_stream_decoder_destroy(d);
       return got;
     }
     total += got;
     off += chunks[c];
   }
   for (;;) {
-    int got = dt_maxir_stream_decode_flush(
+    int got = dt_cc_maxir_stream_decode_flush(
         d, out + total, details ? details + total : NULL, out_cap - total);
     if (got <= 0) {
       break;
@@ -205,7 +205,7 @@ static int maxir_decode_all(const dt_ccode *code, const dt_maxir_stream_params *
       break;
     }
   }
-  dt_maxir_stream_decoder_destroy(d);
+  dt_cc_maxir_stream_decoder_destroy(d);
   return total;
 }
 
@@ -213,51 +213,51 @@ static int maxir_decode_all(const dt_ccode *code, const dt_maxir_stream_params *
  * drift request (max_drift > 0) is accepted with indel rates and rejected
  * without. */
 static void test_decoder_param_validation(void) {
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  dt_maxir_stream_params p = good_params();
+  dt_cc_maxir_stream_params p = good_params();
 
   check("create rejects NULL code",
-        dt_maxir_stream_decoder_create(NULL, &p) == NULL);
+        dt_cc_maxir_stream_decoder_create(NULL, &p) == NULL);
   check("create rejects NULL params",
-        dt_maxir_stream_decoder_create(code, NULL) == NULL);
+        dt_cc_maxir_stream_decoder_create(code, NULL) == NULL);
 
-  dt_maxir_stream_params bad = p;
+  dt_cc_maxir_stream_params bad = p;
   bad.decision_depth = 0;
   check("create rejects decision_depth < 1",
-        dt_maxir_stream_decoder_create(code, &bad) == NULL);
+        dt_cc_maxir_stream_decoder_create(code, &bad) == NULL);
   bad = p;
   bad.p_flip = 0.0f;
   check("create rejects p_flip == 0",
-        dt_maxir_stream_decoder_create(code, &bad) == NULL);
+        dt_cc_maxir_stream_decoder_create(code, &bad) == NULL);
   bad = p;
   bad.p_flip = 1.0f;
   check("create rejects p_flip == 1",
-        dt_maxir_stream_decoder_create(code, &bad) == NULL);
+        dt_cc_maxir_stream_decoder_create(code, &bad) == NULL);
   bad = p;
   bad.p_ovr_erase = 1.0f;
   check("create rejects p_ovr_erase == 1",
-        dt_maxir_stream_decoder_create(code, &bad) == NULL);
+        dt_cc_maxir_stream_decoder_create(code, &bad) == NULL);
   bad = p;
   bad.max_drift = -1;
   check("create rejects max_drift < 0",
-        dt_maxir_stream_decoder_create(code, &bad) == NULL);
+        dt_cc_maxir_stream_decoder_create(code, &bad) == NULL);
 
   /* Drift tracking needs both an insertion mass and a deletion rate. */
   bad = p;
   bad.max_drift = 4;
   check("create rejects max_drift > 0 without indel rates",
-        dt_maxir_stream_decoder_create(code, &bad) == NULL);
-  dt_maxir_stream_params drift =
+        dt_cc_maxir_stream_decoder_create(code, &bad) == NULL);
+  dt_cc_maxir_stream_params drift =
       make_params(40, 4, 0.01, 0.01, 0.01, 0.0);
-  dt_maxir_stream_decoder *sd = dt_maxir_stream_decoder_create(code, &drift);
+  dt_cc_maxir_stream_decoder *sd = dt_cc_maxir_stream_decoder_create(code, &drift);
   check("create accepts max_drift > 0 with indel rates", sd != NULL);
-  dt_maxir_stream_decoder_destroy(sd);
+  dt_cc_maxir_stream_decoder_destroy(sd);
   drift.p_del = 1.0f; /* p_ins + p_del >= 1 */
   check("create rejects p_ins + p_del >= 1",
-        dt_maxir_stream_decoder_create(code, &drift) == NULL);
+        dt_cc_maxir_stream_decoder_create(code, &drift) == NULL);
 
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Clean channel: one decision per coded group, the warm-up prefix reads as
@@ -268,9 +268,9 @@ static void test_decoder_roundtrip(void) {
   const int info_bits = 500;
 
   for (int pi = 0; pi < NUM_PRESETS; ++pi) {
-    dt_ccode *code = dt_ccode_create_standard(PRESETS[pi]);
+    dt_cc_code *code = dt_cc_code_create_standard(PRESETS[pi]);
     REQUIRE("code created", code != NULL);
-    const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+    const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
     const int depth = 40;
     const int warmup = depth + 4 * K; /* unreliable left-context region */
     const int cap = (info_bits + K) * n;
@@ -281,7 +281,7 @@ static void test_decoder_roundtrip(void) {
     rand_bits(msg, info_bits, &rng);
     int clen = maxir_encode_all(code, msg, info_bits, coded);
 
-    dt_maxir_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
+    dt_cc_maxir_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
     int got = maxir_decode_all(code, &p, coded, clen, out, NULL, info_bits + K + 8);
 
     check(PRESET_NAMES[pi], 1);
@@ -306,7 +306,7 @@ static void test_decoder_roundtrip(void) {
         rx[i] = (rx[i] == DT_TRUE) ? DT_FALSE : DT_TRUE;
       }
     }
-    dt_maxir_stream_params pf = {.decision_depth = depth, .p_flip = 0.02f};
+    dt_cc_maxir_stream_params pf = {.decision_depth = depth, .p_flip = 0.02f};
     got = maxir_decode_all(code, &pf, rx, clen, out, NULL, info_bits + K + 8);
     int err = 0;
     for (int i = warmup; i < info_bits; ++i) {
@@ -318,7 +318,7 @@ static void test_decoder_roundtrip(void) {
     free(coded);
     free(out);
     free(rx);
-    dt_ccode_destroy(code);
+    dt_cc_code_destroy(code);
   }
 }
 
@@ -328,9 +328,9 @@ static void test_decoder_roundtrip(void) {
  * resolved hard symbol agrees with argmax(c_true, c_false). */
 static void test_decoder_soft_invariants(void) {
   uint64_t rng = 0x50F750F7u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 300;
   const int cap = (info_bits + K) * n;
 
@@ -350,15 +350,15 @@ static void test_decoder_soft_invariants(void) {
 
   const int outc = info_bits + K + 8;
   uint8_t *sym = malloc((size_t)outc);
-  dt_maxir_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
-  dt_maxir_stream_params p = {.decision_depth = 40, .p_flip = 0.02f,
+  dt_cc_maxir_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
+  dt_cc_maxir_stream_params p = {.decision_depth = 40, .p_flip = 0.02f,
                              .p_ovr_erase = 0.03f};
   int got = maxir_decode_all(code, &p, rx, clen, sym, det, outc);
   REQUIRE("decode produced output", got > 0);
 
   int range_ok = 1, sum_ok = 1, lost_ok = 1, argmax_ok = 1;
   for (int i = 0; i < got; ++i) {
-    const dt_maxir_decode_details *q = &det[i];
+    const dt_cc_maxir_decode_details *q = &det[i];
     const float v[6] = {q->c_true,    q->c_false, q->c_lost,
                         q->c_invalid, q->c_lock,  q->c_absent};
     for (int k = 0; k < 6; ++k) {
@@ -385,7 +385,7 @@ static void test_decoder_soft_invariants(void) {
   free(rx);
   free(sym);
   free(det);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* The encoder marks a non-boolean input on exactly the coded bits that would
@@ -399,9 +399,9 @@ static void test_decoder_soft_invariants(void) {
  * DT_ABSENT, never a confident bit), and bits away from it still decode. */
 static void test_decoder_invalid_and_erasure(void) {
   uint64_t rng = 0x12345678u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 240;
   const int depth = 40;
   const int warmup = depth + 4 * K;
@@ -414,13 +414,13 @@ static void test_decoder_invalid_and_erasure(void) {
   uint8_t *coded = malloc((size_t)cap);
   const int outc = info_bits + K + 8;
   uint8_t *sym = malloc((size_t)outc);
-  dt_maxir_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
+  dt_cc_maxir_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
 
   /* (a) DT_INVALID input: structural poison -> a DT_INVALID tie, no erasure
    * channel model needed. */
   msg[poison_at] = DT_INVALID;
   int clen = maxir_encode_all(code, msg, info_bits, coded);
-  dt_maxir_stream_params pi = {.decision_depth = depth, .p_flip = 0.01f};
+  dt_cc_maxir_stream_params pi = {.decision_depth = depth, .p_flip = 0.01f};
   int got = maxir_decode_all(code, &pi, coded, clen, sym, det, outc);
   REQUIRE("decode produced output", got > info_bits);
 
@@ -440,7 +440,7 @@ static void test_decoder_invalid_and_erasure(void) {
    * (p_ovr_erase), the decoder reads the slot back as DT_ERASURE, not poison. */
   msg[poison_at] = DT_ERASURE;
   clen = maxir_encode_all(code, msg, info_bits, coded);
-  dt_maxir_stream_params px = {.decision_depth = depth, .p_flip = 0.01f,
+  dt_cc_maxir_stream_params px = {.decision_depth = depth, .p_flip = 0.01f,
                               .p_ovr_erase = 0.05f};
   got = maxir_decode_all(code, &px, coded, clen, sym, det, outc);
   REQUIRE("erasure decode produced output", got > info_bits);
@@ -460,7 +460,7 @@ static void test_decoder_invalid_and_erasure(void) {
   uint8_t *rx = malloc((size_t)clen);
   memcpy(rx, coded, (size_t)clen);
   for (int i = 150 * n; i < 168 * n && i < clen; ++i) rx[i] = DT_ERASURE;
-  dt_maxir_stream_params pe = {.decision_depth = depth, .p_flip = 0.01f,
+  dt_cc_maxir_stream_params pe = {.decision_depth = depth, .p_flip = 0.01f,
                               .p_ovr_erase = 0.05f};
   got = maxir_decode_all(code, &pe, rx, clen, sym, det, outc);
   int lost = 0, span = 0;
@@ -482,16 +482,16 @@ static void test_decoder_invalid_and_erasure(void) {
   free(rx);
   free(sym);
   free(det);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Tapping into the middle of a coded stream (no leading sync) still locks and
  * recovers: decoded position j corresponds to original info bit skip + j. */
 static void test_decoder_blind_acquisition(void) {
   uint64_t rng = 0xACAC99u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 500;
   const int depth = 40;
   const int warmup = depth + 4 * K;
@@ -506,7 +506,7 @@ static void test_decoder_blind_acquisition(void) {
   const int skip = skip_groups * n;
   const int outc = info_bits + K + 8;
   uint8_t *out = malloc((size_t)outc);
-  dt_maxir_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
+  dt_cc_maxir_stream_params p = {.decision_depth = depth, .p_flip = 0.01f};
   int got = maxir_decode_all(code, &p, coded + skip, clen - skip, out, NULL, outc);
   REQUIRE("decode produced output", got > 0);
 
@@ -520,22 +520,22 @@ static void test_decoder_blind_acquisition(void) {
   free(msg);
   free(coded);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* The public hard-decision decoder vtable decodes end to end. */
 static void test_decoder_vtable(void) {
   uint64_t rng = 0x4242u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  dt_maxir_stream_params p = good_params();
+  dt_cc_maxir_stream_params p = good_params();
 
   check("decoder_create rejects NULL code",
-        dt_maxir_decoder_create(NULL, &p) == NULL);
+        dt_cc_maxir_decoder_create(NULL, &p) == NULL);
   check("decoder_create rejects NULL params",
-        dt_maxir_decoder_create(code, NULL) == NULL);
+        dt_cc_maxir_decoder_create(code, NULL) == NULL);
 
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 200;
   const int warmup = 40 + 4 * K;
   const int cap = (info_bits + K) * n;
@@ -545,7 +545,7 @@ static void test_decoder_vtable(void) {
   rand_bits(msg, info_bits, &rng);
   int clen = maxir_encode_all(code, msg, info_bits, coded);
 
-  dt_decoder *dec = dt_maxir_decoder_create(code, &p);
+  dt_decoder *dec = dt_cc_maxir_decoder_create(code, &p);
   REQUIRE("decoder created", dec != NULL);
   REQUIRE("vtable begin ok", dec->begin(dec, out, info_bits + K + 8) >= 0);
   int total = 0;
@@ -565,28 +565,28 @@ static void test_decoder_vtable(void) {
   check("vtable hard round trip recovers the message",
         total == info_bits + (K - 1) && mism == 0);
 
-  dt_maxir_decoder_destroy(dec);
-  dt_maxir_decoder_destroy(NULL); /* NULL is a no-op */
+  dt_cc_maxir_decoder_destroy(dec);
+  dt_cc_maxir_decoder_destroy(NULL); /* NULL is a no-op */
   free(msg);
   free(coded);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* The public soft-output decoder vtable decodes end to end and the resolved bit
  * (argmax of the soft pair) recovers the message past warm-up. */
 static void test_soft_decoder_vtable(void) {
   uint64_t rng = 0x9001u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  dt_maxir_stream_params p = good_params();
+  dt_cc_maxir_stream_params p = good_params();
 
   check("soft_decoder_create rejects NULL code",
-        dt_maxir_soft_decoder_create(NULL, &p) == NULL);
+        dt_cc_maxir_soft_decoder_create(NULL, &p) == NULL);
   check("soft_decoder_create rejects NULL params",
-        dt_maxir_soft_decoder_create(code, NULL) == NULL);
+        dt_cc_maxir_soft_decoder_create(code, NULL) == NULL);
 
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 200;
   const int warmup = 40 + 4 * K;
   const int cap = (info_bits + K) * n;
@@ -596,7 +596,7 @@ static void test_soft_decoder_vtable(void) {
   rand_bits(msg, info_bits, &rng);
   int clen = maxir_encode_all(code, msg, info_bits, coded);
 
-  dt_soft_decoder *sd = dt_maxir_soft_decoder_create(code, &p);
+  dt_soft_decoder *sd = dt_cc_maxir_soft_decoder_create(code, &p);
   REQUIRE("soft decoder created", sd != NULL);
   REQUIRE("soft begin ok", sd->begin(sd, NULL, 0) >= 0);
   int total = 0;
@@ -619,12 +619,12 @@ static void test_soft_decoder_vtable(void) {
         total == info_bits + (K - 1) && mism == 0);
   check("soft vtable populates c_locked", locked_ok);
 
-  dt_maxir_soft_decoder_destroy(sd);
-  dt_maxir_soft_decoder_destroy(NULL); /* NULL is a no-op */
+  dt_cc_maxir_soft_decoder_destroy(sd);
+  dt_cc_maxir_soft_decoder_destroy(NULL); /* NULL is a no-op */
   free(msg);
   free(coded);
   free(soft);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* -- drift (max_drift > 0) ------------------------------------------------- */
@@ -648,9 +648,9 @@ static int region_errors(const uint8_t *out, int got, const uint8_t *msg,
  * re-anchoring keeps the window centred and recovers the message exactly. */
 static void test_decoder_reanchor(void) {
   uint64_t rng = 0x5EED01u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 600, depth = 48, warmup = depth + 6 * K;
 
   uint8_t *msg = malloc((size_t)info_bits);
@@ -670,7 +670,7 @@ static void test_decoder_reanchor(void) {
 
   const int outc = info_bits + K + 8;
   uint8_t *out = malloc((size_t)outc);
-  dt_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
+  dt_cc_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
   int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
 
   int counted = 0;
@@ -681,7 +681,7 @@ static void test_decoder_reanchor(void) {
   free(coded);
   free(rx);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* An insertion and a deletion off the group boundary (phase 2 and 62 of every
@@ -689,9 +689,9 @@ static void test_decoder_reanchor(void) {
  * indels; the message recovers exactly. */
 static void test_decoder_midgroup_indel(void) {
   uint64_t rng = 0x71D6A0u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 600, depth = 48, warmup = depth + 6 * K;
 
   uint8_t *msg = malloc((size_t)info_bits);
@@ -716,7 +716,7 @@ static void test_decoder_midgroup_indel(void) {
 
   const int outc = info_bits + K + 8;
   uint8_t *out = malloc((size_t)outc);
-  dt_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
+  dt_cc_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
   int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
 
   int counted = 0;
@@ -727,7 +727,7 @@ static void test_decoder_midgroup_indel(void) {
   free(coded);
   free(rx);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Random insertions and deletions PLUS substitution noise together: the codec
@@ -735,9 +735,9 @@ static void test_decoder_midgroup_indel(void) {
  * residual errors tolerated). */
 static void test_decoder_drift_plus_flip(void) {
   uint64_t rng = 0xD81F11Fu;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_3);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_3);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 600, depth = 48, warmup = depth + 6 * K;
 
   uint8_t *msg = malloc((size_t)info_bits);
@@ -753,7 +753,7 @@ static void test_decoder_drift_plus_flip(void) {
 
   const int outc = info_bits + K + 16;
   uint8_t *out = malloc((size_t)outc);
-  dt_maxir_stream_params p = make_params(depth, 8, 0.02, 0.02, 0.02, 0.0);
+  dt_cc_maxir_stream_params p = make_params(depth, 8, 0.02, 0.02, 0.02, 0.0);
   int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
 
   int counted = 0;
@@ -765,16 +765,16 @@ static void test_decoder_drift_plus_flip(void) {
   free(ins);
   free(rx);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Blind acquisition under drift: tap the stream mid-flight (no leading sync) on a
  * channel that also drops bits, and recover the message past warm-up. */
 static void test_decoder_blind_acquisition_under_drift(void) {
   uint64_t rng = 0xB11D04u;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 700, depth = 48, warmup = depth + 6 * K;
 
   uint8_t *msg = malloc((size_t)info_bits);
@@ -789,7 +789,7 @@ static void test_decoder_blind_acquisition_under_drift(void) {
 
   const int outc = info_bits + K + 8;
   uint8_t *out = malloc((size_t)outc);
-  dt_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
+  dt_cc_maxir_stream_params p = make_params(depth, 6, 0.01, 0.01, 0.01, 0.0);
   int got = maxir_decode_all(code, &p, rx, rl, out, NULL, outc);
 
   int counted = 0;
@@ -801,7 +801,7 @@ static void test_decoder_blind_acquisition_under_drift(void) {
   free(coded);
   free(rx);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Re-acquisition after a sustained loss: a long mid-stream burst of substitution
@@ -812,9 +812,9 @@ static void test_decoder_blind_acquisition_under_drift(void) {
  * index (found by search). */
 static void test_decoder_reacquire(void) {
   uint64_t rng = 0x9EACFEu;
-  dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
-  const int n = dt_ccode_n(code), K = dt_ccode_k(code);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 1000, depth = 40, warmup = depth + 4 * K;
 
   uint8_t *msg = malloc((size_t)info_bits);
@@ -832,7 +832,7 @@ static void test_decoder_reacquire(void) {
 
   const int outc = info_bits + K + 8;
   uint8_t *out = malloc((size_t)outc);
-  dt_maxir_stream_params p = make_params(depth, 4, 0.01, 0.01, 0.01, 0.0);
+  dt_cc_maxir_stream_params p = make_params(depth, 4, 0.01, 0.01, 0.01, 0.0);
   int got = maxir_decode_all(code, &p, rx, clen, out, NULL, outc);
 
   /* Pre-burst recovers exactly (stop a look-ahead short of the burst). */
@@ -866,7 +866,7 @@ static void test_decoder_reacquire(void) {
   free(coded);
   free(rx);
   free(out);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 int main(void) {

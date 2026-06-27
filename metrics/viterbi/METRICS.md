@@ -1,6 +1,6 @@
 # viterbi metrics
 
-`metrics/viterbi/dt_viterbi_metrics.c` measures the decoding-mistake rate as a
+`metrics/viterbi/dt_cc_viterbi_metrics.c` measures the decoding-mistake rate as a
 function of the channel's flip and erase rates, for all four standard codes, for
 the **viterbi** codec (a plain Viterbi hard-decision decoder). It is the viterbi
 counterpart of [../hybrid/METRICS.md](../hybrid/METRICS.md) and
@@ -30,11 +30,11 @@ whole message is compared.
 ```sh
 # Build the harness (off by default) and run the sweep to a CSV.
 cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
-cmake --build build --target dt_viterbi_metrics
-# dt_viterbi_metrics <trials> <info_bits> <seed> <rate_grids_file>
+cmake --build build --target dt_cc_viterbi_metrics
+# dt_cc_viterbi_metrics <trials> <info_bits> <seed> <rate_grids_file>
 #   defaults: 50 1000 0xC0FFEE, rate_grids_file = metrics/viterbi/rate_grids.txt
 #   (so run from the repo root)
-build/metrics/viterbi/dt_viterbi_metrics 30 4000 0xC0FFEE > metrics/viterbi/metrics.csv
+build/metrics/viterbi/dt_cc_viterbi_metrics 30 4000 0xC0FFEE > metrics/viterbi/metrics.csv
 
 # Plot the edit and run-length metrics (one curve per code). Needs matplotlib:
 python3 -m venv .venv && .venv/bin/pip install matplotlib

@@ -26,7 +26,7 @@
 
 /*
  * dt_codesearch - selects, per (K, rate) family, the FIVE generator-polynomial
- * sets behind dt_standard_code so that all five are mutually distinguishable: a
+ * sets behind dt_cc_standard_code so that all five are mutually distinguishable: a
  * decoder built for one preset must not lock onto a sibling preset's stream. It
  * exists so those polynomials are reproducible rather than picked by hand -
  * re-run it to regenerate or re-verify the tables in src/cc/hybrid/encode.c.
@@ -93,7 +93,7 @@ static void *xmalloc(size_t size) {
 static double max_double(double a, double b) { return a > b ? a : b; }
 static double min_double(double a, double b) { return a < b ? a : b; }
 
-/* -- code structure (computed locally, decoupled from the opaque dt_ccode) --- */
+/* -- code structure (computed locally, decoupled from the opaque dt_cc_code) --- */
 
 /* GF(2) polynomial gcd of the generators; the code is non-catastrophic iff this
  * is 1 (the Massey-Sain condition for a rate-1/n code, restricted to the
@@ -246,9 +246,9 @@ static int cand_cmp(const void *pa, const void *pb) {
 
 /* Mean lock probability over the settled second half when `enc`'s coded stream
  * is decoded with `dec`'s decoder. Same settings the test helper uses. */
-static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
+static double lock_mean(const dt_cc_code *enc, const dt_cc_code *dec,
                         const uint8_t *msg, int info_bits, int depth) {
-  const int clen = info_bits * dt_ccode_n(enc);
+  const int clen = info_bits * dt_cc_code_n(enc);
   uint8_t *coded = xmalloc((size_t)clen);
 
   /* Encode with the basic encoder. begin + encode, no finalize: the lock
@@ -259,14 +259,14 @@ static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
   written += e->encode(e, coded + written, clen - written, msg, info_bits);
   dt_cc_basic_encoder_destroy(e);
 
-  dt_hybrid_stream_params params = {.decision_depth = depth,
+  dt_cc_hybrid_stream_params params = {.decision_depth = depth,
                              .max_drift = 4,
                              .p_flip = 0.01,
                              .p_ins_true = 0.005,
                              .p_ins_false = 0.005,
                              .p_del = 0.01,
                              .p_ovr_erase = 0.0};
-  dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(dec, &params);
+  dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(dec, &params);
   if (!sd) {
     free(coded);
     return 1.0; /* treat as worst case (indistinguishable) */
@@ -285,7 +285,7 @@ static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
     }
     result = count ? sum / count : 1.0;
   }
-  dt_hybrid_soft_decoder_destroy(sd);
+  dt_cc_hybrid_soft_decoder_destroy(sd);
   free(coded);
   free(soft);
   return result;
@@ -295,7 +295,7 @@ static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
  * single lucky message can't inflate distinguishability. For self pairs we take
  * the MIN observed lock (the worst self-lock); for cross pairs the MAX (the
  * worst cross-lock). */
-static double lock_agg(const dt_ccode *enc, const dt_ccode *dec,
+static double lock_agg(const dt_cc_code *enc, const dt_cc_code *dec,
                        const uint8_t *messages, int n_msg, int info_bits,
                        int depth, int take_min) {
   double agg = take_min ? 1.0 : 0.0;
@@ -313,7 +313,7 @@ static double lock_agg(const dt_ccode *enc, const dt_ccode *dec,
 
 typedef struct {
   const char *name;
-  const char *enum_prefix; /* e.g. DT_CODE_K7_RATE_1_2 */
+  const char *enum_prefix; /* e.g. DT_CC_CODE_K7_RATE_1_2 */
   int K, n;
   /* Alternate-selection margin. 0: distinguishable at the normal 0.75 bound
    * (strongest codes that stay distinguishable). 1: hold the alternates to a
@@ -329,13 +329,13 @@ typedef struct {
 } family;
 
 static const family FAMILIES[] = {
-    {"K3_R1_2", "DT_CODE_K3_RATE_1_2", 3, 2, 0, 0, {0}},
+    {"K3_R1_2", "DT_CC_CODE_K3_RATE_1_2", 3, 2, 0, 0, {0}},
     /* Pin the canonical NASA/Voyager K=7 rate-1/2 code (0171, 0133) as default. */
-    {"K7_R1_2", "DT_CODE_K7_RATE_1_2", 7, 2, 0, 2, {0171, 0133}},
+    {"K7_R1_2", "DT_CC_CODE_K7_RATE_1_2", 7, 2, 0, 2, {0171, 0133}},
     /* Rate-1/3 has a roomy distinguishable set, so spread the five out for a
      * wider cross-lock margin rather than squeezing maximum free distance. */
-    {"K7_R1_3", "DT_CODE_K7_RATE_1_3", 7, 3, 1, 0, {0}},
-    {"K5_R1_5", "DT_CODE_K5_RATE_1_5", 5, 5, 0, 0, {0}},
+    {"K7_R1_3", "DT_CC_CODE_K7_RATE_1_3", 7, 3, 1, 0, {0}},
+    {"K5_R1_5", "DT_CC_CODE_K5_RATE_1_5", 5, 5, 0, 0, {0}},
 };
 #define N_FAMILIES ((int)(sizeof(FAMILIES) / sizeof(FAMILIES[0])))
 
@@ -421,9 +421,9 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
   qsort(samp, (size_t)nsamp, sizeof(*samp), cand_cmp);
 
   /* 2. Build a decoder-ready code for each sample member (shared read-only). */
-  dt_ccode **codes = xmalloc((size_t)nsamp * sizeof(*codes));
+  dt_cc_code **codes = xmalloc((size_t)nsamp * sizeof(*codes));
   for (int i = 0; i < nsamp; ++i) {
-    codes[i] = dt_ccode_create(fam->K, samp[i].g, fam->n);
+    codes[i] = dt_cc_code_create(fam->K, samp[i].g, fam->n);
     if (!codes[i]) {
       fprintf(stderr, "dt_codesearch: code create failed\n");
       exit(1);
@@ -597,7 +597,7 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
     printf("    case %s%s: {\n", fam->enum_prefix, suffix[i]);
     printf("      static const unsigned int generators[] = {");
     for (int j = 0; j < fam->n; ++j) printf("%s0%o", j ? ", " : "", c->g[j]);
-    printf("};\n      return dt_ccode_create(%d, generators, %d);\n    }\n",
+    printf("};\n      return dt_cc_code_create(%d, generators, %d);\n    }\n",
            fam->K, fam->n);
   }
   printf("  --- encode.h d_free comments ---\n");
@@ -606,7 +606,7 @@ static void run_family(const family *fam, const uint8_t *messages, int n_msg,
            samp[sel[i]].dfree);
   }
 
-  for (int i = 0; i < nsamp; ++i) dt_ccode_destroy(codes[i]);
+  for (int i = 0; i < nsamp; ++i) dt_cc_code_destroy(codes[i]);
   free(codes);
   free(self);
   free(samp);

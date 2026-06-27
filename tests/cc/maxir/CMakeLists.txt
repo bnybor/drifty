@@ -1,5 +1,5 @@
-# The maxir tests exercise the private engine API (dt_ccode / dt_maxir_stream and
-# the dt_maxir_* factories), so they link the non-localized engine objects
+# The maxir tests exercise the private engine API (dt_cc_code / dt_cc_maxir_stream and
+# the dt_cc_maxir_* factories), so they link the non-localized engine objects
 # directly (not the localized drifty::drifty archive) and reach the private
 # headers under src/ via -Isrc. drifty_bare_obj propagates the public include
 # dir; drifty_stdlib supplies the freestanding shims and propagates libm. (No

@@ -31,8 +31,8 @@
  * does not use one draws no -Wunused warning.
  */
 
-#ifndef DT_MAXIR_TEST_UTIL_H
-#define DT_MAXIR_TEST_UTIL_H
+#ifndef DT_CC_MAXIR_TEST_UTIL_H
+#define DT_CC_MAXIR_TEST_UTIL_H
 
 #include <cc/maxir/decode.h>
 #include <cc/maxir/encode.h>
@@ -97,14 +97,14 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 /* -- encode ---------------------------------------------------------------- */
 
 /* Encode `info_bits` message bits (each DT_FALSE/DT_TRUE) with `code` into out[]
- * (which must hold info_bits * dt_ccode_n(code) + flush slack), including the
+ * (which must hold info_bits * dt_cc_code_n(code) + flush slack), including the
  * end-of-stream flush. Returns the coded length. */
-static inline int maxir_encode_all(const dt_ccode *code, const uint8_t *msg,
+static inline int maxir_encode_all(const dt_cc_code *code, const uint8_t *msg,
                                   int info_bits, uint8_t *out) {
   int state = 0;
   unsigned int unknown = 0;
-  int len = dt_maxir_encode(code, msg, info_bits, &state, &unknown, out);
-  len += dt_maxir_encode_flush(code, &state, &unknown, out + len);
+  int len = dt_cc_maxir_encode(code, msg, info_bits, &state, &unknown, out);
+  len += dt_cc_maxir_encode_flush(code, &state, &unknown, out + len);
   return len;
 }
 
@@ -170,10 +170,10 @@ static inline void erase_channel(uint8_t *buf, int len, double p_erase,
  * insert_channel inserts uniformly-random 0/1 bits, so the total insertion rate
  * is split evenly between the true/false components; p_erase maps onto the
  * overwrite-to-erasure rate. */
-static inline dt_maxir_stream_params make_params(int depth, int drift,
+static inline dt_cc_maxir_stream_params make_params(int depth, int drift,
                                                  double p_flip, double p_ins,
                                                  double p_del, double p_erase) {
-  dt_maxir_stream_params params = {
+  dt_cc_maxir_stream_params params = {
       .decision_depth = depth,
       .max_drift = drift,
       .p_flip = (float)p_flip,
@@ -185,4 +185,4 @@ static inline dt_maxir_stream_params make_params(int depth, int drift,
   return params;
 }
 
-#endif /* DT_MAXIR_TEST_UTIL_H */
+#endif /* DT_CC_MAXIR_TEST_UTIL_H */

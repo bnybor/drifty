@@ -47,8 +47,8 @@ extern "C" {
  *
  * Every call writes into `dst` (capacity `dst_len`) and returns the number of
  * bits written, or a negative value on a bad argument - most often too little
- * room. Size `dst` from the input length and dt_ccode_n(): n input bits become
- * up to (n + K) * dt_ccode_n(code) coded bits once the flush is counted.
+ * room. Size `dst` from the input length and dt_cc_code_n(): n input bits become
+ * up to (n + K) * dt_cc_code_n(code) coded bits once the flush is counted.
  *
  *   `src` is one transmit-domain symbol per information position: DT_TRUE /
  *         DT_FALSE to protect, DT_ERASURE for a don't-care value deferred to the

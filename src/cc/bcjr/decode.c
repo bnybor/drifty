@@ -82,15 +82,15 @@
 #include "../ccode_internal.h"
 
 /* Hard-decision thresholds (consistencies are in [0, 1]); tunable. */
-#define DT_BCJR_LOCK_MIN 0.5f    /* c_lock below this -> DT_ABSENT              */
-#define DT_BCJR_INVALID_MIN 0.5f /* c_invalid above this -> DT_INVALID on a tie */
+#define DT_CC_BCJR_LOCK_MIN 0.5f    /* c_lock below this -> DT_ABSENT              */
+#define DT_CC_BCJR_INVALID_MIN 0.5f /* c_invalid above this -> DT_INVALID on a tie */
 
 /* ------------------------------------------------------------------------- */
 /* Streaming (sliding-window) max-log-MAP decoder, synchronous channel        */
 /* ------------------------------------------------------------------------- */
 
-struct dt_bcjr_stream_decoder {
-  const dt_ccode *code; /* borrowed; must outlive the decoder */
+struct dt_cc_bcjr_stream_decoder {
+  const dt_cc_code *code; /* borrowed; must outlive the decoder */
 
   int n, num_states, decision_depth;
   int batch, ring_len; /* decisions emitted per sweep; ring depth */
@@ -129,7 +129,7 @@ struct dt_bcjr_stream_decoder {
    * A sweep only runs when this is empty, so it is filled in step order and
    * drained from the head. */
   dt_bit *fifo_sym;
-  dt_bcjr_decode_details *fifo_det;
+  dt_cc_bcjr_decode_details *fifo_det;
   int fifo_head, fifo_count;
 };
 
@@ -139,7 +139,7 @@ struct dt_bcjr_stream_decoder {
  * without favouring a value; anything else (DT_ERASURE, or a stray non-transmit
  * symbol) is the neutral but PENALISED erasure cost so a sustained burst reads
  * as a lost lock. */
-static float dt_bit_cost(const dt_bcjr_stream_decoder *d, dt_bit s, int expected) {
+static float dt_cc_bit_cost(const dt_cc_bcjr_stream_decoder *d, dt_bit s, int expected) {
   if (s & DT_BOOLEAN) {
     return ((int)(s & DT_VALUE) == expected) ? d->cost_match : d->cost_miss;
   }
@@ -150,7 +150,7 @@ static float dt_bit_cost(const dt_bcjr_stream_decoder *d, dt_bit s, int expected
 }
 
 /* True iff the received symbol is the encoder's DT_INVALID poison marker. */
-static int dt_is_invalid_sym(dt_bit s) {
+static int dt_cc_is_invalid_sym(dt_bit s) {
   return (s & DT_BOUND) && !(s & DT_BOOLEAN);
 }
 
@@ -158,14 +158,14 @@ static int dt_is_invalid_sym(dt_bit s) {
  * `base`; INFINITY if that group is not fully buffered (guards the stream ends).
  * This is the single definition of gamma used by BOTH the forward pass and the
  * backward sweep, so they agree exactly even at the boundaries. */
-static float branch_cost(const dt_bcjr_stream_decoder *d, int edge, int base) {
+static float branch_cost(const dt_cc_bcjr_stream_decoder *d, int edge, int base) {
   if (base < 0 || base + d->n > d->received_length) {
     return INFINITY;
   }
   const uint8_t *expected = &d->code->output[(size_t)edge * d->n];
   float cost = 0.0f;
   for (int j = 0; j < d->n; ++j) {
-    cost += dt_bit_cost(d, d->received[base + j], expected[j]);
+    cost += dt_cc_bit_cost(d, d->received[base + j], expected[j]);
   }
   return cost;
 }
@@ -175,7 +175,7 @@ static float branch_cost(const dt_bcjr_stream_decoder *d, int edge, int base) {
 /* Buffer index of the oldest received bit any retained step still needs: the
  * group base of the oldest uncommitted step (committed * n, in absolute terms).
  * Once every step is committed, only the live forward cursor matters. */
-static int oldest_needed_index(const dt_bcjr_stream_decoder *d) {
+static int oldest_needed_index(const dt_cc_bcjr_stream_decoder *d) {
   long long base;
   if (d->committed < d->steps) {
     base = d->committed * (long long)d->n - d->received_origin;
@@ -191,7 +191,7 @@ static int oldest_needed_index(const dt_bcjr_stream_decoder *d) {
 /* Drop the dead prefix below the oldest still-needed bit, advancing the buffer
  * origin so absolute bit offsets stay consistent. Preserves the invariant
  * received_origin + read_base == steps * n. */
-static void compact_received(dt_bcjr_stream_decoder *d) {
+static void compact_received(dt_cc_bcjr_stream_decoder *d) {
   const int keep_from = oldest_needed_index(d);
   if (keep_from <= 0) {
     return;
@@ -204,7 +204,7 @@ static void compact_received(dt_bcjr_stream_decoder *d) {
 }
 
 /* Ensure room for `extra` more bits, compacting then growing as needed. */
-static int reserve_received(dt_bcjr_stream_decoder *d, int extra) {
+static int reserve_received(dt_cc_bcjr_stream_decoder *d, int extra) {
   compact_received(d);
   if (d->received_length + extra > d->received_capacity) {
     int new_capacity = d->received_capacity * 2;
@@ -213,12 +213,12 @@ static int reserve_received(dt_bcjr_stream_decoder *d, int extra) {
     }
     dt_bit *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_ERR_ALLOC;
+      return DT_CC_ERR_ALLOC;
     }
     d->received = new_buffer;
     d->received_capacity = new_capacity;
   }
-  return DT_OK;
+  return DT_CC_OK;
 }
 
 /* -- core trellis ---------------------------------------------------------- */
@@ -250,8 +250,8 @@ static float normalize(float *metric, int count) {
  * the group at buffer index `base`. No backpointers - the decision comes from
  * the alpha/beta combine, not a traceback. Folds the per-step cost increment
  * into the smoothed lock cost. */
-static void forward_pass(dt_bcjr_stream_decoder *d, int base) {
-  const dt_ccode *code = d->code;
+static void forward_pass(dt_cc_bcjr_stream_decoder *d, int base) {
+  const dt_cc_code *code = d->code;
   const int num_states = d->num_states;
 
   for (int state = 0; state < num_states; ++state) {
@@ -287,7 +287,7 @@ static void forward_pass(dt_bcjr_stream_decoder *d, int base) {
 
 /* Advance one forward step: snapshot alpha_t (the state metric ENTERING step t)
  * and run the forward pass over step t's group, then snapshot the lock cost. */
-static void forward_step(dt_bcjr_stream_decoder *d) {
+static void forward_step(dt_cc_bcjr_stream_decoder *d) {
   const int slot = (int)(d->steps % d->ring_len);
 
   dt_memcpy(d->alpha_ring + (size_t)slot * d->num_states, d->metric,
@@ -307,7 +307,7 @@ static void forward_step(dt_bcjr_stream_decoder *d) {
  * expected_lock (clean lock -> ~1) to expected_unlock (clearly not this code ->
  * ~0). A confidently decoded WRONG code is dominant but expensive, so it reads
  * as unlocked. */
-static float lock_from(const dt_bcjr_stream_decoder *d, float smoothed) {
+static float lock_from(const dt_cc_bcjr_stream_decoder *d, float smoothed) {
   const float gap = d->expected_unlock - d->expected_lock;
   if (gap <= 0.0f) {
     return 0.0f;
@@ -323,7 +323,7 @@ static float lock_from(const dt_bcjr_stream_decoder *d, float smoothed) {
 
 /* Blind-acquisition init: every encoder state equally likely, so the decoder
  * locks whether it starts at the head of the stream or taps in mid-stream. */
-static void init_metric(dt_bcjr_stream_decoder *d) {
+static void init_metric(dt_cc_bcjr_stream_decoder *d) {
   for (int state = 0; state < d->num_states; ++state) {
     d->metric[state] = 0.0f;
   }
@@ -334,7 +334,7 @@ static void init_metric(dt_bcjr_stream_decoder *d) {
 /* Recompute step t's branch metrics (gamma) into d->branch from the retained
  * received buffer, using a LOCAL base - this must never touch d->read_base,
  * which is the live forward cursor. */
-static void compute_branches(dt_bcjr_stream_decoder *d, int base) {
+static void compute_branches(dt_cc_bcjr_stream_decoder *d, int base) {
   const int edges = d->num_states * 2;
   for (int edge = 0; edge < edges; ++edge) {
     d->branch[edge] = branch_cost(d, edge, base);
@@ -343,11 +343,11 @@ static void compute_branches(dt_bcjr_stream_decoder *d, int base) {
 
 /* Project the combined costs (m0, m1) for step t into the six-field soft output
  * and the hard symbol, and push them onto the FIFO at this step's slot. */
-static void finalize_emit(dt_bcjr_stream_decoder *d, long long t, float m0,
+static void finalize_emit(dt_cc_bcjr_stream_decoder *d, long long t, float m0,
                           float m1) {
   const int slot = (int)(t % d->ring_len);
   const int idx = (int)(t - d->committed); /* FIFO empty -> linear, in order */
-  dt_bcjr_decode_details det;
+  dt_cc_bcjr_decode_details det;
 
   const float mmin = (m0 < m1) ? m0 : m1;
   const float c_lock = lock_from(d, d->lock_ring[slot]);
@@ -357,7 +357,7 @@ static void finalize_emit(dt_bcjr_stream_decoder *d, long long t, float m0,
   int inv = 0;
   for (int j = 0; j < d->n; ++j) {
     const int p = base + j;
-    if (p >= 0 && p < d->received_length && dt_is_invalid_sym(d->received[p])) {
+    if (p >= 0 && p < d->received_length && dt_cc_is_invalid_sym(d->received[p])) {
       ++inv;
     }
   }
@@ -399,11 +399,11 @@ static void finalize_emit(dt_bcjr_stream_decoder *d, long long t, float m0,
    * left-to-right reading of decode.h (test c_invalid before the tie) would
    * instead mark such downstream clean bits DT_INVALID and lose them. */
   dt_bit sym;
-  if (c_lock < DT_BCJR_LOCK_MIN) {
+  if (c_lock < DT_CC_BCJR_LOCK_MIN) {
     sym = DT_ABSENT;
   } else if (m0 != m1) {
     sym = (m1 < m0) ? DT_TRUE : DT_FALSE; /* recoverable value */
-  } else if (c_invalid > DT_BCJR_INVALID_MIN) {
+  } else if (c_invalid > DT_CC_BCJR_INVALID_MIN) {
     sym = DT_INVALID; /* unrecoverable: group was the encoder's poison */
   } else {
     sym = DT_ERASURE; /* unrecoverable: value lost on a tracked stream */
@@ -416,9 +416,9 @@ static void finalize_emit(dt_bcjr_stream_decoder *d, long long t, float m0,
 /* Compute beta for step t from beta_tilde (== beta of step t+1) and, when t is
  * in the emit range, the combined (m0, m1) for the decision. branch[] must hold
  * step t's gamma. Leaves beta_cur holding (normalised) beta_t. */
-static void compute_beta_step(dt_bcjr_stream_decoder *d, long long t,
+static void compute_beta_step(dt_cc_bcjr_stream_decoder *d, long long t,
                               const float *alpha_t, long long emit_hi) {
-  const dt_ccode *code = d->code;
+  const dt_cc_code *code = d->code;
   const int num_states = d->num_states;
   const int emit = (t <= emit_hi);
   float m0 = INFINITY, m1 = INFINITY;
@@ -464,7 +464,7 @@ static void compute_beta_step(dt_bcjr_stream_decoder *d, long long t,
  * frontier, sweep down recomputing gamma and beta, emit decisions for
  * [committed, emit_hi] into the FIFO, and advance committed. The FIFO is empty
  * on entry (the caller drains before sweeping). Never disturbs d->read_base. */
-static void sweep_window(dt_bcjr_stream_decoder *d, long long emit_hi) {
+static void sweep_window(dt_cc_bcjr_stream_decoder *d, long long emit_hi) {
   const int num_states = d->num_states;
   if (d->steps <= d->committed) {
     return;
@@ -494,15 +494,15 @@ static void sweep_window(dt_bcjr_stream_decoder *d, long long emit_hi) {
 
 /* Can the forward pass take another step? It just needs the next group's n bits
  * buffered; commit latency is enforced by the sweep trigger. */
-static int can_forward(const dt_bcjr_stream_decoder *d) {
+static int can_forward(const dt_cc_bcjr_stream_decoder *d) {
   return d->received_length - d->read_base >= d->n;
 }
 
 /* Drain the FIFO into the caller's buffers, then advance the forward pass and
  * sweep to refill it, until the caller's buffer is full or there is no more
  * work. `out` and `details` are independently optional. */
-static int produce(dt_bcjr_stream_decoder *d, uint8_t *out,
-                   dt_bcjr_decode_details *details, int max_out, int draining) {
+static int produce(dt_cc_bcjr_stream_decoder *d, uint8_t *out,
+                   dt_cc_bcjr_decode_details *details, int max_out, int draining) {
   const long long span = (long long)d->decision_depth + d->batch;
   int written = 0;
 
@@ -540,19 +540,19 @@ static int produce(dt_bcjr_stream_decoder *d, uint8_t *out,
 
 /* -- lifecycle ------------------------------------------------------------- */
 
-static int decoder_init(dt_bcjr_stream_decoder *d,
-                        const dt_bcjr_stream_params *params,
-                        const dt_ccode *code) {
+static int decoder_init(dt_cc_bcjr_stream_decoder *d,
+                        const dt_cc_bcjr_stream_params *params,
+                        const dt_cc_code *code) {
   const int decision_depth = params->decision_depth;
   const float p_flip = params->p_flip;
   const float p_erase = params->p_erase;
 
   if (decision_depth < 1) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   if (!(p_flip > 0.0f && p_flip < 1.0f) ||
       !(p_erase >= 0.0f && p_erase < 1.0f)) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
 
   d->code = code;
@@ -606,18 +606,18 @@ static int decoder_init(dt_bcjr_stream_decoder *d,
   d->alpha_ring = dt_malloc((size_t)rl * num_states * sizeof(float));
   d->lock_ring = dt_malloc((size_t)rl * sizeof(float));
   d->fifo_sym = dt_malloc((size_t)rl * sizeof(dt_bit));
-  d->fifo_det = dt_malloc((size_t)rl * sizeof(dt_bcjr_decode_details));
+  d->fifo_det = dt_malloc((size_t)rl * sizeof(dt_cc_bcjr_decode_details));
   if (!d->received || !d->metric || !d->next_metric || !d->beta_tilde ||
       !d->beta_cur || !d->branch || !d->alpha_ring || !d->lock_ring ||
       !d->fifo_sym || !d->fifo_det) {
-    return DT_ERR_ALLOC;
+    return DT_CC_ERR_ALLOC;
   }
 
   init_metric(d);
-  return DT_OK;
+  return DT_CC_OK;
 }
 
-static void decoder_free(dt_bcjr_stream_decoder *d) {
+static void decoder_free(dt_cc_bcjr_stream_decoder *d) {
   dt_free(d->received);
   dt_free(d->metric);
   dt_free(d->next_metric);
@@ -630,7 +630,7 @@ static void decoder_free(dt_bcjr_stream_decoder *d) {
   dt_free(d->fifo_det);
 }
 
-static int decode_feed(dt_bcjr_stream_decoder *d, const uint8_t *in, int n_in) {
+static int decode_feed(dt_cc_bcjr_stream_decoder *d, const uint8_t *in, int n_in) {
   int status = reserve_received(d, n_in);
   if (status < 0) {
     return status;
@@ -639,17 +639,17 @@ static int decode_feed(dt_bcjr_stream_decoder *d, const uint8_t *in, int n_in) {
     dt_memcpy(d->received + d->received_length, in, (size_t)n_in);
     d->received_length += n_in;
   }
-  return DT_OK;
+  return DT_CC_OK;
 }
 
 /* -- public engine API ----------------------------------------------------- */
 
-dt_bcjr_stream_decoder *dt_bcjr_stream_decoder_create(
-    const dt_ccode *code, const dt_bcjr_stream_params *params) {
+dt_cc_bcjr_stream_decoder *dt_cc_bcjr_stream_decoder_create(
+    const dt_cc_code *code, const dt_cc_bcjr_stream_params *params) {
   if (!code || !params) {
     return NULL;
   }
-  dt_bcjr_stream_decoder *d = dt_calloc(1, sizeof(*d));
+  dt_cc_bcjr_stream_decoder *d = dt_calloc(1, sizeof(*d));
   if (!d) {
     return NULL;
   }
@@ -661,7 +661,7 @@ dt_bcjr_stream_decoder *dt_bcjr_stream_decoder_create(
   return d;
 }
 
-void dt_bcjr_stream_decoder_destroy(dt_bcjr_stream_decoder *d) {
+void dt_cc_bcjr_stream_decoder_destroy(dt_cc_bcjr_stream_decoder *d) {
   if (!d) {
     return;
   }
@@ -669,12 +669,12 @@ void dt_bcjr_stream_decoder_destroy(dt_bcjr_stream_decoder *d) {
   dt_free(d);
 }
 
-int dt_bcjr_stream_decode(dt_bcjr_stream_decoder *d, const uint8_t *in, int n_in,
-                          uint8_t *out, dt_bcjr_decode_details *details,
+int dt_cc_bcjr_stream_decode(dt_cc_bcjr_stream_decoder *d, const uint8_t *in, int n_in,
+                          uint8_t *out, dt_cc_bcjr_decode_details *details,
                           int max_out) {
   if (!d || n_in < 0 || (n_in > 0 && !in) || max_out < 0 ||
       (max_out > 0 && !out && !details)) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   int status = decode_feed(d, in, n_in);
   if (status < 0) {
@@ -683,10 +683,10 @@ int dt_bcjr_stream_decode(dt_bcjr_stream_decoder *d, const uint8_t *in, int n_in
   return produce(d, out, details, max_out, /*draining=*/0);
 }
 
-int dt_bcjr_stream_decode_flush(dt_bcjr_stream_decoder *d, uint8_t *out,
-                                dt_bcjr_decode_details *details, int max_out) {
+int dt_cc_bcjr_stream_decode_flush(dt_cc_bcjr_stream_decoder *d, uint8_t *out,
+                                dt_cc_bcjr_decode_details *details, int max_out) {
   if (!d || max_out < 0 || (max_out > 0 && !out && !details)) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
   return produce(d, out, details, max_out, /*draining=*/1);
 }

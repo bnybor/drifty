@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * Tests for the public hybrid soft decoder (dt_hybrid_soft_decoder_create and
+ * Tests for the public hybrid soft decoder (dt_cc_hybrid_soft_decoder_create and
  * the dt_soft_decoder vtable): the per-bit consistency output, that its hard
  * decision agrees with the hard decoder, and - the regression - that a feed-only
  * `decode` call (dst_len == 0) still hands its input to the engine instead of
@@ -36,12 +36,12 @@
 
 #include <drifty/cc/hybrid.h>
 
-#define CODE DT_CODE_K7_RATE_1_2
+#define CODE DT_CC_CODE_K7_RATE_1_2
 #define WARMUP 40
 
 /* A clean-channel decoder model (the streams below carry light or no noise). */
-static dt_hybrid_stream_params clean_params(void) {
-  dt_hybrid_stream_params p = {0};
+static dt_cc_hybrid_stream_params clean_params(void) {
+  dt_cc_hybrid_stream_params p = {0};
   p.decision_depth = 40;
   p.max_drift = 4;
   p.p_flip = 0.01;
@@ -96,21 +96,21 @@ static int hard_decode_all(dt_decoder *dec, const uint8_t *rx, int rl,
 /* Argument handling: NULL code/params rejected, destroy(NULL) safe. */
 static void test_soft_args(void) {
   printf("test_soft_args\n");
-  dt_ccode *code = dt_ccode_create_standard(CODE);
+  dt_cc_code *code = dt_cc_code_create_standard(CODE);
   REQUIRE("code created", code != NULL);
-  dt_hybrid_stream_params p = clean_params();
+  dt_cc_hybrid_stream_params p = clean_params();
 
   check("create rejects NULL code",
-        dt_hybrid_soft_decoder_create(NULL, &p) == NULL);
+        dt_cc_hybrid_soft_decoder_create(NULL, &p) == NULL);
   check("create rejects NULL params",
-        dt_hybrid_soft_decoder_create(code, NULL) == NULL);
-  dt_hybrid_soft_decoder_destroy(NULL); /* must not crash */
+        dt_cc_hybrid_soft_decoder_create(code, NULL) == NULL);
+  dt_cc_hybrid_soft_decoder_destroy(NULL); /* must not crash */
   check("destroy(NULL) is safe", 1);
 
-  dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &p);
+  dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &p);
   check("create succeeds with valid args", sd != NULL);
-  dt_hybrid_soft_decoder_destroy(sd);
-  dt_ccode_destroy(code);
+  dt_cc_hybrid_soft_decoder_destroy(sd);
+  dt_cc_code_destroy(code);
 }
 
 /* A clean stream: the winning consistency matches the message on the settled
@@ -127,9 +127,9 @@ static void test_soft_clean(void) {
   uint8_t *coded = malloc(MAX_CODED(N));
   int clen = (int)encode(CODE, msg, N, coded, &n, &k);
 
-  dt_ccode *code = dt_ccode_create_standard(CODE);
-  dt_hybrid_stream_params p = clean_params();
-  dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &p);
+  dt_cc_code *code = dt_cc_code_create_standard(CODE);
+  dt_cc_hybrid_stream_params p = clean_params();
+  dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &p);
   REQUIRE("soft decoder created", sd != NULL);
 
   const int cap = N + 64;
@@ -162,11 +162,11 @@ static void test_soft_clean(void) {
   check_gt("clean: settled lock high", min_lock, 0.8);
   check("clean: output length tracks message", got >= N && got <= N + 16);
 
-  dt_hybrid_soft_decoder_destroy(sd);
+  dt_cc_hybrid_soft_decoder_destroy(sd);
   free(out);
   free(coded);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* Regression: feed the WHOLE coded stream through feed-only `decode` calls
@@ -184,9 +184,9 @@ static void test_soft_feed_only_pump(void) {
   uint8_t *coded = malloc(MAX_CODED(N));
   int clen = (int)encode(CODE, msg, N, coded, &n, &k);
 
-  dt_ccode *code = dt_ccode_create_standard(CODE);
-  dt_hybrid_stream_params p = clean_params();
-  dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &p);
+  dt_cc_code *code = dt_cc_code_create_standard(CODE);
+  dt_cc_hybrid_stream_params p = clean_params();
+  dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &p);
   REQUIRE("soft decoder created", sd != NULL);
 
   const int cap = N + 64;
@@ -219,11 +219,11 @@ static void test_soft_feed_only_pump(void) {
   check("pump: the pumped input was decoded (output produced)", got >= N);
   check("pump: settled bits decode correctly", errors == 0);
 
-  dt_hybrid_soft_decoder_destroy(sd);
+  dt_cc_hybrid_soft_decoder_destroy(sd);
   free(out);
   free(coded);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 /* The soft decoder's hard decision must equal the hard decoder's bit, position
@@ -243,12 +243,12 @@ static void test_soft_matches_hard(void) {
   flip_channel(coded, (size_t)clen, 0.02, &rng);
   erase_channel(coded, (size_t)clen, 0.05, &rng);
 
-  dt_ccode *code = dt_ccode_create_standard(CODE);
-  dt_hybrid_stream_params p = clean_params();
+  dt_cc_code *code = dt_cc_code_create_standard(CODE);
+  dt_cc_hybrid_stream_params p = clean_params();
   p.p_ovr_erase = 0.05; /* the model expects the erasures we injected */
 
-  dt_decoder *hd = dt_hybrid_decoder_create(code, &p);
-  dt_soft_decoder *sd = dt_hybrid_soft_decoder_create(code, &p);
+  dt_decoder *hd = dt_cc_hybrid_decoder_create(code, &p);
+  dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &p);
   REQUIRE("decoders created", hd != NULL && sd != NULL);
 
   const int cap = N + 64;
@@ -267,13 +267,13 @@ static void test_soft_matches_hard(void) {
   check("soft/hard decode the same number of bits", gh == gs);
   check("soft hard-decision == hard decoder output", mismatches == 0);
 
-  dt_hybrid_decoder_destroy(hd);
-  dt_hybrid_soft_decoder_destroy(sd);
+  dt_cc_hybrid_decoder_destroy(hd);
+  dt_cc_hybrid_soft_decoder_destroy(sd);
   free(hard);
   free(soft);
   free(coded);
   free(msg);
-  dt_ccode_destroy(code);
+  dt_cc_code_destroy(code);
 }
 
 int main(void) {

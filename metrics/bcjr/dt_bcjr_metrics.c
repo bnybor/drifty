@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * dt_bcjr_metrics - Monte-Carlo measurement of the decoding-mistake rate as a
+ * dt_cc_bcjr_metrics - Monte-Carlo measurement of the decoding-mistake rate as a
  * function of the channel's flip and erase rates, for each standard code, for the
  * bcjr codec (a max-log-MAP / forward-backward hard-decision decoder).
  *
@@ -48,7 +48,7 @@
  * measures edit distance only.) Drive it through the public API. Output is CSV on
  * stdout (see header row); feed it to metrics/bcjr/plot_metrics.py.
  *
- * Usage: dt_bcjr_metrics [trials] [info_bits] [seed] [rate_grids_file]
+ * Usage: dt_cc_bcjr_metrics [trials] [info_bits] [seed] [rate_grids_file]
  */
 
 #include <drifty/cc/bcjr.h>
@@ -96,7 +96,7 @@ static uint64_t derive_seed(uint64_t base, int index) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dt_bcjr_metrics: out of memory\n");
+    fprintf(stderr, "dt_cc_bcjr_metrics: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -191,14 +191,14 @@ static long edit_distance(const uint8_t *seq_a, int len_a, const uint8_t *seq_b,
 
 typedef struct {
   const char *name;
-  dt_standard_code which;
+  dt_cc_standard_code which;
 } code_entry;
 
 static const code_entry CODES[] = {
-    {"K3_R1_2", DT_CODE_K3_RATE_1_2},
-    {"K7_R1_2", DT_CODE_K7_RATE_1_2},
-    {"K7_R1_3", DT_CODE_K7_RATE_1_3},
-    {"K5_R1_5", DT_CODE_K5_RATE_1_5},
+    {"K3_R1_2", DT_CC_CODE_K3_RATE_1_2},
+    {"K7_R1_2", DT_CC_CODE_K7_RATE_1_2},
+    {"K7_R1_3", DT_CC_CODE_K7_RATE_1_3},
+    {"K5_R1_5", DT_CC_CODE_K5_RATE_1_5},
 };
 #define N_CODES ((int)(sizeof(CODES) / sizeof(CODES[0])))
 
@@ -233,7 +233,7 @@ static int axis_index(const char *name) {
 static int load_grids(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) {
-    fprintf(stderr, "dt_bcjr_metrics: cannot open rate-grid file '%s'\n",
+    fprintf(stderr, "dt_cc_bcjr_metrics: cannot open rate-grid file '%s'\n",
             path);
     return -1;
   }
@@ -247,7 +247,7 @@ static int load_grids(const char *path) {
     if (!first) continue; /* blank or comment-only line */
     int a = axis_index(first);
     if (a < 0) {
-      fprintf(stderr, "dt_bcjr_metrics: %s:%d: bad axis '%s'\n", path,
+      fprintf(stderr, "dt_cc_bcjr_metrics: %s:%d: bad axis '%s'\n", path,
               lineno, first);
       ok = 0;
       break;
@@ -258,7 +258,7 @@ static int load_grids(const char *path) {
       char *end;
       double value = strtod(t, &end);
       if (*end != '\0') {
-        fprintf(stderr, "dt_bcjr_metrics: %s:%d: bad rate '%s'\n", path,
+        fprintf(stderr, "dt_cc_bcjr_metrics: %s:%d: bad rate '%s'\n", path,
                 lineno, t);
         ok = 0;
         break;
@@ -267,7 +267,7 @@ static int load_grids(const char *path) {
         cap *= 2;
         double *grown = realloc(rates, (size_t)cap * sizeof(double));
         if (!grown) {
-          fprintf(stderr, "dt_bcjr_metrics: out of memory\n");
+          fprintf(stderr, "dt_cc_bcjr_metrics: out of memory\n");
           exit(1);
         }
         rates = grown;
@@ -279,7 +279,7 @@ static int load_grids(const char *path) {
       break;
     }
     if (n == 0) {
-      fprintf(stderr, "dt_bcjr_metrics: %s:%d: grid has no rates\n", path,
+      fprintf(stderr, "dt_cc_bcjr_metrics: %s:%d: grid has no rates\n", path,
               lineno);
       free(rates);
       ok = 0;
@@ -302,11 +302,11 @@ typedef struct {
 /* Run one Monte-Carlo trial for a (code, axis, rate) point with its own PRNG
  * stream seeded from `seed`. Each trial is fully independent, so trials
  * parallelize across cores (see main). Drives the public encoder/decoder. */
-static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
+static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
                                   double rate, int info_bits, uint64_t seed) {
   uint64_t rng_state = seed;
   uint64_t *rng = &rng_state;
-  const int code_n = dt_ccode_n(code), constraint_len = dt_ccode_k(code);
+  const int code_n = dt_cc_code_n(code), constraint_len = dt_cc_code_k(code);
   const double p_flip = channel_axis == AXIS_FLIP ? rate : 0.0;
   const double p_erase = channel_axis == AXIS_ERASE ? rate : 0.0;
 
@@ -315,7 +315,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
    * sits at a small floor (p_flip) or zero (p_erase). decision_depth ~ 6 * K. */
   const int decision_depth = 6 * constraint_len;
   const double min_prob = 1e-3, max_prob = 1.0 - 1e-3;
-  const dt_bcjr_stream_params params = {
+  const dt_cc_bcjr_stream_params params = {
       .decision_depth = decision_depth,
       .p_flip = channel_axis == AXIS_FLIP ? clamp_double(rate, min_prob, max_prob)
                                           : 0.005,
@@ -334,7 +334,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   uint8_t *coded = xmalloc((size_t)coded_cap);
   dt_encoder *encoder = dt_cc_full_encoder_create(code);
   if (!encoder) {
-    fprintf(stderr, "dt_bcjr_metrics: encoder create failed\n");
+    fprintf(stderr, "dt_cc_bcjr_metrics: encoder create failed\n");
     exit(1);
   }
   int coded_len = encoder->begin(encoder, coded, (size_t)coded_cap);
@@ -351,9 +351,9 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   /* Decode through the public API, feeding in 64-bit chunks then flushing. */
   const int decoded_cap = info_bits + 256;
   uint8_t *decoded = xmalloc((size_t)decoded_cap);
-  dt_decoder *dec = dt_bcjr_decoder_create(code, &params);
+  dt_decoder *dec = dt_cc_bcjr_decoder_create(code, &params);
   if (!dec) {
-    fprintf(stderr, "dt_bcjr_metrics: decoder create failed\n");
+    fprintf(stderr, "dt_cc_bcjr_metrics: decoder create failed\n");
     exit(1);
   }
   int n_decoded = dec->begin(dec, decoded, (size_t)decoded_cap);
@@ -374,10 +374,10 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                              (size_t)(decoded_cap - n_decoded));
     n_decoded = tail < 0 ? tail : n_decoded + tail;
   }
-  dt_bcjr_decoder_destroy(dec);
+  dt_cc_bcjr_decoder_destroy(dec);
   free(received);
   if (n_decoded < 0) {
-    fprintf(stderr, "dt_bcjr_metrics: decode error %d\n", n_decoded);
+    fprintf(stderr, "dt_cc_bcjr_metrics: decode error %d\n", n_decoded);
     exit(1);
   }
 
@@ -438,13 +438,13 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  /* The trellis tables in a dt_ccode are read-only once built, so all threads
+  /* The trellis tables in a dt_cc_code are read-only once built, so all threads
    * share the four codes; each decode allocates its own decoder state. */
-  dt_ccode *codes[N_CODES];
+  dt_cc_code *codes[N_CODES];
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    codes[code_idx] = dt_ccode_create_standard(CODES[code_idx].which);
+    codes[code_idx] = dt_cc_code_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
-      fprintf(stderr, "dt_bcjr_metrics: code create failed\n");
+      fprintf(stderr, "dt_cc_bcjr_metrics: code create failed\n");
       return 1;
     }
   }
@@ -453,7 +453,7 @@ int main(int argc, char **argv) {
   int n_points = 0;
   for (int axis_idx = 0; axis_idx < N_AXES; ++axis_idx) {
     if (g_grids[axis_idx].count == 0) {
-      fprintf(stderr, "dt_bcjr_metrics: %s: no grid for axis %s\n",
+      fprintf(stderr, "dt_cc_bcjr_metrics: %s: no grid for axis %s\n",
               grids_path, AXIS_NAME[axis_idx]);
       return 2;
     }
@@ -548,7 +548,7 @@ int main(int argc, char **argv) {
     free(g_grids[axis_idx].rates);
   }
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
-    dt_ccode_destroy(codes[code_idx]);
+    dt_cc_code_destroy(codes[code_idx]);
   }
   return 0;
 }

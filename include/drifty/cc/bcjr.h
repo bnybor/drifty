@@ -37,12 +37,12 @@ extern "C" {
 
 /*
  * The bcjr codec - a convolutional encoder and BCJR (MAP / forward-backward)
- * decoder over a dt_ccode. Where the viterbi codec finds the single most likely
+ * decoder over a dt_cc_code. Where the viterbi codec finds the single most likely
  * path, BCJR computes the per-bit a-posteriori probability of each input bit,
  * which makes it a natural soft-output decoder. Like viterbi it corrects flipped
  * and erased bits. This is the single header to include for its public API.
  *
- * Build a decoder over a dt_ccode with one of the factories below, drive it
+ * Build a decoder over a dt_cc_code with one of the factories below, drive it
  * through its vtable (see decoder.h / soft_decoder.h), and free it with the
  * matching _destroy(). The code must outlive everything built from it. To
  * encode, use the standalone full encoder in <drifty/cc/encoders.h>.
@@ -50,13 +50,13 @@ extern "C" {
 
 /* clang-format off */
 /*
- * Decoder channel-model settings for dt_bcjr_decoder_create() and
- * dt_bcjr_soft_decoder_create(). Use designated initializers; any field you
+ * Decoder channel-model settings for dt_cc_bcjr_decoder_create() and
+ * dt_cc_bcjr_soft_decoder_create(). Use designated initializers; any field you
  * leave out is 0.
  *
  *   decision_depth : output delay, in bits, before each bit is committed - the
  *                    sliding window the backward recursion spans. Bigger is more
- *                    reliable but slower to emit. Try ~6 * dt_ccode_k().
+ *                    reliable but slower to emit. Try ~6 * dt_cc_code_k().
  *                    Required (must be >= 1).
  *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
  *                    0.01 for 1%). Sets the branch likelihoods. Required.
@@ -70,23 +70,23 @@ typedef struct {
   int decision_depth;
   float p_flip;
   float p_erase;
-} dt_bcjr_stream_params;
+} dt_cc_bcjr_stream_params;
 
 /* Build a hard-decision BCJR decoder over `code` with the channel model in
  * `params`. `params` is copied and need not outlive the call. Returns NULL on a
  * bad argument (including an invalid `params`) or out of memory. */
-dt_decoder *dt_bcjr_decoder_create(const dt_ccode *code,
-                                   const dt_bcjr_stream_params *params);
-/* Free a decoder from dt_bcjr_decoder_create(). Passing NULL is fine. */
-void dt_bcjr_decoder_destroy(dt_decoder *dec);
+dt_decoder *dt_cc_bcjr_decoder_create(const dt_cc_code *code,
+                                   const dt_cc_bcjr_stream_params *params);
+/* Free a decoder from dt_cc_bcjr_decoder_create(). Passing NULL is fine. */
+void dt_cc_bcjr_decoder_destroy(dt_decoder *dec);
 
-/* Build a soft-output BCJR decoder - same inputs as dt_bcjr_decoder_create(),
+/* Build a soft-output BCJR decoder - same inputs as dt_cc_bcjr_decoder_create(),
  * but it reports per-bit consistencies instead of a hard decision. Returns NULL
  * on a bad argument or out of memory. */
-dt_soft_decoder *dt_bcjr_soft_decoder_create(
-    const dt_ccode *code, const dt_bcjr_stream_params *params);
-/* Free a soft decoder from dt_bcjr_soft_decoder_create(). NULL is fine. */
-void dt_bcjr_soft_decoder_destroy(dt_soft_decoder *dec);
+dt_soft_decoder *dt_cc_bcjr_soft_decoder_create(
+    const dt_cc_code *code, const dt_cc_bcjr_stream_params *params);
+/* Free a soft decoder from dt_cc_bcjr_soft_decoder_create(). NULL is fine. */
+void dt_cc_bcjr_soft_decoder_destroy(dt_soft_decoder *dec);
 
 #ifdef __cplusplus
 }

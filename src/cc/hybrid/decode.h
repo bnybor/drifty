@@ -27,9 +27,9 @@
 #ifndef DRIFTY_HYBRID_DECODE_H
 #define DRIFTY_HYBRID_DECODE_H
 
-/* The decoder is built from a dt_ccode, and shares the result codes and bit
- * values defined alongside the encoder. dt_stream_decoder_create takes the
- * dt_hybrid_stream_params channel model, which lives in <drifty/cc/hybrid.h>. */
+/* The decoder is built from a dt_cc_code, and shares the result codes and bit
+ * values defined alongside the encoder. dt_cc_stream_decoder_create takes the
+ * dt_cc_hybrid_stream_params channel model, which lives in <drifty/cc/hybrid.h>. */
 #include <drifty/cc/hybrid.h>
 #include "encode.h"
 
@@ -45,18 +45,18 @@ extern "C" {
  * decoder and read your bits back, with flipped, inserted and dropped bits
  * corrected.
  *
- *   dt_stream_decoder *d = dt_stream_decoder_create(code, &(dt_hybrid_stream_params){
+ *   dt_cc_stream_decoder *d = dt_cc_stream_decoder_create(code, &(dt_cc_hybrid_stream_params){
  *       .decision_depth = 40,
  *       .max_drift      = 4,
  *       .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
  *   });
- *   int n = dt_stream_decode(d, in, n_in, out, NULL, out_cap);
- *   while (dt_stream_decode_flush(d, out, out_cap) > 0) { }
+ *   int n = dt_cc_stream_decode(d, in, n_in, out, NULL, out_cap);
+ *   while (dt_cc_stream_decode_flush(d, out, out_cap) > 0) { }
  *
- *   dt_stream_decoder_destroy(d);
+ *   dt_cc_stream_decoder_destroy(d);
  *
  * `code` must be the same one the sender used, and must stay alive until the
- * decoder is freed. dt_stream_decoder is an opaque handle.
+ * decoder is freed. dt_cc_stream_decoder is an opaque handle.
  */
 /* clang-format on */
 
@@ -80,9 +80,9 @@ extern "C" {
  * locking on, so discard them (or send a known preamble you can skip). Opaque
  * handle.
  */
-typedef struct dt_stream_decoder dt_stream_decoder;
+typedef struct dt_cc_stream_decoder dt_cc_stream_decoder;
 
-/* dt_hybrid_stream_params (the decoder channel-model settings) is defined in
+/* dt_cc_hybrid_stream_params (the decoder channel-model settings) is defined in
  * <drifty/cc/hybrid.h>, included above. */
 
 /*
@@ -103,27 +103,27 @@ typedef struct {
   float c_false;
   // Consistency of the proposition that the encoded bit is unrecoverable
   float c_lost;
-  // Consistency of the proposition that the `dt_ccode` is correct.
+  // Consistency of the proposition that the `dt_cc_code` is correct.
   float c_lock;
-} dt_decode_details;
+} dt_cc_decode_details;
 
 /*
  * Make a decoder for `code` (which must stay alive until the decoder is freed)
  * using `params`. Returns NULL on invalid settings or out of memory; free it
- * with dt_stream_decoder_destroy().
+ * with dt_cc_stream_decoder_destroy().
  */
-dt_stream_decoder *dt_stream_decoder_create(const dt_ccode *code,
-                                            const dt_hybrid_stream_params *params);
+dt_cc_stream_decoder *dt_cc_stream_decoder_create(const dt_cc_code *code,
+                                            const dt_cc_hybrid_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
-void dt_stream_decoder_destroy(dt_stream_decoder *d);
+void dt_cc_stream_decoder_destroy(dt_cc_stream_decoder *d);
 
 /*
  * Feed `n_in` received bits (each DT_FALSE, DT_TRUE, or DT_ERASURE) and collect
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
- * written (0 or more), or a negative DT_ERR_* code.
+ * written (0 or more), or a negative DT_CC_ERR_* code.
  *
- * You get about one decoded bit per dt_ccode_n(code) received bits. If `out`
+ * You get about one decoded bit per dt_cc_code_n(code) received bits. If `out`
  * fills up (return value == max_out), call again to collect more before feeding
  * more input.
  *
@@ -135,16 +135,16 @@ void dt_stream_decoder_destroy(dt_stream_decoder *d);
  *
  * `details` returns the inner state of the decoder at each decoded position.
  */
-int dt_stream_decode(dt_stream_decoder *d, const uint8_t *in, int n_in,
-                     uint8_t *out, dt_decode_details *details, int max_out);
+int dt_cc_stream_decode(dt_cc_stream_decoder *d, const uint8_t *in, int n_in,
+                     uint8_t *out, dt_cc_decode_details *details, int max_out);
 
 /*
  * Call at the end of the stream to get the last decoded bits still in flight.
  * Returns how many bits were written (0..max_out); call it repeatedly until it
  * returns 0, after which every bit has been decoded.
  */
-int dt_stream_decode_flush(dt_stream_decoder *d, uint8_t *out,
-                           dt_decode_details *details, int max_out);
+int dt_cc_stream_decode_flush(dt_cc_stream_decoder *d, uint8_t *out,
+                           dt_cc_decode_details *details, int max_out);
 
 #ifdef __cplusplus
 }

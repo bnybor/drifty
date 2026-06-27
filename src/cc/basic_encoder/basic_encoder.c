@@ -27,7 +27,7 @@
 /*
  * Basic encoder: realizes the abstract dt_encoder interface over a standalone
  * plain convolutional encode engine (encode.c in this directory). The code
- * handle is dt_ccode throughout. Unlike the per-codec encoders this one is
+ * handle is dt_cc_code throughout. Unlike the per-codec encoders this one is
  * self-contained - it shares no engine with viterbi or any other codec.
  *
  * The encode engine is complete; this file is just the vtable plumbing that
@@ -36,7 +36,7 @@
 
 #include <drifty/cc/encoders.h>
 
-#include "encode.h" /* dt_basic_encode + dt_basic_encode_flush */
+#include "encode.h" /* dt_cc_basic_encode + dt_cc_basic_encode_flush */
 #include <drifty/stdlib.h>
 
 /* dt_bit is uint8_t (bit.h), the same element type the engine's encode buffers
@@ -45,7 +45,7 @@
 /* -- encoder --------------------------------------------------------------- */
 
 typedef struct {
-  const dt_ccode *code; /* the convolutional code this encoder emits */
+  const dt_cc_code *code; /* the convolutional code this encoder emits */
   int state;            /* running shift-register state across encode calls */
 } cc_basic_encoder;
 
@@ -62,23 +62,23 @@ static int cc_basic_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
   cc_basic_encoder *st = enc->data;
   /* The engine writes src_len * n coded bits and does not bound-check, so gate
    * it on the caller's capacity here. */
-  if ((size_t)dt_ccode_n(st->code) * src_len > dst_len) {
-    return DT_ERR_ARG;
+  if ((size_t)dt_cc_code_n(st->code) * src_len > dst_len) {
+    return DT_CC_ERR_ARG;
   }
-  return dt_basic_encode(st->code, src, (int)src_len, &st->state, dst);
+  return dt_cc_basic_encode(st->code, src, (int)src_len, &st->state, dst);
 }
 
 static int cc_basic_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
   cc_basic_encoder *st = enc->data;
   /* Flush writes (K-1) * n trailing bits to drain the register back to state 0. */
-  if ((size_t)(dt_ccode_k(st->code) - 1) * (size_t)dt_ccode_n(st->code) >
+  if ((size_t)(dt_cc_code_k(st->code) - 1) * (size_t)dt_cc_code_n(st->code) >
       dst_len) {
-    return DT_ERR_ARG;
+    return DT_CC_ERR_ARG;
   }
-  return dt_basic_encode_flush(st->code, &st->state, dst);
+  return dt_cc_basic_encode_flush(st->code, &st->state, dst);
 }
 
-dt_encoder *dt_cc_basic_encoder_create(const dt_ccode *code) {
+dt_encoder *dt_cc_basic_encoder_create(const dt_cc_code *code) {
   if (!code) {
     return NULL;
   }

@@ -68,7 +68,7 @@ extern "C" {
  *         DT_ABSENT for a position judged deleted or not synchronized.
  *
  * `data` is the implementation's private state - do not touch it. Build a
- * decoder with a factory such as dt_hybrid_decoder_create() and free it with
+ * decoder with a factory such as dt_cc_hybrid_decoder_create() and free it with
  * the matching _destroy().
  */
 /* clang-format on */

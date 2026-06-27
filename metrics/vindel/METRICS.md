@@ -1,6 +1,6 @@
 # vindel metrics
 
-`metrics/vindel/dt_vindel_metrics.c` measures the decoding-mistake rate as a
+`metrics/vindel/dt_cc_vindel_metrics.c` measures the decoding-mistake rate as a
 function of the channel's flip / insert / delete / erase rates, for all four
 standard codes, for the **vindel** codec (the ported drift_viterbi algorithm).
 It is the vindel counterpart of [../hybrid/METRICS.md](../hybrid/METRICS.md): same
@@ -38,13 +38,13 @@ for corruption that never comes (a clean channel). They write to
 ```sh
 # Build the harness (off by default) and run each variation to its own CSV.
 cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
-cmake --build build --target dt_vindel_metrics
-# dt_vindel_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
+cmake --build build --target dt_cc_vindel_metrics
+# dt_cc_vindel_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
 #   variation = pegged|matched|overmatched   (defaults: 50 1000 0xC0FFEE pegged)
 #   rate_grids_file defaults to metrics/vindel/rate_grids.txt (so run from the repo root)
-build/metrics/vindel/dt_vindel_metrics 30 4000 0xC0FFEE matched     > metrics/vindel/tuned/metrics.csv
-build/metrics/vindel/dt_vindel_metrics 30 4000 0xC0FFEE pegged      > metrics/vindel/untuned/metrics.csv
-build/metrics/vindel/dt_vindel_metrics 30 4000 0xC0FFEE overmatched > metrics/vindel/overmatched/metrics.csv
+build/metrics/vindel/dt_cc_vindel_metrics 30 4000 0xC0FFEE matched     > metrics/vindel/tuned/metrics.csv
+build/metrics/vindel/dt_cc_vindel_metrics 30 4000 0xC0FFEE pegged      > metrics/vindel/untuned/metrics.csv
+build/metrics/vindel/dt_cc_vindel_metrics 30 4000 0xC0FFEE overmatched > metrics/vindel/overmatched/metrics.csv
 
 # Plot the metrics each CSV carries (one curve per code). Needs matplotlib:
 python3 -m venv .venv && .venv/bin/pip install matplotlib
@@ -58,7 +58,7 @@ variations (`pegged`, `matched`) also see the *same* channel realizations at a
 given (code, axis, rate); `overmatched`'s channel is clean, so there its seed
 only drives the message.
 
-The sweep's rate grids are not compiled in: `dt_vindel_metrics` reads them at
+The sweep's rate grids are not compiled in: `dt_cc_vindel_metrics` reads them at
 startup from a plain-text file (`metrics/vindel/rate_grids.txt` by default, or a
 path passed as the 5th argument). Each line is
 `<variation> <metric> <axis>  <rate> <rate> ...` (`#` begins a comment), so you
@@ -86,7 +86,7 @@ By default the plotter writes, per axis, three metrics:
 ## Variations
 
 The variations differ in the decoder's channel model — the
-`dt_vindel_stream_params` probabilities (`p_sub`, `p_ins`, `p_del`, `p_erase`) it
+`dt_cc_vindel_stream_params` probabilities (`p_sub`, `p_ins`, `p_del`, `p_erase`) it
 is built with — and so each samples its **own rate grid**.
 
 - **untuned** (`metrics/vindel/untuned/`, the `pegged` model) — every impairment

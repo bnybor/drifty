@@ -30,10 +30,10 @@
 #include <stdint.h>
 
 /*
- * Definition of the opaque dt_ccode, shared by the encoder (encode.c) and the
+ * Definition of the opaque dt_cc_code, shared by the encoder (encode.c) and the
  * decoder (decode.c). Private to the library build - not installed.
  */
-struct dt_ccode {
+struct dt_cc_code {
   int K;                    /* constraint length                   */
   int n;                    /* output bits per input bit           */
   int n_states;             /* 1 << (K-1)                          */

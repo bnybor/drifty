@@ -39,7 +39,7 @@ extern "C" {
  * the encoder / decoder interfaces. This is the single header to include for
  * the whole public API.
  *
- * Build a decoder over a dt_ccode with the factory below, drive it through its
+ * Build a decoder over a dt_cc_code with the factory below, drive it through its
  * vtable (see decoder.h), and free it with the matching _destroy(). The code
  * must outlive everything built from it. To encode, use the standalone basic
  * encoder in <drifty/cc/encoders.h>.
@@ -47,11 +47,11 @@ extern "C" {
 
 /* clang-format off */
 /*
- * Decoder channel-model settings for dt_vindel_decoder_create(). Use designated
+ * Decoder channel-model settings for dt_cc_vindel_decoder_create(). Use designated
  * initializers; any field you leave out is 0.
  *
  *   decision_depth : output delay, in bits, before each bit is committed. Bigger
- *                    is more reliable but slower to emit. Try ~6 * dt_ccode_k().
+ *                    is more reliable but slower to emit. Try ~6 * dt_cc_code_k().
  *                    Required (must be >= 1).
  *   p_sub          : how often a received bit is flipped, 0 < p_sub < 1 (e.g.
  *                    0.01 for 1%). Required.
@@ -74,15 +74,15 @@ typedef struct {
   float p_ins;
   float p_del;
   float p_erase;
-} dt_vindel_stream_params;
+} dt_cc_vindel_stream_params;
 
 /* Build a hard-decision decoder over `code` with the channel model in `params`.
  * `params` is copied and need not outlive the call. Returns NULL on a bad
  * argument (including an invalid `params`) or out of memory. */
-dt_decoder *dt_vindel_decoder_create(const dt_ccode *code,
-                                     const dt_vindel_stream_params *params);
-/* Free a decoder from dt_vindel_decoder_create(). Passing NULL is fine. */
-void dt_vindel_decoder_destroy(dt_decoder *dec);
+dt_decoder *dt_cc_vindel_decoder_create(const dt_cc_code *code,
+                                     const dt_cc_vindel_stream_params *params);
+/* Free a decoder from dt_cc_vindel_decoder_create(). Passing NULL is fine. */
+void dt_cc_vindel_decoder_destroy(dt_decoder *dec);
 
 #ifdef __cplusplus
 }

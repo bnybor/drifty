@@ -27,7 +27,7 @@
 #ifndef DRIFTY_VITERBI_DECODE_H
 #define DRIFTY_VITERBI_DECODE_H
 
-/* The decoder is built from a dt_ccode and shares the result codes defined
+/* The decoder is built from a dt_cc_code and shares the result codes defined
  * alongside the encoder. */
 #include "encode.h"
 
@@ -45,34 +45,34 @@ extern "C" {
  * dropped bits, and takes no channel-model parameters - the decoder is built
  * from the code alone.
  *
- *   dt_viterbi_stream_decoder *d = dt_viterbi_stream_decoder_create(code);
- *   int n = dt_viterbi_stream_decode(d, in, n_in, out, out_cap);
- *   while (dt_viterbi_stream_decode_flush(d, out, out_cap) > 0) { }
- *   dt_viterbi_stream_decoder_destroy(d);
+ *   dt_cc_viterbi_stream_decoder *d = dt_cc_viterbi_stream_decoder_create(code);
+ *   int n = dt_cc_viterbi_stream_decode(d, in, n_in, out, out_cap);
+ *   while (dt_cc_viterbi_stream_decode_flush(d, out, out_cap) > 0) { }
+ *   dt_cc_viterbi_stream_decoder_destroy(d);
  *
  * `code` must be the same one the sender used, and must stay alive until the
- * decoder is freed. dt_viterbi_stream_decoder is an opaque handle. Bits crossing
+ * decoder is freed. dt_cc_viterbi_stream_decoder is an opaque handle. Bits crossing
  * this boundary are dt_bit symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
  */
-typedef struct dt_viterbi_stream_decoder dt_viterbi_stream_decoder;
+typedef struct dt_cc_viterbi_stream_decoder dt_cc_viterbi_stream_decoder;
 
 /*
  * Make a decoder for `code` (which must stay alive until the decoder is freed).
  * Returns NULL on a bad argument or out of memory; free it with
- * dt_viterbi_stream_decoder_destroy().
+ * dt_cc_viterbi_stream_decoder_destroy().
  */
-dt_viterbi_stream_decoder *dt_viterbi_stream_decoder_create(const dt_ccode *code);
+dt_cc_viterbi_stream_decoder *dt_cc_viterbi_stream_decoder_create(const dt_cc_code *code);
 
 /* Free a decoder. Passing NULL is fine. */
-void dt_viterbi_stream_decoder_destroy(dt_viterbi_stream_decoder *d);
+void dt_cc_viterbi_stream_decoder_destroy(dt_cc_viterbi_stream_decoder *d);
 
 /*
  * Feed `n_in` received bits (each DT_FALSE, DT_TRUE, or DT_ERASURE) and collect
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
- * written (0 or more), or a negative DT_ERR_* code. If `out` fills up (return
+ * written (0 or more), or a negative DT_CC_ERR_* code. If `out` fills up (return
  * value == max_out), call again to collect more before feeding more input.
  */
-int dt_viterbi_stream_decode(dt_viterbi_stream_decoder *d, const uint8_t *in,
+int dt_cc_viterbi_stream_decode(dt_cc_viterbi_stream_decoder *d, const uint8_t *in,
                              int n_in, uint8_t *out, int max_out);
 
 /*
@@ -80,7 +80,7 @@ int dt_viterbi_stream_decode(dt_viterbi_stream_decoder *d, const uint8_t *in,
  * Returns how many bits were written (0..max_out); call it repeatedly until it
  * returns 0, after which every bit has been decoded.
  */
-int dt_viterbi_stream_decode_flush(dt_viterbi_stream_decoder *d, uint8_t *out,
+int dt_cc_viterbi_stream_decode_flush(dt_cc_viterbi_stream_decoder *d, uint8_t *out,
                                    int max_out);
 
 #ifdef __cplusplus

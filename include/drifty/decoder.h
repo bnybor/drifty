@@ -60,9 +60,12 @@ extern "C" {
  *     (it filled the buffer), call decode again with no new input (src_len 0)
  *     to drain the rest before feeding more.
  *
- *   `src` holds received DT_TRUE / DT_FALSE / DT_ERASURE (may carry DT_INVALID).
- *   `dst` receives DT_TRUE / DT_FALSE / DT_ERASURE / DT_INVALID, plus DT_ABSENT
- *         for a position judged deleted.
+ *   `src` is the received transmit-domain stream (DT_TRUE / DT_FALSE /
+ *         DT_ERASURE / DT_INVALID) on an unknown, drifting grid.
+ *   `dst` is one output-domain symbol per recovered information position:
+ *         DT_TRUE / DT_FALSE recovered, DT_ERASURE for a tracked position whose
+ *         value was lost (don't-know), DT_INVALID for a recovered non-value, or
+ *         DT_ABSENT for a position judged deleted or not synchronized.
  *
  * `data` is the implementation's private state - do not touch it. Build a
  * decoder with a factory such as dt_hybrid_decoder_create() and free it with

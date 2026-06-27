@@ -50,8 +50,12 @@ extern "C" {
  * room. Size `dst` from the input length and dt_ccode_n(): n input bits become
  * up to (n + K) * dt_ccode_n(code) coded bits once the flush is counted.
  *
- *   `src` holds DT_TRUE / DT_FALSE (and may carry DT_ERASURE / DT_INVALID).
- *   `dst` receives DT_TRUE / DT_FALSE / DT_ERASURE / DT_INVALID coded symbols.
+ *   `src` is one transmit-domain symbol per information position: DT_TRUE /
+ *         DT_FALSE to protect, DT_ERASURE for a don't-care value deferred to the
+ *         channel, or DT_INVALID for a deliberate non-value sent as such.
+ *   `dst` is the coded transmit-domain stream: the code's booleans, except a
+ *         DT_INVALID input's coded positions are emitted DT_INVALID (structural
+ *         poison) and a DT_ERASURE input's are emitted DT_ERASURE (deferred).
  *
  * `data` is the implementation's private state - do not touch it. Build an
  * encoder with a factory such as dt_hybrid_encoder_create() and free it with

@@ -34,18 +34,33 @@ extern "C" {
 #endif
 
 /*
- * dt_bit - the bit symbol the whole drifty API speaks. Every input bit, coded
- * bit, and decoded bit is one byte holding one of the DT_ symbols below (one
- * bit per byte, never a packed bitfield).
+ * dt_bit - the symbol the whole drifty API speaks. Every position - source,
+ * coded, received, or recovered - is one byte holding one of the six DT_ symbols
+ * below (one symbol per byte, never a packed bitfield). The native unit is the
+ * *position*; a *value* is a property a position may or may not carry, which is
+ * why the alphabet is richer than {0, 1}. See drifty-data-flow-semantics.md for
+ * the full per-interface treatment.
  *
- * In practice you build and read three of them:
- *   DT_FALSE, DT_TRUE - a known 0 / 1.
- *   DT_ERASURE        - a position that exists but whose value is unknown (a
- *                       bit the channel lost). Valid as decoder input and may
- *                       appear in decoder output.
- * A decoder may additionally emit:
- *   DT_ABSENT         - a position it judges was deleted from the stream.
- *   DT_INVALID        - a bound value that is not a boolean.
+ *   DT_FALSE, DT_TRUE - a bound boolean: value 0 / 1.
+ *   DT_ERASURE        - a present position with no value bound (the unbound
+ *                       symbol). Its reason differs by side: a source declining
+ *                       to fix a value (don't-care, deferred to the channel) on
+ *                       the way in; a value that could not be recovered
+ *                       (don't-know) on the way out. The same predicate - value
+ *                       unspecified - either way, but the two readings do not
+ *                       cross the channel.
+ *   DT_INVALID        - a present position bound to a deliberate non-value
+ *                       (neither true nor false). It round-trips: a sent
+ *                       DT_INVALID recovers as DT_INVALID (damage permitting).
+ *   DT_ABSENT         - a position the decoder infers was deleted in transit, or
+ *                       cannot place. Output only - it could never be sent.
+ *   DT_NONE           - the absence of any symbol; in no data flow, so zeroed or
+ *                       uninitialised storage is detectably not a symbol.
+ *
+ * Two domains partition where each may appear. The transmit domain
+ * {DT_TRUE, DT_FALSE, DT_ERASURE, DT_INVALID} is what is sent and what travels
+ * the channel; the output domain adds DT_ABSENT - what a decoder may emit.
+ * DT_NONE is in neither. DT_IS_TRANSMIT / DT_IS_OUTPUT test these.
  *
  * The symbols are points in a small flag space (the structural bits below), so
  * the predicates are plain mask tests. To recover a 0/1 from DT_FALSE/DT_TRUE,

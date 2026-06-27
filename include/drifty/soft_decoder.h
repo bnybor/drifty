@@ -36,14 +36,15 @@ extern "C" {
 #endif
 
 /*
- * Soft output for one decoded bit position. Each c_ field is a *consistency* in
- * [0, 1] - how well that hypothesis fits the received stream - not a
- * probability, so the fields need not sum to 1; compare them to decide. The
- * usual hard decision is DT_ERASURE if c_erasure dominates, else whichever of
- * c_true / c_false is larger.
+ * Soft output for one recovered information position: a graded *consistency* in
+ * [0, 1] for each output-domain hypothesis - how well it fits the received
+ * stream - not a probability split, so the fields need not sum to 1. The hard
+ * symbol is the argmax projection over the alphabet (recoverability-first; see
+ * decoder.h).
  *
  * An implementation need not model every hypothesis: the hybrid codec leaves
- * c_invalid and c_absent at 0.
+ * c_invalid and c_absent at 0, while the max-log-MAP codecs (bcjr, maxir)
+ * populate the full alphabet.
  */
 typedef struct dt_soft_decoder_out_t dt_soft_decoder_out;
 struct dt_soft_decoder_out_t {
@@ -72,10 +73,10 @@ struct dt_soft_decoder_out_t {
  * with no new input (src_len 0) to drain before feeding more.
  *
  * `begin` writes any preamble into `dst`; the hybrid codec emits none, so
- * begin(dec, NULL, 0) is fine. `src` holds received DT_TRUE / DT_FALSE /
- * DT_ERASURE (and may carry DT_INVALID); `data` is private state - do not touch
- * it. Build one with dt_hybrid_soft_decoder_create() and free it with the
- * matching _destroy().
+ * begin(dec, NULL, 0) is fine. `src` is the received transmit-domain stream
+ * (DT_TRUE / DT_FALSE / DT_ERASURE / DT_INVALID); `data` is private state - do
+ * not touch it. Build one with dt_hybrid_soft_decoder_create() and free it with
+ * the matching _destroy().
  */
 typedef struct dt_soft_decoder_t dt_soft_decoder;
 struct dt_soft_decoder_t {

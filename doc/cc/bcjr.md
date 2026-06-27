@@ -2,13 +2,13 @@
 
 A **BCJR** (MAP / forward–backward) decoder over a `dt_cc_code`, with both a
 **hard-decision** and a **soft-output** front end. Where
-[`viterbi`](cc_viterbi.md) finds the single most likely path, BCJR computes the
+[`viterbi`](viterbi.md) finds the single most likely path, BCJR computes the
 per-bit a-posteriori *probability* of each information bit, which makes it a
 natural soft-output decoder. Like `viterbi`, it corrects flipped and erased bits
 but does **not** track drift.
 
 For the symbol alphabet and what each interface means, see
-[Data-flow semantics](data_flow_semantics.md).
+[Data-flow semantics](../data_flow_semantics.md).
 
 ## Algorithm
 
@@ -18,7 +18,7 @@ bit, the a-posteriori probability of 0 vs 1 (and the erasure/poison hypotheses).
 Alignment is assumed fixed — there is no drift axis — so the trellis has a single
 state dimension.
 
-> **Independent from [`maxir`](cc_maxir.md).** Both are forward–backward decoders,
+> **Independent from [`maxir`](maxir.md).** Both are forward–backward decoders,
 > but `bcjr` is the flip/erasure-only variant and `maxir` is the drift-tolerant,
 > full-channel-model one. They are separate implementations — do not assume a
 > change to one applies to the other.
@@ -32,9 +32,9 @@ state dimension.
 | Insertion / deletion (drift) | ❌ no — assumes a fixed, known grid |
 | Overwrite to a fixed value | ❌ not modelled |
 
-If your channel inserts or drops bits, use [`maxir`](cc_maxir.md) (same
-soft-output style, drift-tolerant) or [`vindel`](cc_vindel.md) /
-[`hybrid`](cc_hybrid.md).
+If your channel inserts or drops bits, use [`maxir`](maxir.md) (same
+soft-output style, drift-tolerant) or [`vindel`](vindel.md) /
+[`hybrid`](hybrid.md).
 
 ## API
 
@@ -101,5 +101,5 @@ The hard symbol is the argmax projection over the alphabet (recoverability-first
 
 Pick `bcjr` when the channel only **flips** and **erases** bits on a **fixed
 grid** and you want **soft** per-bit information (e.g. to feed an outer
-soft-input code). For a hard decision on the same channel, [`viterbi`](cc_viterbi.md)
-is lighter; if the grid can drift, use [`maxir`](cc_maxir.md).
+soft-input code). For a hard decision on the same channel, [`viterbi`](viterbi.md)
+is lighter; if the grid can drift, use [`maxir`](maxir.md).

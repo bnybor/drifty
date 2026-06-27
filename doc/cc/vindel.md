@@ -1,12 +1,12 @@
 # drifty — `vindel` decoder
 
 A **drift-tolerant Viterbi** decoder over a convolutional code (`dt_cc_code`).
-It corrects flipped and erased bits like [`viterbi`](cc_viterbi.md), and in
+It corrects flipped and erased bits like [`viterbi`](viterbi.md), and in
 addition tracks **drift** — inserted and dropped coded bits — recovering the
 alignment as it decodes. It is a hard-decision decoder (no soft output).
 
 For the symbol alphabet and what each interface means, see
-[Data-flow semantics](data_flow_semantics.md).
+[Data-flow semantics](../data_flow_semantics.md).
 
 ## Algorithm
 
@@ -23,8 +23,8 @@ and deletions and emits a clean, fixed grid of information positions.
 | Substitution (flipped bit) | ✅ yes (`p_sub`) |
 | Erasure (`DT_ERASURE` received) | ✅ yes (`p_erase`) |
 | Insertion / deletion (drift) | ✅ yes, up to `max_drift` (`p_ins` / `p_del`) |
-| Overwrite to a fixed value | ❌ not modelled — see [`hybrid`](cc_hybrid.md) / [`maxir`](cc_maxir.md) |
-| `DT_INVALID` poison round-trip | ❌ not modelled — see [`maxir`](cc_maxir.md) |
+| Overwrite to a fixed value | ❌ not modelled — see [`hybrid`](hybrid.md) / [`maxir`](maxir.md) |
+| `DT_INVALID` poison round-trip | ❌ not modelled — see [`maxir`](maxir.md) |
 
 ## API
 
@@ -75,5 +75,5 @@ call again with `src_len == 0` to drain). Deletions surface on output as
 Pick `vindel` for a drifting channel (insertions/deletions plus flips/erasures)
 when a **hard** decision is enough and the channel has no fixed-value overwrites.
 If you need **soft** output, or the channel overwrites bits, use
-[`hybrid`](cc_hybrid.md); if you also need `DT_INVALID` round-tripping or
-re-acquisition after a sustained loss of lock, use [`maxir`](cc_maxir.md).
+[`hybrid`](hybrid.md); if you also need `DT_INVALID` round-tripping or
+re-acquisition after a sustained loss of lock, use [`maxir`](maxir.md).

@@ -7,7 +7,7 @@ and takes **no channel-model parameters** — it is built from the code alone.
 
 For the symbol alphabet (`DT_TRUE` / `DT_FALSE` / `DT_ERASURE` / `DT_INVALID` /
 `DT_ABSENT`) and what each interface means, see
-[Data-flow semantics](data_flow_semantics.md).
+[Data-flow semantics](../data_flow_semantics.md).
 
 ## Algorithm
 
@@ -25,8 +25,8 @@ axis — the encoder state — and the decision at each step is a hard symbol.
 | Insertion / deletion (drift) | ❌ no — assumes a fixed, known grid |
 | `DT_INVALID` poison round-trip | ❌ not modelled |
 
-If your channel inserts or drops bits, use [`vindel`](cc_vindel.md),
-[`hybrid`](cc_hybrid.md), or [`maxir`](cc_maxir.md) instead.
+If your channel inserts or drops bits, use [`vindel`](vindel.md),
+[`hybrid`](hybrid.md), or [`maxir`](maxir.md) instead.
 
 ## API
 
@@ -65,6 +65,6 @@ dec->finalize(dec, dst, dst_len);                    // once, last
 
 Pick `viterbi` when the channel only **flips** (and possibly **erases**) bits on a
 **known, fixed grid**, and you want the cheapest hard-decision decoder. If you
-need soft output on the same flip-only channel, use [`bcjr`](cc_bcjr.md); if the
-grid can drift, step up to [`vindel`](cc_vindel.md) / [`hybrid`](cc_hybrid.md) /
-[`maxir`](cc_maxir.md).
+need soft output on the same flip-only channel, use [`bcjr`](bcjr.md); if the
+grid can drift, step up to [`vindel`](vindel.md) / [`hybrid`](hybrid.md) /
+[`maxir`](maxir.md).

@@ -2,15 +2,15 @@
 
 The most capable cc decoder: a **drift-tolerant max-log-MAP**
 (forward–backward) decoder over a `dt_cc_code`, with both **hard-decision** and
-**soft-output** front ends. Where [`viterbi`](cc_viterbi.md) finds the single most
+**soft-output** front ends. Where [`viterbi`](viterbi.md) finds the single most
 likely path, `maxir` computes a per-bit a-posteriori *weight* for each
 information bit. It corrects flips and erasures, tracks drift, models the same
-rich channel as [`hybrid`](cc_hybrid.md), surfaces the full output alphabet
+rich channel as [`hybrid`](hybrid.md), surfaces the full output alphabet
 (including `DT_INVALID` poison and `DT_ABSENT`), and **re-acquires sync** after a
 sustained loss of lock.
 
 For the symbol alphabet and what each interface means, see
-[Data-flow semantics](data_flow_semantics.md).
+[Data-flow semantics](../data_flow_semantics.md).
 
 ## Algorithm
 
@@ -21,7 +21,7 @@ restored information position. Decoding jointly recovers alignment (absorbing
 insertions/deletions) and value, and the soft weights populate every
 output-domain hypothesis.
 
-> **Independent from [`bcjr`](cc_bcjr.md).** Both are forward–backward decoders,
+> **Independent from [`bcjr`](bcjr.md).** Both are forward–backward decoders,
 > but `maxir` is the drift-tolerant, full-channel-model variant and `bcjr` is the
 > flip/erasure-only variant. They are separate implementations — do not assume a
 > change to one applies to the other.
@@ -71,7 +71,7 @@ in `<drifty/cc/encoder.h>`.
 
 Use designated initializers; any field left out is 0. Rough probabilities are
 fine — only their relative sizes matter. (The fields match
-[`hybrid`](cc_hybrid.md)'s model.)
+[`hybrid`](hybrid.md)'s model.)
 
 | Field | Meaning |
 |-------|---------|
@@ -109,6 +109,6 @@ The hard symbol is the argmax projection over the alphabet (recoverability-first
 Pick `maxir` when you need the strongest decoder: a drifting, overwriting channel,
 soft information across the full output alphabet, `DT_INVALID` round-tripping, or
 recovery after a sustained loss of lock. If the channel is flip/erasure-only on a
-fixed grid, the lighter [`bcjr`](cc_bcjr.md) gives the same soft-output style
+fixed grid, the lighter [`bcjr`](bcjr.md) gives the same soft-output style
 without the drift machinery; for a hard-only drifting channel without overwrites,
-[`vindel`](cc_vindel.md) is cheaper.
+[`vindel`](vindel.md) is cheaper.

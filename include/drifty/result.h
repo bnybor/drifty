@@ -33,12 +33,14 @@ extern "C" {
 
 /* Result codes shared across drifty, for functions that don't return a count.
  * Encoders and decoders return DT_OK (0) or a count on success, or a negative
- * DT_ERR_* code. */
-enum {
+ * DT_ERR_* code; an incremental operation with more work left returns DT_AGAIN,
+ * asking the caller to call again. */
+typedef enum dt_result_t {
   DT_OK = 0,
-  DT_ERR_ARG = -1,  /* a bad argument was passed */
-  DT_ERR_ALLOC = -2 /* ran out of memory         */
-};
+  DT_ERR_ARG = -1,   /* a bad argument was passed */
+  DT_ERR_ALLOC = -2, /* ran out of memory         */
+  DT_AGAIN = -3
+} dt_result;
 
 #ifdef __cplusplus
 }

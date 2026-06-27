@@ -237,8 +237,26 @@ drop / erase channels for each standard code — see
 [metrics/viterbi/METRICS.md](metrics/viterbi/METRICS.md), and
 [metrics/bcjr/METRICS.md](metrics/bcjr/METRICS.md). The no-drift decoders
 (`viterbi`, `bcjr`) sweep only the flip and erase channels; the drift-tolerant ones
-(`hybrid`, `vindel`, `maxir`) sweep insert and drop as well. The `bcjr` and `maxir`
-harnesses currently ship a coarse first pass (see their notes).
+(`hybrid`, `vindel`, `maxir`) sweep insert and drop as well. Each METRICS.md embeds
+the full-resolution sweep (30 trials × 4000 info bits per point) with plots.
+
+On the insert/drop (drift) channels the sweeps give a clear pick of code and
+decoder for indel recovery:
+
+- **Code — use `K5_R1_5`.** Indel tolerance tracks redundancy (code rate), not
+  constraint length: the rate-1/5 `K5_R1_5` holds out far longer than the rate-1/3
+  `K7_R1_3`, which in turn beats the two rate-1/2 codes (`K7_R1_2`, `K3_R1_2`). At a
+  10% insert/drop rate `K5_R1_5` still decodes almost cleanly (under ~1% edit rate)
+  while the weakest code `K3_R1_2` sits near 20%. The price is its 5× coded-bit
+  bandwidth.
+- **Decoder — use `maxir` (or `hybrid`).** The two soft forward-backward decoders
+  beat hard-decision `vindel` on indels everywhere — often 2–8× lower edit rate on
+  insertions — because marginalising over alignments recovers a sync slip better
+  than committing to a single survivor path. `maxir` edges `hybrid`, and the gap
+  widens when the indel rate is *not* anticipated, so it degrades most gracefully on
+  an uncertain channel; `hybrid` is an even match when the rate is known. `vindel`'s
+  hard-decision traceback is the wrong tool here — keep it for cheaper substitution
+  / erasure work.
 
 ## Install
 

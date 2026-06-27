@@ -31,7 +31,7 @@
  * dt_cc_stream_decoder_create takes the dt_cc_hybrid_stream_params channel
  * model, which lives in <drifty/cc/hybrid.h>. */
 #include <drifty/cc/hybrid.h>
-#include "../result.h"
+#include <drifty/result.h>
 
 #include <stdint.h>
 
@@ -123,7 +123,7 @@ void dt_cc_stream_decoder_destroy(dt_cc_stream_decoder *d);
 /*
  * Feed `n_in` received bits (each DT_FALSE, DT_TRUE, or DT_ERASURE) and collect
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
- * written (0 or more), or a negative DT_CC_ERR_* code.
+ * written (0 or more), or a negative DT_ERR_* code.
  *
  * You get about one decoded bit per dt_cc_code_n(code) received bits. If `out`
  * fills up (return value == max_out), call again to collect more before feeding

@@ -97,10 +97,10 @@ int dt_cc_encoder_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits
                    int *state, unsigned int *unknown, uint8_t *out) {
   if (!code || !state || !unknown || n_bits < 0 || (n_bits > 0 && !bits) ||
       !out) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (*state < 0 || *state >= code->n_states) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   int current_state = *state, written = 0;
@@ -124,10 +124,10 @@ int dt_cc_encoder_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits
 int dt_cc_encoder_flush(const dt_cc_code *code, int *state, unsigned int *unknown,
                          uint8_t *out) {
   if (!code || !state || !unknown || !out) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (*state < 0 || *state >= code->n_states) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   /* Feed K-1 known zero bits, which shift the state register back to 0 and clear

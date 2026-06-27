@@ -30,7 +30,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../result.h" /* DT_CC_OK / DT_CC_ERR_* */
+#include <drifty/result.h> /* DT_OK / DT_ERR_* */
 #include <drifty/bit.h>
 #include <drifty/cc/ccode.h> /* dt_cc_code (the code handle these functions take) */
 
@@ -59,7 +59,7 @@ extern "C" {
  *   dt_cc_code_destroy(code);
  *
  * dt_cc_code is an opaque handle - create and free it with the matching functions.
- * Functions return DT_CC_OK (0) or a count on success, or a negative DT_CC_ERR_* code.
+ * Functions return DT_OK (0) or a count on success, or a negative DT_ERR_* code.
  */
 /* clang-format on */
 
@@ -82,7 +82,7 @@ extern "C" {
  * in as many chunks as you like. When the whole message is encoded, call
  * dt_cc_encoder_flush() once to finish it.
  *
- * Returns the number of bits written, or DT_CC_ERR_ARG.
+ * Returns the number of bits written, or DT_ERR_ARG.
  */
 int dt_cc_encoder_encode(const dt_cc_code *code, const uint8_t *bits,
                               int n_bits, int *state, unsigned int *unknown,
@@ -92,7 +92,7 @@ int dt_cc_encoder_encode(const dt_cc_code *code, const uint8_t *bits,
  * Finish an encoded stream: writes (K-1) * dt_cc_code_n(code) trailing bits so the
  * decoder can recover the last input bits cleanly. Pass the same `state` and
  * `unknown` you gave dt_cc_encoder_encode(). Returns the number of bits
- * written, or DT_CC_ERR_ARG.
+ * written, or DT_ERR_ARG.
  */
 int dt_cc_encoder_flush(const dt_cc_code *code, int *state,
                              unsigned int *unknown, uint8_t *out);

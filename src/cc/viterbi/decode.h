@@ -28,7 +28,7 @@
 #define DRIFTY_VITERBI_DECODE_H
 
 /* The decoder is built from a dt_cc_code and shares the cc result codes. */
-#include "../result.h"
+#include <drifty/result.h>
 #include <drifty/cc/ccode.h>
 
 #include <stdint.h>
@@ -69,7 +69,7 @@ void dt_cc_viterbi_stream_decoder_destroy(dt_cc_viterbi_stream_decoder *d);
 /*
  * Feed `n_in` received bits (each DT_FALSE, DT_TRUE, or DT_ERASURE) and collect
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
- * written (0 or more), or a negative DT_CC_ERR_* code. If `out` fills up (return
+ * written (0 or more), or a negative DT_ERR_* code. If `out` fills up (return
  * value == max_out), call again to collect more before feeding more input.
  */
 int dt_cc_viterbi_stream_decode(dt_cc_viterbi_stream_decoder *d, const uint8_t *in,

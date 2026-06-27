@@ -201,12 +201,12 @@ static int reserve_received(dt_cc_maxir_stream_decoder *d, int extra) {
     }
     dt_bit *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_CC_ERR_ALLOC;
+      return DT_ERR_ALLOC;
     }
     d->received = new_buffer;
     d->received_capacity = new_capacity;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- core trellis ---------------------------------------------------------- */
@@ -783,7 +783,7 @@ static int register_patterns(dt_cc_maxir_stream_decoder *d) {
         const int newcap = d->pattern_cap * 2;
         uint8_t *grown = dt_realloc(d->pattern_bits, (size_t)newcap * n);
         if (!grown) {
-          return DT_CC_ERR_ALLOC;
+          return DT_ERR_ALLOC;
         }
         d->pattern_bits = grown;
         d->pattern_cap = newcap;
@@ -795,7 +795,7 @@ static int register_patterns(dt_cc_maxir_stream_decoder *d) {
     }
     d->group_of[edge] = idx;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 static void decoder_free(dt_cc_maxir_stream_decoder *d) {
@@ -838,18 +838,18 @@ static int decoder_init(dt_cc_maxir_stream_decoder *d,
   const float p_ovr = p_ovr_true + p_ovr_false + p_ovr_erase;
 
   if (decision_depth < 1 || max_drift < 0) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (!(p_flip > 0.0f && p_flip < 1.0f) || p_ins_true < 0.0f ||
       p_ins_false < 0.0f || p_ins_erase < 0.0f || p_del < 0.0f ||
       p_ovr_true < 0.0f || p_ovr_false < 0.0f || p_ovr_erase < 0.0f ||
       !(p_ovr < 1.0f) || !(p_ins + p_del < 1.0f)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   /* Indel probabilities are only consulted when tracking drift; with
    * max_drift == 0 they may be left 0 (correct flips only). */
   if (max_drift > 0 && (p_ins <= 0.0f || p_del <= 0.0f)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   d->code = code;
@@ -946,11 +946,11 @@ static int decoder_init(dt_cc_maxir_stream_decoder *d,
       !d->match_cost0 || !d->match_cost1 || !d->ins_cost || !d->in_range ||
       !d->alpha_ring || !d->shift || !d->lock_ring || !d->inv_ring ||
       !d->fifo_sym || !d->fifo_det) {
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
 
   if (register_patterns(d) < 0) {
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
 
   /* Now n_patterns is known, size the per-step alignment rows and their ring. */
@@ -959,11 +959,11 @@ static int decoder_init(dt_cc_maxir_stream_decoder *d,
   d->align_shared = dt_malloc(shared * sizeof(float));
   d->branch_ring = dt_malloc((size_t)rl * shared * sizeof(float));
   if (!d->align_shared || !d->branch_ring) {
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
 
   init_metric(d);
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 static int decode_feed(dt_cc_maxir_stream_decoder *d, const uint8_t *in, int n_in) {
@@ -975,7 +975,7 @@ static int decode_feed(dt_cc_maxir_stream_decoder *d, const uint8_t *in, int n_i
     dt_memcpy(d->received + d->received_length, in, (size_t)n_in);
     d->received_length += n_in;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- public engine API ----------------------------------------------------- */
@@ -1010,7 +1010,7 @@ int dt_cc_maxir_stream_decode(dt_cc_maxir_stream_decoder *d, const uint8_t *in, 
                           int max_out) {
   if (!d || n_in < 0 || (n_in > 0 && !in) || max_out < 0 ||
       (max_out > 0 && !out && !details)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   int status = decode_feed(d, in, n_in);
   if (status < 0) {
@@ -1022,7 +1022,7 @@ int dt_cc_maxir_stream_decode(dt_cc_maxir_stream_decoder *d, const uint8_t *in, 
 int dt_cc_maxir_stream_decode_flush(dt_cc_maxir_stream_decoder *d, uint8_t *out,
                                 dt_cc_maxir_decode_details *details, int max_out) {
   if (!d || max_out < 0 || (max_out > 0 && !out && !details)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   return produce(d, out, details, max_out, /*draining=*/1);
 }

@@ -205,12 +205,12 @@ static int reserve_received(dt_cc_vindel_stream_decoder *d, int extra) {
     }
     uint8_t *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_CC_ERR_ALLOC;
+      return DT_ERR_ALLOC;
     }
     d->received = new_buffer;
     d->received_capacity = new_capacity;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- core trellis ---------------------------------------------------------- */
@@ -717,7 +717,7 @@ static void register_patterns(dt_cc_vindel_stream_decoder *d) {
 /* -- lifecycle ------------------------------------------------------------- */
 
 /* Validate `params`, take dimensions from `code`, derive the cost constants, and
- * allocate every buffer. Returns DT_CC_OK or a negative DT_CC_ERR_*. A decoder that
+ * allocate every buffer. Returns DT_OK or a negative DT_ERR_*. A decoder that
  * failed (or was zero-initialised) is safe to pass to decoder_free. */
 static int decoder_init(dt_cc_vindel_stream_decoder *d,
                         const dt_cc_vindel_stream_params *params,
@@ -730,16 +730,16 @@ static int decoder_init(dt_cc_vindel_stream_decoder *d,
   const float p_erase = params->p_erase;
 
   if (decision_depth < 1 || max_drift < 0) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (!(p_sub > 0.0f && p_sub < 1.0f) || !(p_erase >= 0.0f && p_erase < 1.0f) ||
       !(p_ins + p_del < 1.0f) || p_ins < 0.0f || p_del < 0.0f) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   /* Insertion/deletion probabilities are only consulted when tracking drift;
    * with max_drift == 0 they may be left 0 (correct flips only). */
   if (max_drift > 0 && (p_ins <= 0.0f || p_del <= 0.0f)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   d->code = code;
@@ -755,7 +755,7 @@ static int decoder_init(dt_cc_vindel_stream_decoder *d,
    * truncating. */
   if (d->num_states - 1 > VIN_BP_MAX_STATE ||
       d->drift_width - 1 > VIN_BP_MAX_DRIFT) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   /* Channel model: a coded bit is erased with prob p_erase; otherwise it is
@@ -814,7 +814,7 @@ static int decoder_init(dt_cc_vindel_stream_decoder *d,
   if (!d->shift || !d->received || !d->alignment || !d->match_cost0 ||
       !d->match_cost1 || !d->in_range || !d->metric || !d->next_metric ||
       !d->backpointers || !d->group_of || !d->pattern_bits) {
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
 
   register_patterns(d);
@@ -822,11 +822,11 @@ static int decoder_init(dt_cc_vindel_stream_decoder *d,
   d->align_shared = dt_malloc((size_t)d->n_patterns * d->drift_width *
                               (size_t)stride * sizeof(float));
   if (!d->align_shared) {
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
 
   init_metric(d);
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 static void decoder_free(dt_cc_vindel_stream_decoder *d) {
@@ -855,7 +855,7 @@ static int decode_feed(dt_cc_vindel_stream_decoder *d, const uint8_t *in,
     d->received[d->received_length + i] = vin_from_dt(in[i]);
   }
   d->received_length += n_in;
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- public single-stream decoder ------------------------------------------ */
@@ -890,7 +890,7 @@ int dt_cc_vindel_stream_decode(dt_cc_vindel_stream_decoder *d, const uint8_t *in
                             int max_out) {
   if (!d || (n_in > 0 && !in) || n_in < 0 || (max_out > 0 && !out) ||
       max_out < 0) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   int status = decode_feed(d, in, n_in);
   if (status < 0) {
@@ -902,7 +902,7 @@ int dt_cc_vindel_stream_decode(dt_cc_vindel_stream_decoder *d, const uint8_t *in
 int dt_cc_vindel_stream_decode_flush(dt_cc_vindel_stream_decoder *d, uint8_t *out,
                                   int max_out) {
   if (!d || (max_out > 0 && !out) || max_out < 0) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   int output_count = run(d, out, /*lock=*/NULL, max_out, /*draining=*/1);
 

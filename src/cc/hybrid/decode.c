@@ -217,12 +217,12 @@ static int reserve_received(dt_cc_decode_ctx *ctx, int extra) {
     }
     uint8_t *new_buffer = dt_realloc(ctx->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_CC_ERR_ALLOC;
+      return DT_ERR_ALLOC;
     }
     ctx->received = new_buffer;
     ctx->received_capacity = new_capacity;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- core trellis ---------------------------------------------------------- */
@@ -883,7 +883,7 @@ static void init_metric(const dt_cc_decode_ctx *ctx, dt_cc_trellis *tr) {
 static int dt_cc_decode_ctx_init(dt_cc_decode_ctx *ctx, const dt_cc_hybrid_stream_params *params,
                        const dt_cc_code *code) {
   if (!ctx || !params || !code) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   const int decision_depth = params->decision_depth;
   const int max_drift = params->max_drift;
@@ -899,18 +899,18 @@ static int dt_cc_decode_ctx_init(dt_cc_decode_ctx *ctx, const dt_cc_hybrid_strea
   const float p_ovr = p_ovr_true + p_ovr_false + p_ovr_erase;
 
   if (decision_depth < 1 || max_drift < 0) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (!(p_flip > 0.0f && p_flip < 1.0f) || p_ins_true < 0.0f ||
       p_ins_false < 0.0f || p_ins_erase < 0.0f || p_del < 0.0f ||
       p_ovr_true < 0.0f || p_ovr_false < 0.0f || p_ovr_erase < 0.0f ||
       !(p_ovr < 1.0f) || !(p_ins + p_del < 1.0f)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   /* Insertion/deletion probabilities are only consulted when tracking drift;
    * with max_drift == 0 they may be left 0 (correct flips only). */
   if (max_drift > 0 && (p_ins <= 0.0f || p_del <= 0.0f)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   ctx->n = code->n;
@@ -1005,16 +1005,16 @@ static int dt_cc_decode_ctx_init(dt_cc_decode_ctx *ctx, const dt_cc_hybrid_strea
       !ctx->match_cost0 || !ctx->match_cost1 || !ctx->ins_cost ||
       !ctx->in_range || !ctx->beta_a || !ctx->beta_b) {
     dt_cc_decode_ctx_free(ctx);
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* Allocate the per-step alignment table now that the trellis's output patterns
  * are known. Call once after dt_cc_trellis_init. */
 static int dt_cc_decode_ctx_finalize(dt_cc_decode_ctx *ctx) {
   if (!ctx) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   const int stride = ctx->n + 2 * ctx->max_drift + 1;
   const int patterns = ctx->n_patterns > 0 ? ctx->n_patterns : 1;
@@ -1025,7 +1025,7 @@ static int dt_cc_decode_ctx_finalize(dt_cc_decode_ctx *ctx) {
   /* One align_shared-sized branch snapshot per retained step (BCJR backward). */
   ctx->branch_ring =
       dt_malloc((size_t)ctx->ring_len * shared * sizeof(float));
-  return ctx->align_shared && ctx->branch_ring ? DT_CC_OK : DT_CC_ERR_ALLOC;
+  return ctx->align_shared && ctx->branch_ring ? DT_OK : DT_ERR_ALLOC;
 }
 
 static void dt_cc_decode_ctx_free(dt_cc_decode_ctx *ctx) {
@@ -1085,7 +1085,7 @@ static int register_patterns(dt_cc_decode_ctx *ctx, const dt_cc_code *code,
         const int newcap = ctx->pattern_cap * 2;
         uint8_t *grown = dt_realloc(ctx->pattern_bits, (size_t)newcap * n);
         if (!grown) {
-          return DT_CC_ERR_ALLOC;
+          return DT_ERR_ALLOC;
         }
         ctx->pattern_bits = grown;
         ctx->pattern_cap = newcap;
@@ -1097,12 +1097,12 @@ static int register_patterns(dt_cc_decode_ctx *ctx, const dt_cc_code *code,
     }
     group_of[edge] = idx;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 static int dt_cc_trellis_init(dt_cc_trellis *tr, dt_cc_decode_ctx *ctx, const dt_cc_code *code) {
   if (!tr || !ctx || !code) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   tr->code = code;
   tr->smoothed_cost =
@@ -1118,15 +1118,15 @@ static int dt_cc_trellis_init(dt_cc_trellis *tr, dt_cc_decode_ctx *ctx, const dt
   if (!tr->metric || !tr->next_metric || !tr->group_of || !tr->alpha_ring ||
       !tr->smoothed_ring) {
     dt_cc_trellis_free(tr);
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
   if (register_patterns(ctx, code, tr->group_of) < 0) {
     dt_cc_trellis_free(tr);
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
 
   init_metric(ctx, tr);
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 static void dt_cc_trellis_free(dt_cc_trellis *tr) {
@@ -1154,7 +1154,7 @@ static int dt_cc_decode_feed(dt_cc_decode_ctx *ctx, const uint8_t *in, int n_in)
     dt_memcpy(ctx->received + ctx->received_length, in, (size_t)n_in);
     ctx->received_length += n_in;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- public single-stream decoder ------------------------------------------ */
@@ -1204,7 +1204,7 @@ void dt_cc_stream_decoder_destroy(dt_cc_stream_decoder *sd) {
 int dt_cc_stream_decode(dt_cc_stream_decoder *sd, const uint8_t *in, int n_in,
                      uint8_t *out, dt_cc_decode_details *details, int max_out) {
   if (!sd || (n_in > 0 && !in) || n_in < 0 || max_out < 0) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   int status = dt_cc_decode_feed(&sd->ctx, in, n_in);
   if (status < 0) {
@@ -1216,7 +1216,7 @@ int dt_cc_stream_decode(dt_cc_stream_decoder *sd, const uint8_t *in, int n_in,
 int dt_cc_stream_decode_flush(dt_cc_stream_decoder *sd, uint8_t *out,
                            dt_cc_decode_details *details, int max_out) {
   if (!sd || max_out < 0) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   /* draining=1 emits the whole tail (horizon = steps), at reduced look-ahead for
    * the last <= decision_depth bits; nothing is left buffered after. */

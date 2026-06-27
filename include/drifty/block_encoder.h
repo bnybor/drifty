@@ -27,12 +27,22 @@
 #ifndef DRIFTY_BLOCK_ENCODER_H
 #define DRIFTY_BLOCK_ENCODER_H
 
+#include <drifty/result.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* TODO: the block-oriented encoder interface - the fixed-size-block counterpart
- * to the streaming dt_stream_encoder in <drifty/stream_encoder.h>. */
+typedef struct dt_block_encoder_t dt_block_encoder;
+struct dt_block_encoder_t {
+  // Return the number of bits in a decoded block, or -1 on error
+  int (*decoded_size)(dt_block_encoder *enc);
+  // Return the number of bits in an encoded block, or -1 on error
+  int (*encoded_size)(dt_block_encoder *enc);
+
+  // Implementation-specific
+  void *data;
+};
 
 #ifdef __cplusplus
 }

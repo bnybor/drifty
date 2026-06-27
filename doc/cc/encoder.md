@@ -72,7 +72,7 @@ dt_cc_encoder_destroy(enc);
   Call once, at end of stream.
 
 Every call writes into `dst` (capacity `dst_len`) and returns the number of coded
-bits written, or a negative `DT_CC_ERR_*` code on a bad argument — most often too
+bits written, or a negative `DT_ERR_*` code on a bad argument — most often too
 little room.
 
 ### Sizing the output

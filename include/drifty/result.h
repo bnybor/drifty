@@ -24,24 +24,24 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_CC_RESULT_H
-#define DRIFTY_CC_RESULT_H
+#ifndef DRIFTY_RESULT_H
+#define DRIFTY_RESULT_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Result codes shared across the cc library, for functions that don't return a
- * count. Encoders and decoders return DT_CC_OK (0) or a count on success, or a
- * negative DT_CC_ERR_* code. */
+/* Result codes shared across drifty, for functions that don't return a count.
+ * Encoders and decoders return DT_OK (0) or a count on success, or a negative
+ * DT_ERR_* code. */
 enum {
-  DT_CC_OK = 0,
-  DT_CC_ERR_ARG = -1,  /* a bad argument was passed */
-  DT_CC_ERR_ALLOC = -2 /* ran out of memory         */
+  DT_OK = 0,
+  DT_ERR_ARG = -1,  /* a bad argument was passed */
+  DT_ERR_ALLOC = -2 /* ran out of memory         */
 };
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DRIFTY_CC_RESULT_H */
+#endif /* DRIFTY_RESULT_H */

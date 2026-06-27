@@ -31,7 +31,7 @@
  * dt_cc_bcjr_stream_decoder_create takes the dt_cc_bcjr_stream_params channel
  * model, which lives in <drifty/cc/bcjr.h>. */
 #include <drifty/cc/bcjr.h>
-#include "../result.h"
+#include <drifty/result.h>
 
 #include <stdint.h>
 
@@ -103,7 +103,7 @@ void dt_cc_bcjr_stream_decoder_destroy(dt_cc_bcjr_stream_decoder *d);
 /*
  * Feed `n_in` received bits (each DT_FALSE, DT_TRUE, or DT_ERASURE) and collect
  * up to `max_out` decoded bits into `out`. Returns how many decoded bits were
- * written (0 or more), or a negative DT_CC_ERR_* code. If `out` fills up (return
+ * written (0 or more), or a negative DT_ERR_* code. If `out` fills up (return
  * value == max_out), call again to collect more before feeding more input.
  *
  * `out` and `details` may both be NULL. If supplied, they must be arrays of

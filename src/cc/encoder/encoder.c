@@ -66,7 +66,7 @@ static int cc_encoder_encode(dt_stream_encoder *enc, dt_bit *dst, size_t dst_len
   /* The engine writes src_len * n coded bits and does not bound-check, so gate
    * it on the caller's capacity here. */
   if ((size_t)dt_cc_code_n(st->code) * src_len > dst_len) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   return dt_cc_encoder_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
                         dst);
@@ -77,7 +77,7 @@ static int cc_encoder_finalize(dt_stream_encoder *enc, dt_bit *dst, size_t dst_l
   /* Flush writes (K-1) * n trailing bits to drain the register back to state 0. */
   if ((size_t)(dt_cc_code_k(st->code) - 1) * (size_t)dt_cc_code_n(st->code) >
       dst_len) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   return dt_cc_encoder_flush(st->code, &st->state, &st->unknown, dst);
 }

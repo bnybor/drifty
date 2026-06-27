@@ -213,12 +213,12 @@ static int reserve_received(dt_cc_bcjr_stream_decoder *d, int extra) {
     }
     dt_bit *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_CC_ERR_ALLOC;
+      return DT_ERR_ALLOC;
     }
     d->received = new_buffer;
     d->received_capacity = new_capacity;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- core trellis ---------------------------------------------------------- */
@@ -548,11 +548,11 @@ static int decoder_init(dt_cc_bcjr_stream_decoder *d,
   const float p_erase = params->p_erase;
 
   if (decision_depth < 1) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   if (!(p_flip > 0.0f && p_flip < 1.0f) ||
       !(p_erase >= 0.0f && p_erase < 1.0f)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   d->code = code;
@@ -610,11 +610,11 @@ static int decoder_init(dt_cc_bcjr_stream_decoder *d,
   if (!d->received || !d->metric || !d->next_metric || !d->beta_tilde ||
       !d->beta_cur || !d->branch || !d->alpha_ring || !d->lock_ring ||
       !d->fifo_sym || !d->fifo_det) {
-    return DT_CC_ERR_ALLOC;
+    return DT_ERR_ALLOC;
   }
 
   init_metric(d);
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 static void decoder_free(dt_cc_bcjr_stream_decoder *d) {
@@ -639,7 +639,7 @@ static int decode_feed(dt_cc_bcjr_stream_decoder *d, const uint8_t *in, int n_in
     dt_memcpy(d->received + d->received_length, in, (size_t)n_in);
     d->received_length += n_in;
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- public engine API ----------------------------------------------------- */
@@ -674,7 +674,7 @@ int dt_cc_bcjr_stream_decode(dt_cc_bcjr_stream_decoder *d, const uint8_t *in, in
                           int max_out) {
   if (!d || n_in < 0 || (n_in > 0 && !in) || max_out < 0 ||
       (max_out > 0 && !out && !details)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   int status = decode_feed(d, in, n_in);
   if (status < 0) {
@@ -686,7 +686,7 @@ int dt_cc_bcjr_stream_decode(dt_cc_bcjr_stream_decoder *d, const uint8_t *in, in
 int dt_cc_bcjr_stream_decode_flush(dt_cc_bcjr_stream_decoder *d, uint8_t *out,
                                 dt_cc_bcjr_decode_details *details, int max_out) {
   if (!d || max_out < 0 || (max_out > 0 && !out && !details)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   return produce(d, out, details, max_out, /*draining=*/1);
 }

@@ -130,7 +130,7 @@ static int vit_feed(dt_cc_viterbi_stream_decoder *d, const uint8_t *in, int n_in
     }
     uint8_t *new_buffer = dt_realloc(d->received, (size_t)new_capacity);
     if (!new_buffer) {
-      return DT_CC_ERR_ALLOC;
+      return DT_ERR_ALLOC;
     }
     d->received = new_buffer;
     d->received_capacity = new_capacity;
@@ -138,7 +138,7 @@ static int vit_feed(dt_cc_viterbi_stream_decoder *d, const uint8_t *in, int n_in
   for (int i = 0; i < n_in; ++i) {
     d->received[d->received_length++] = in[i];
   }
-  return DT_CC_OK;
+  return DT_OK;
 }
 
 /* -- forward pass ---------------------------------------------------------- */
@@ -314,7 +314,7 @@ int dt_cc_viterbi_stream_decode(dt_cc_viterbi_stream_decoder *d, const uint8_t *
                              int n_in, uint8_t *out, int max_out) {
   if (!d || n_in < 0 || (n_in > 0 && !in) || max_out < 0 ||
       (max_out > 0 && !out)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
   int status = vit_feed(d, in, n_in);
   if (status < 0) {
@@ -326,7 +326,7 @@ int dt_cc_viterbi_stream_decode(dt_cc_viterbi_stream_decoder *d, const uint8_t *
 int dt_cc_viterbi_stream_decode_flush(dt_cc_viterbi_stream_decoder *d, uint8_t *out,
                                    int max_out) {
   if (!d || max_out < 0 || (max_out > 0 && !out)) {
-    return DT_CC_ERR_ARG;
+    return DT_ERR_ARG;
   }
 
   /* First commit anything that crossed the decision-depth threshold but did not

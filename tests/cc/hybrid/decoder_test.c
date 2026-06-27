@@ -663,7 +663,7 @@ static void test_error_paths(void) {
   int badstate = 1 << 20;
   unsigned int unknown = 0;
   check("encode rejects bad state",
-        dt_cc_encoder_encode(code, &bit, 1, &badstate, &unknown, obuf) == DT_CC_ERR_ARG);
+        dt_cc_encoder_encode(code, &bit, 1, &badstate, &unknown, obuf) == DT_ERR_ARG);
 
   /* Decoder creation rejects bad settings by returning NULL. */
   dt_cc_hybrid_stream_params ok = {
@@ -722,11 +722,11 @@ static void test_error_paths(void) {
   /* Streaming decode argument checks. */
   uint8_t out8 = 0;
   check("decode rejects null decoder",
-        dt_cc_stream_decode(NULL, &bit, 1, &out8, NULL, 1) == DT_CC_ERR_ARG);
+        dt_cc_stream_decode(NULL, &bit, 1, &out8, NULL, 1) == DT_ERR_ARG);
   check("decode rejects null input",
-        dt_cc_stream_decode(sd, NULL, 1, &out8, NULL, 1) == DT_CC_ERR_ARG);
+        dt_cc_stream_decode(sd, NULL, 1, &out8, NULL, 1) == DT_ERR_ARG);
   check("flush rejects null decoder",
-        dt_cc_stream_decode_flush(NULL, &out8, NULL, 1) == DT_CC_ERR_ARG);
+        dt_cc_stream_decode_flush(NULL, &out8, NULL, 1) == DT_ERR_ARG);
 
   dt_cc_stream_decoder_destroy(sd);
   dt_cc_code_destroy(code);

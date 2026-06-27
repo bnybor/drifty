@@ -34,11 +34,21 @@
 extern "C" {
 #endif
 
-/* Build an encoder over `code`. Returns NULL on a bad argument or out of
- * memory. */
+/* Build a basic encoder over `code` - the plain convolutional encoder. Input
+ * bits are DT_FALSE / DT_TRUE; it does not carry non-boolean inputs. Returns
+ * NULL on a bad argument or out of memory. */
 dt_encoder *dt_cc_basic_encoder_create(const dt_ccode *code);
 /* Free an encoder from dt_cc_basic_encoder_create(). Passing NULL is fine. */
 void dt_cc_basic_encoder_destroy(dt_encoder *enc);
+
+/* Build a full encoder over `code` - the convolutional encoder that also carries
+ * non-boolean inputs: a DT_INVALID input emits DT_INVALID coded bits (structural
+ * poison) and a DT_ERASURE input emits DT_ERASURE coded bits (deferred to the
+ * channel). Use this for decoders that read those markers (e.g. maxir, bcjr).
+ * Returns NULL on a bad argument or out of memory. */
+dt_encoder *dt_cc_full_encoder_create(const dt_ccode *code);
+/* Free an encoder from dt_cc_full_encoder_create(). Passing NULL is fine. */
+void dt_cc_full_encoder_destroy(dt_encoder *enc);
 
 #ifdef __cplusplus
 }

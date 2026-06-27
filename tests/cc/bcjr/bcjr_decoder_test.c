@@ -26,7 +26,7 @@
 
 /*
  * Tests for the bcjr codec. The encoder is exercised for real (length, chunked
- * == one-shot, flush, error paths, all presets, and the public encoder vtable).
+ * == one-shot, flush, error paths, all presets, and the full encoder vtable).
  * The decoder is the max-log-MAP core, so it is tested end to end:
  * channel-model validation, clean round trip and flip correction across the
  * presets, the soft-output invariants, the DT_INVALID poison contract and
@@ -36,6 +36,7 @@
 #include "dt_test_util.h"
 
 #include <drifty/cc/bcjr.h>
+#include <drifty/cc/encoders.h>
 
 #include <math.h>
 
@@ -124,18 +125,18 @@ static void test_encode_error_paths(void) {
   dt_ccode_destroy(code);
 }
 
-/* The public encoder vtable drives begin/encode/finalize and produces the same
+/* The full encoder vtable drives begin/encode/finalize and produces the same
  * total length as the engine helper. */
 static void test_encoder_vtable(void) {
   check("encoder_create rejects NULL code",
-        dt_bcjr_encoder_create(NULL) == NULL);
+        dt_cc_full_encoder_create(NULL) == NULL);
 
   dt_ccode *code = dt_ccode_create_standard(DT_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
   const int n = dt_ccode_n(code), K = dt_ccode_k(code);
   const int info_bits = 64;
 
-  dt_encoder *enc = dt_bcjr_encoder_create(code);
+  dt_encoder *enc = dt_cc_full_encoder_create(code);
   REQUIRE("encoder created", enc != NULL);
 
   uint64_t rng = 0x5151u;
@@ -151,14 +152,14 @@ static void test_encoder_vtable(void) {
         len == info_bits * n + (K - 1) * n);
 
   /* A too-small destination is reported, not overrun. */
-  dt_encoder *enc2 = dt_bcjr_encoder_create(code);
+  dt_encoder *enc2 = dt_cc_full_encoder_create(code);
   REQUIRE("encoder created", enc2 != NULL);
   enc2->begin(enc2, out, 1);
   check("vtable encode rejects too-small dst",
         enc2->encode(enc2, out, 1, msg, info_bits) == DT_ERR_ARG);
 
-  dt_bcjr_encoder_destroy(enc);
-  dt_bcjr_encoder_destroy(enc2);
+  dt_cc_full_encoder_destroy(enc);
+  dt_cc_full_encoder_destroy(enc2);
   free(msg);
   free(out);
   dt_ccode_destroy(code);

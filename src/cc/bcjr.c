@@ -25,12 +25,12 @@
 /* clang-format on */
 
 /*
- * BCJR codec: realizes the abstract dt_encoder / dt_decoder / dt_soft_decoder
- * interfaces over the convolutional encode and BCJR decode engine. The code
- * handle is dt_ccode throughout.
+ * BCJR codec: realizes the abstract dt_decoder / dt_soft_decoder interfaces over
+ * the BCJR decode engine. The code handle is dt_ccode throughout. To encode, use
+ * the standalone full encoder (src/cc/full_encoder).
  *
- * Both the encoder and the decode engine (see bcjr/decode.c) are complete; this
- * file is just the vtable plumbing that adapts them to the abstract interfaces.
+ * The decode engine (see bcjr/decode.c) is complete; this file is just the
+ * vtable plumbing that adapts it to the abstract interfaces.
  */
 
 #include <drifty/cc/bcjr.h>
@@ -38,76 +38,8 @@
 #include "bcjr/decode.h" /* dt_bcjr_stream_decoder + dt_bcjr_stream_decode* */
 #include <drifty/stdlib.h>
 
-/* dt_bit is uint8_t (bit.h), the same element type the engine's encode/decode
- * buffers use, so the dt_bit* <-> uint8_t* hand-offs below need no conversion. */
-
-/* -- encoder --------------------------------------------------------------- */
-
-typedef struct {
-  const dt_ccode *code;  /* the convolutional code this encoder emits */
-  int state;             /* running shift-register state across encode calls */
-  unsigned int unknown;  /* in-flight poison register (non-boolean inputs) */
-} bcjr_encoder;
-
-static int bcjr_encoder_begin(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
-  bcjr_encoder *st = enc->data;
-  st->state = 0; /* fresh stream; the convolutional encoder needs no preamble */
-  st->unknown = 0;
-  (void)dst;
-  (void)dst_len;
-  return 0;
-}
-
-static int bcjr_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
-                               const dt_bit *src, size_t src_len) {
-  bcjr_encoder *st = enc->data;
-  /* The engine writes src_len * n coded bits and does not bound-check, so gate
-   * it on the caller's capacity here. */
-  if ((size_t)dt_ccode_n(st->code) * src_len > dst_len) {
-    return DT_ERR_ARG;
-  }
-  return dt_bcjr_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
-                        dst);
-}
-
-static int bcjr_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
-  bcjr_encoder *st = enc->data;
-  /* Flush writes (K-1) * n trailing bits to drain the register back to state 0. */
-  if ((size_t)(dt_ccode_k(st->code) - 1) * (size_t)dt_ccode_n(st->code) >
-      dst_len) {
-    return DT_ERR_ARG;
-  }
-  return dt_bcjr_encode_flush(st->code, &st->state, &st->unknown, dst);
-}
-
-dt_encoder *dt_bcjr_encoder_create(const dt_ccode *code) {
-  if (!code) {
-    return NULL;
-  }
-  dt_encoder *enc = dt_malloc(sizeof(*enc));
-  bcjr_encoder *st = dt_malloc(sizeof(*st));
-  if (!enc || !st) {
-    dt_free(enc);
-    dt_free(st);
-    return NULL;
-  }
-  st->code = code;
-  st->state = 0;
-  st->unknown = 0;
-  enc->begin = bcjr_encoder_begin;
-  enc->encode = bcjr_encoder_encode;
-  enc->finalize = bcjr_encoder_finalize;
-  enc->data = st;
-  return enc;
-}
-
-void dt_bcjr_encoder_destroy(dt_encoder *enc) {
-  if (!enc) {
-    return;
-  }
-  dt_free(enc->data);
-  dt_free(enc);
-}
+/* dt_bit is uint8_t (bit.h), the same element type the engine's decode buffers
+ * use, so the dt_bit* <-> uint8_t* hand-offs below need no conversion. */
 
 /* -- decoder --------------------------------------------------------------- */
 

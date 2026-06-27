@@ -52,6 +52,7 @@
  */
 
 #include <drifty/cc/bcjr.h>
+#include <drifty/cc/encoders.h>
 
 #include <limits.h>
 #include <stdint.h>
@@ -327,11 +328,11 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
     message[i] = bit_sym((unsigned int)rng_next(rng));
   }
 
-  /* Encode with the public encoder: begin, then encode, then finalize (flush).
+  /* Encode with the full encoder: begin, then encode, then finalize (flush).
    */
   const int coded_cap = (info_bits + constraint_len) * code_n;
   uint8_t *coded = xmalloc((size_t)coded_cap);
-  dt_encoder *encoder = dt_bcjr_encoder_create(code);
+  dt_encoder *encoder = dt_cc_full_encoder_create(code);
   if (!encoder) {
     fprintf(stderr, "dt_bcjr_metrics: encoder create failed\n");
     exit(1);
@@ -342,7 +343,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                                (size_t)info_bits);
   coded_len += encoder->finalize(encoder, coded + coded_len,
                                  (size_t)(coded_cap - coded_len));
-  dt_bcjr_encoder_destroy(encoder);
+  dt_cc_full_encoder_destroy(encoder);
 
   uint8_t *received = xmalloc((size_t)coded_len);
   apply_channel(coded, coded_len, p_flip, p_erase, rng, received);

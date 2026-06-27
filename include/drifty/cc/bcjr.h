@@ -29,7 +29,6 @@
 
 #include <drifty/cc/ccode.h>
 #include <drifty/decoder.h>
-#include <drifty/encoder.h>
 #include <drifty/soft_decoder.h>
 
 #ifdef __cplusplus
@@ -43,9 +42,10 @@ extern "C" {
  * which makes it a natural soft-output decoder. Like viterbi it corrects flipped
  * and erased bits. This is the single header to include for its public API.
  *
- * Build a codec object over a dt_ccode with one of the factories below, drive it
- * through its vtable (see encoder.h / decoder.h / soft_decoder.h), and free it
- * with the matching _destroy(). The code must outlive everything built from it.
+ * Build a decoder over a dt_ccode with one of the factories below, drive it
+ * through its vtable (see decoder.h / soft_decoder.h), and free it with the
+ * matching _destroy(). The code must outlive everything built from it. To
+ * encode, use the standalone full encoder in <drifty/cc/encoders.h>.
  */
 
 /* clang-format off */
@@ -71,12 +71,6 @@ typedef struct {
   float p_flip;
   float p_erase;
 } dt_bcjr_stream_params;
-
-/* Build an encoder over `code`. Returns NULL on a bad argument or out of
- * memory. */
-dt_encoder *dt_bcjr_encoder_create(const dt_ccode *code);
-/* Free an encoder from dt_bcjr_encoder_create(). Passing NULL is fine. */
-void dt_bcjr_encoder_destroy(dt_encoder *enc);
 
 /* Build a hard-decision BCJR decoder over `code` with the channel model in
  * `params`. `params` is copied and need not outlive the call. Returns NULL on a

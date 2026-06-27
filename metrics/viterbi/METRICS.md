@@ -24,10 +24,8 @@ decoded bits and the original message, divided by the number of message bits
 whole message is compared.
 
 > [!NOTE]
-> The committed CSV and plots are a **coarse first pass** — a sparse grid
-> (~10 rates per axis) at 8 trials per point, enough to sanity-check the shapes.
-> Regenerate at full resolution (the shipped `rate_grids.txt`, more trials) with
-> the commands below before drawing conclusions.
+> The committed CSV and the plots below are the full sweep: 30 trials per point
+> over the shipped `rate_grids.txt` (28 rates per axis), seed `0xC0FFEE`.
 
 ```sh
 # Build the harness (off by default) and run the sweep to a CSV.
@@ -57,14 +55,13 @@ insert/delete data and skips those plots.
 
 ## Generated plots
 
-The figures come from the coarse first pass described above. In every plot the
+The figures come from the full sweep described above. In every plot the
 x-axis is the channel impairment rate per coded bit and the four curves are the
 standard codes — `K3_R1_2`, `K7_R1_2` (rate 1/2), `K7_R1_3` (rate 1/3) and
 `K5_R1_5` (rate 1/5), in order of increasing redundancy. Each code holds near
 zero up to a per-code knee, then climbs; tolerance scales with redundancy, so
 `K5_R1_5` holds out the longest. Erasures, carrying no wrong information, are
-tolerated to far higher rates than flips. Treat the shapes as indicative until
-the full-resolution sweep is run.
+tolerated to far higher rates than flips.
 
 ### Edit distance (decoding mistakes per bit)
 

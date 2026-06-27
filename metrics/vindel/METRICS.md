@@ -18,10 +18,8 @@ the other rates at zero, so each curve isolates one impairment.
 > clean decode scores 0; total failure approaches ~1 edit per info bit.
 
 > [!NOTE]
-> The committed CSVs and plots are a **coarse first pass** — a low-resolution
-> grid at one trial per point, enough to sanity-check the curves. Regenerate at
-> full resolution (the shipped `rate_grids.txt`, more trials) with the commands
-> below before drawing conclusions or comparing against hybrid.
+> The committed CSVs and the plots below are the full sweep — all three variations,
+> 30 trials per point over the shipped `rate_grids.txt`, seed `0xC0FFEE`.
 
 Unlike the hybrid harness, this one drives the **private engine API**
 (`vindel/decode.h`) rather than the public archive: the lock metric needs the
@@ -113,8 +111,7 @@ nothing wrong to correct.
 
 ## Generated plots
 
-The figures below come from the coarse first pass described in the note above
-(one trial, a sparse capped grid). In every plot the x-axis is the channel
+The figures below come from the full sweep described above. In every plot the x-axis is the channel
 impairment rate per coded bit and the four curves are the standard codes —
 `K3_R1_2`, `K7_R1_2` (rate 1/2), `K7_R1_3` (rate 1/3) and `K5_R1_5` (rate 1/5),
 in order of increasing redundancy. Treat the shapes as indicative; the knees and

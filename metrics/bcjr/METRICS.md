@@ -22,14 +22,12 @@ codec faces:
 The reported metric is the **normalized edit (Levenshtein) distance** between the
 decoded bits and the original message over the kept window, divided by the number
 of message bits (after trimming the flush tail). bcjr also emits a soft **lock
-probability** (`c_locked`); this coarse harness measures edit distance only.
+probability** (`c_locked`); this harness measures edit distance only.
 
 > [!NOTE]
-> The committed CSV is a **coarse first pass** — a sparse grid (~10 rates per
-> axis) at 8 trials per point, enough to sanity-check the shapes. Regenerate at
-> full resolution (the shipped `rate_grids.txt`, more trials) with the commands
-> below before drawing conclusions. Plots are not committed yet (matplotlib was
-> unavailable); generate them after a full sweep.
+> The committed CSV is the full sweep: 30 trials per point over the shipped
+> `rate_grids.txt` (28 rates per axis), seed `0xC0FFEE`. Plots are rendered into
+> `plots/` (regenerate them with the plotting command below).
 
 ```sh
 # Build the harness (off by default) and run the sweep to a CSV.
@@ -57,18 +55,35 @@ edit_rate` (`metric` is always `edit`). The plotter reads each CSV by column nam
 so it shares the plotter with the other codecs; it simply finds no lock or
 insert/delete data and skips those plots.
 
-## Coarse first-pass shapes
+## Generated plots
 
-In the committed coarse run each code holds near zero up to a per-code knee, then
-climbs; tolerance scales with redundancy, so the more redundant codes hold out
-longest. Erasures, carrying no wrong information, are tolerated to far higher rates
-than flips. Approximate per-code knees (first rate where the edit rate clears 1%):
+The figures come from the full sweep described above. In every plot the x-axis is
+the channel impairment rate per coded bit and the four curves are the standard
+codes — `K3_R1_2`, `K7_R1_2` (rate 1/2), `K7_R1_3` (rate 1/3) and `K5_R1_5`
+(rate 1/5), in order of increasing redundancy. Each code holds near zero up to a
+per-code knee, then climbs; tolerance scales with redundancy, so `K5_R1_5` holds
+out the longest. Erasures, carrying no wrong information, are tolerated to far
+higher rates than flips. Per-code knees (first rate where the edit rate clears 1%):
 
 | Code      | Flip   | Erase  |
 |-----------|--------|--------|
-| `K3_R1_2` | ~0.05  | ~0.40  |
-| `K7_R1_2` | ~0.07  | ~0.40  |
-| `K7_R1_3` | ~0.13  | ~0.60  |
-| `K5_R1_5` | ~0.20  | ~0.70  |
+| `K3_R1_2` | ~0.05  | ~0.30  |
+| `K7_R1_2` | ~0.06  | ~0.38  |
+| `K7_R1_3` | ~0.12  | ~0.57  |
+| `K5_R1_5` | ~0.19  | ~0.70  |
 
-Treat these as indicative until the full-resolution sweep is run.
+### Edit distance (decoding mistakes per bit)
+
+| Flip | Erase |
+|---|---|
+| <img src="plots/edit_vs_flip_per_info_bit.png" alt="edit/info vs flip rate" width="420"> | <img src="plots/edit_vs_erase_per_info_bit.png" alt="edit/info vs erase rate" width="420"> |
+
+### Run length between edits
+
+The reciprocal of the edit rate (`1 / edit_rate`): the average bits that get
+through between mistakes. Effectively unbounded below each code's knee (those
+zero-edit points are dropped) and drops off at the knee.
+
+| Flip | Erase |
+|---|---|
+| <img src="plots/runlen_vs_flip_per_info_bit.png" alt="runlen/info vs flip rate" width="420"> | <img src="plots/runlen_vs_erase_per_info_bit.png" alt="runlen/info vs erase rate" width="420"> |

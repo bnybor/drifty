@@ -215,6 +215,12 @@ public API — `dt_ccode_*` and the codec factories `dt_viterbi_*`, `dt_bcjr_*`,
 `dt_vindel_*`, `dt_hybrid_*`, and `dt_maxir_*` — is exported; the engine internals
 are hidden.
 
+A top-level build defaults to `CMAKE_BUILD_TYPE=Release` (`-O3`) — the decoders
+are numeric hot loops, so this matters. Override it explicitly when you need to,
+e.g. `-DCMAKE_BUILD_TYPE=RelWithDebInfo` or `=Debug`. To also tune the core for
+the building host's CPU (`-march=native`, not portable), configure with
+`-DDRIFTY_NATIVE=ON`.
+
 ## Test
 
 ```sh

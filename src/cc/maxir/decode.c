@@ -377,16 +377,6 @@ static float normalize(float *metric, size_t count) {
   return lowest;
 }
 
-/* Branch cost of edge `edge`, source drift `di`, ending drift `nd`, read from a
- * snapshotted (or live) per-step row block: final_row[n + (nd - di)]. */
-static float branch_at(const dt_maxir_stream_decoder *d, const float *block,
-                       int edge, int di, int nd) {
-  const int stride = d->n + 2 * d->max_drift + 1;
-  const float *final_row =
-      block + ((size_t)d->group_of[edge] * d->drift_width + di) * stride;
-  return final_row[d->n + (nd - di)];
-}
-
 /* Shift the drift window by `sigma` (each node's drift index drift_index ->
  * drift_index - sigma); the read cursor is advanced once by forward_step to
  * match. Nodes shifted out of the window are dropped (INFINITY). Uses
@@ -432,19 +422,18 @@ static void forward_pass(dt_maxir_stream_decoder *d) {
       for (int bit = 0; bit <= 1; ++bit) {
         const int edge = state * 2 + bit;
         const int next_state = code->next_state[edge];
-        const float *final_row =
+        const float *restrict final_row =
             d->align_shared +
             ((size_t)d->group_of[edge] * drift_width + drift_index) * stride;
-        const size_t dest_row = (size_t)next_state * drift_width;
+        float *restrict dst = d->next_metric + (size_t)next_state * drift_width;
+        const int off = n - drift_index;
+        /* Min-plus relaxation over the contiguous ending-drift range. An
+         * unreachable edge (branch cost +INF) gives +INF and never wins the min,
+         * so no INFINITY guard is needed - dropping it lets this vectorize while
+         * staying identical to the per-edge `<` form. */
         for (int nd = first; nd < drift_width; ++nd) {
-          const float bc = final_row[n + (nd - drift_index)];
-          if (bc == INFINITY) {
-            continue;
-          }
-          const float cost = current_cost + bc;
-          if (cost < d->next_metric[dest_row + nd]) {
-            d->next_metric[dest_row + nd] = cost;
-          }
+          const float cost = current_cost + final_row[off + nd];
+          dst[nd] = dst[nd] < cost ? dst[nd] : cost;
         }
       }
     }
@@ -619,6 +608,7 @@ static void compute_beta_step(dt_maxir_stream_decoder *d, long long t,
                               long long emit_hi) {
   const dt_ccode *code = d->code;
   const int n = d->n, num_states = d->num_states, drift_width = d->drift_width;
+  const int stride = n + 2 * d->max_drift + 1;
   const size_t count = (size_t)num_states * drift_width;
   const int emit = (t <= emit_hi);
   float m0 = INFINITY, m1 = INFINITY;
@@ -640,14 +630,18 @@ static void compute_beta_step(dt_maxir_stream_decoder *d, long long t,
       for (int bit = 0; bit <= 1; ++bit) {
         const int edge = state * 2 + bit;
         const size_t drow = (size_t)code->next_state[edge] * drift_width;
+        const float *restrict frow =
+            bslot + ((size_t)d->group_of[edge] * drift_width + di) * stride;
+        const float *restrict beta = d->beta_tilde + drow;
+        /* Fold the dest = nd - sigma window bounds into the loop range and drop
+         * the +INF guard (an +INF candidate never wins): a contiguous min
+         * reduction, identical to the guarded per-edge form. */
+        int lo = first, hi = drift_width;
+        if (sigma > lo) lo = sigma;
+        if (drift_width + sigma < hi) hi = drift_width + sigma;
         float best_edge = INFINITY;
-        for (int nd = first; nd < drift_width; ++nd) {
-          const float bc = branch_at(d, bslot, edge, di, nd);
-          const int dest = nd - sigma;
-          if (bc == INFINITY || dest < 0 || dest >= drift_width) {
-            continue;
-          }
-          const float cand = bc + d->beta_tilde[drow + dest];
+        for (int nd = lo; nd < hi; ++nd) {
+          const float cand = frow[n + (nd - di)] + beta[nd - sigma];
           if (cand < best_edge) {
             best_edge = cand;
           }

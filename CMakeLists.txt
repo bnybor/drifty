@@ -5,8 +5,18 @@ project(drifty
     DESCRIPTION "Drift-tolerance convolutional coding"
     LANGUAGES C)
 
+# Default to an optimized build. The decoders are numeric hot loops, so an
+# unoptimized (-O0) build is several times slower; without this a plain
+# `cmake -S . -B build` would inherit the empty default build type and compile
+# at -O0. Only set it when we own the cache (top-level, single-config generator,
+# no explicit choice), so a parent project's selection is never overridden.
+if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (default Release)" FORCE)
+endif()
+
 option(DRIFTY_BUILD_TESTS "Build the drifty tests" ${PROJECT_IS_TOP_LEVEL})
 option(DRIFTY_BUILD_BENCH "Build the drifty metrics and code-search harnesses" OFF)
+option(DRIFTY_NATIVE "Tune the core for the building host's CPU (-march=native; not portable)" OFF)
 
 # Size-focused flags for the MinSizeRel config (applied to the core and stdlib
 # below, since this precedes their targets). The library is plain C with no
@@ -45,6 +55,14 @@ add_library(drifty_bare_obj OBJECT
     src/cc/maxir.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
+# Optional host-specific tuning. -march=native lets the numeric inner loops use
+# the host's vector ISA (AVX2/AVX-512); -ffp-contract=off is REQUIRED alongside
+# it, because enabling FMA would otherwise contract the per-step EWMA and could
+# shift a lock/erase threshold - with contraction pinned off a native build stays
+# bit-identical to the portable one. PRIVATE so -march never leaks to consumers.
+if(DRIFTY_NATIVE)
+  target_compile_options(drifty_bare_obj PRIVATE -march=native -ffp-contract=off)
+endif()
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
 
 # Only the public API - the symbols declared in the installed include/ headers -

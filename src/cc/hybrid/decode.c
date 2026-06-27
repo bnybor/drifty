@@ -468,22 +468,20 @@ static void forward_pass(dt_decode_ctx *ctx, dt_trellis *tr) {
       for (int bit = 0; bit <= 1; ++bit) {
         const int edge = state * 2 + bit;
         const int next_state = code->next_state[edge];
-        const float *final_row =
+        const float *restrict final_row =
             ctx->align_shared +
             ((size_t)tr->group_of[edge] * drift_width + drift_index) * stride;
-        const size_t dest_row = (size_t)next_state * drift_width;
+        float *restrict dst = tr->next_metric + (size_t)next_state * drift_width;
+        const int off = n - drift_index;
+        /* Min-plus relaxation over the contiguous ending-drift range. An
+         * unreachable edge (branch cost +INF) gives +INF and never wins the min,
+         * so no INFINITY guard is needed - dropping it lets this vectorize while
+         * staying identical to the per-edge `<` form. */
         for (int next_drift_index = first; next_drift_index < drift_width;
              ++next_drift_index) {
-          const float branch_cost =
-              final_row[n + (next_drift_index - drift_index)];
-          if (branch_cost == INFINITY) {
-            continue;
-          }
-          const float cost = current_cost + branch_cost;
-          const size_t destination = dest_row + next_drift_index;
-          if (cost < tr->next_metric[destination]) {
-            tr->next_metric[destination] = cost;
-          }
+          const float cost = current_cost + final_row[off + next_drift_index];
+          dst[next_drift_index] =
+              dst[next_drift_index] < cost ? dst[next_drift_index] : cost;
         }
       }
     }
@@ -655,18 +653,6 @@ static float dt_lock_from_cost(const dt_decode_ctx *ctx, float cost) {
   return probability;
 }
 
-/* Branch cost of edge `edge`, source drift `di`, into ending drift `nd`, read
- * from a step's snapshotted branch row (align_shared layout): final_row[n + (nd -
- * di)] - the same value forward_pass scatters. INFINITY if that ending drift is
- * infeasible for this edge. */
-static float branch_cost(const dt_decode_ctx *ctx, const dt_trellis *tr,
-                          const float *bslot, int edge, int di, int nd) {
-  const int stride = ctx->n + 2 * ctx->max_drift + 1;
-  const float *final_row =
-      bslot + ((size_t)tr->group_of[edge] * ctx->drift_width + di) * stride;
-  return final_row[ctx->n + (nd - di)];
-}
-
 /* Map a target's (m0, m1) - the costs of the best complete path forced to each
  * value - and the lock-time smoothed cost onto the four consistencies, filling
  * *out (when non-NULL) and returning the decoded value (the most consistent of
@@ -745,6 +731,7 @@ static void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr
   const int nn = ctx->n, num_states = ctx->num_states,
             drift_width = ctx->drift_width, rl = ctx->ring_len,
             dd = ctx->decision_depth;
+  const int stride = nn + 2 * ctx->max_drift + 1;
   const size_t count = (size_t)num_states * drift_width;
   const size_t shared = (size_t)ctx->n_patterns * drift_width *
                         (size_t)(nn + 2 * ctx->max_drift + 1);
@@ -777,14 +764,18 @@ static void dt_trellis_soft_batch(const dt_decode_ctx *ctx, const dt_trellis *tr
         for (int bit = 0; bit <= 1; ++bit) {
           const int edge = state * 2 + bit;
           const size_t drow = (size_t)code->next_state[edge] * drift_width;
+          const float *restrict frow =
+              bslot + ((size_t)tr->group_of[edge] * drift_width + di) * stride;
+          const float *restrict beta = beta_next + drow;
+          /* Fold the dest = nd - sigma window bounds into the loop range and drop
+           * the +INF guard (an +INF candidate never wins): a contiguous min
+           * reduction, identical to the guarded per-edge form. */
+          int lo = first, hi = drift_width;
+          if (sigma > lo) lo = sigma;
+          if (drift_width + sigma < hi) hi = drift_width + sigma;
           float best_edge = INFINITY;
-          for (int nd = first; nd < drift_width; ++nd) {
-            const float bc = branch_cost(ctx, tr, bslot, edge, di, nd);
-            const int dest = nd - sigma;
-            if (bc == INFINITY || dest < 0 || dest >= drift_width) {
-              continue;
-            }
-            const float cand = bc + beta_next[drow + dest];
+          for (int nd = lo; nd < hi; ++nd) {
+            const float cand = frow[nn + (nd - di)] + beta[nd - sigma];
             if (cand < best_edge) best_edge = cand;
           }
           if (best_edge < beta_src) beta_src = best_edge;

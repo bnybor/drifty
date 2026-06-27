@@ -1149,8 +1149,10 @@ static int dt_decode_feed(dt_decode_ctx *ctx, const uint8_t *in, int n_in) {
   if (status < 0) {
     return status;
   }
-  dt_memcpy(ctx->received + ctx->received_length, in, (size_t)n_in);
-  ctx->received_length += n_in;
+  if (n_in > 0) { /* in may be NULL on a feed-free drain/pump call */
+    dt_memcpy(ctx->received + ctx->received_length, in, (size_t)n_in);
+    ctx->received_length += n_in;
+  }
   return DT_OK;
 }
 

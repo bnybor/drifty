@@ -101,4 +101,4 @@ int dt_cc_encoder_flush(const dt_cc_code *code, int *state,
 }
 #endif
 
-#endif /* DRIFTY_FULL_ENCODE_H */
+#endif /* DRIFTY_CC_ENCODER_ENCODE_H */

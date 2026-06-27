@@ -36,7 +36,7 @@ differing in what channel damage they correct and how much you pay for it:
   **full** soft output, extended to stay aligned through inserted and dropped
   bits. The most detailed soft output of the five, and the heaviest decoder.
 
-Build one with its `dt_<codec>_*_create` factories — `dt_cc_viterbi_*`, `dt_cc_bcjr_*`,
+Build one with its `dt_cc_<codec>_*_create` factories — `dt_cc_viterbi_*`, `dt_cc_bcjr_*`,
 `dt_cc_vindel_*`, `dt_cc_hybrid_*`, or `dt_cc_maxir_*` — and include its single header
 (`<drifty/cc/viterbi.h>`, `<drifty/cc/bcjr.h>`, `<drifty/cc/vindel.h>`,
 `<drifty/cc/hybrid.h>`, or `<drifty/cc/maxir.h>`). They share the code type and
@@ -177,7 +177,7 @@ alone.
 | `max_drift`      | How far alignment may slip from inserted/dropped bits. 0 (default) corrects flips only; 4–8 also handles insertions and deletions. |
 | `p_ins_true`, `p_ins_false`, `p_ins_erase` | How often a spurious `DT_TRUE` / `DT_FALSE` / `DT_ERASURE` bit is inserted (per bit, at any position). Needed when `max_drift > 0`. |
 | `p_del`          | How often a coded bit is dropped (per bit, at any position). Needed when `max_drift > 0`. |
-| `p_ovr_true`, `p_ovr_false`, `p_ovr_erase` | How often a coded bit is overwritten with a fixed `DT_TRUE` / `DT_FALSE` / `DT_ERASURE`, regardless of what was sent. `p_ovr_erase` is the plain erasure rate. |
+| `p_ovr_true`, `p_ovr_false`, `p_ovr_erase` | How often a coded bit is overwritten with a fixed `DT_TRUE` / `DT_FALSE` / `DT_ERASURE`, regardless of what was sent. `p_ovr_erase` is the plain erasure rate — set it (or `p_erase` on `vindel`/`bcjr`) above 0 whenever the received stream can carry `DT_ERASURE`, whether from channel erasures or from encoding `DT_ERASURE` don't-cares; left at 0, an erased position costs infinity and the decoder loses lock there. |
 
 You don't need exact probabilities — rough, order-of-magnitude values are fine;
 only their relative sizes matter. They mainly control how readily the decoder

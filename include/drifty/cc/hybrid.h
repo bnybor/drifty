@@ -41,9 +41,9 @@ extern "C" {
  * include for the whole public API.
  *
  * Build a decoder over a dt_cc_code with one of the factories below, drive it
- * through its vtable (see decoder.h / soft_decoder.h), and free it with the
- * matching _destroy(). The code must outlive everything built from it. To
- * encode, use the standalone encoder in <drifty/cc/encoder.h>.
+ * through its vtable (see stream_decoder.h / stream_soft_decoder.h), and free
+ * it with the matching _destroy(). The code must outlive everything built
+ * from it. To encode, use the standalone encoder in <drifty/cc/encoder.h>.
  */
 
 /* clang-format off */
@@ -78,7 +78,12 @@ extern "C" {
  *                    DT_FALSE / DT_ERASURE, regardless of what was sent. The three
  *                    must sum to < 1 (the remainder is the chance the bit arrives
  *                    normally). All 0 (the default) if there are no overwrites;
- *                    p_ovr_erase doubles as the plain erasure rate.
+ *                    p_ovr_erase doubles as the plain erasure rate, and like a
+ *                    bcjr/vindel p_erase it must be > 0 whenever the received
+ *                    stream can carry DT_ERASURE (channel erasures, or DT_ERASURE
+ *                    don't-care inputs the encoder emits as coded DT_ERASURE) -
+ *                    left 0, such a position takes infinite cost and decoding
+ *                    loses lock there.
  *
  * Rough probabilities are fine; only their relative sizes matter.
  */

@@ -43,9 +43,9 @@ extern "C" {
  * and erased bits. This is the single header to include for its public API.
  *
  * Build a decoder over a dt_cc_code with one of the factories below, drive it
- * through its vtable (see decoder.h / soft_decoder.h), and free it with the
- * matching _destroy(). The code must outlive everything built from it. To
- * encode, use the standalone encoder in <drifty/cc/encoder.h>.
+ * through its vtable (see stream_decoder.h / stream_soft_decoder.h), and free
+ * it with the matching _destroy(). The code must outlive everything built
+ * from it. To encode, use the standalone encoder in <drifty/cc/encoder.h>.
  */
 
 /* clang-format off */
@@ -61,7 +61,11 @@ extern "C" {
  *   p_flip         : how often a coded bit is flipped, 0 < p_flip < 1 (e.g.
  *                    0.01 for 1%). Sets the branch likelihoods. Required.
  *   p_erase        : how often a received bit is DT_ERASURE. 0 (the default) if
- *                    you never mark erasures.
+ *                    you never mark erasures. Must be > 0 whenever the received
+ *                    stream can carry DT_ERASURE - channel erasures, or
+ *                    DT_ERASURE don't-care inputs (the encoder emits those as
+ *                    coded DT_ERASURE); left 0, such a position takes infinite
+ *                    cost and decoding loses lock there.
  *
  * Rough probabilities are fine; only their relative sizes matter.
  */

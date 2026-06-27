@@ -20,6 +20,6 @@ code never has to reason about position.
 
 | Path | What |
 |------|------|
-| `include/drifty/` | public headers — `bit.h`, `encoder.h`, `decoder.h`, `soft_decoder.h`, and `cc/` |
+| `include/drifty/` | public headers — `bit.h`, the streaming interfaces `stream_encoder.h` / `stream_decoder.h` / `stream_soft_decoder.h`, the block-interface stubs `block_encoder.h` / `block_decoder.h` / `block_soft_decoder.h` (reserved; not yet implemented), and `cc/` |
 | `include/drifty/cc/` | per-codec public API (`ccode.h`, `encoder.h`, `viterbi.h`, `vindel.h`, `hybrid.h`, `maxir.h`, `bcjr.h`) |
 | `src/cc/` | implementations — the shared `encoder/`, the `ccode` descriptor, and each codec's decode engine |

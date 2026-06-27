@@ -226,10 +226,13 @@ ctest --test-dir build --output-on-failure
 A Monte-Carlo harness measures decoding-mistake rates against flip / insert /
 drop / erase channels for each standard code — see
 [metrics/hybrid/METRICS.md](metrics/hybrid/METRICS.md),
-[metrics/vindel/METRICS.md](metrics/vindel/METRICS.md), and
-[metrics/viterbi/METRICS.md](metrics/viterbi/METRICS.md) (`viterbi`, which does
-not track drift, sweeps only the flip and erase channels). `bcjr` and `maxir` have
-no harness yet.
+[metrics/maxir/METRICS.md](metrics/maxir/METRICS.md),
+[metrics/vindel/METRICS.md](metrics/vindel/METRICS.md),
+[metrics/viterbi/METRICS.md](metrics/viterbi/METRICS.md), and
+[metrics/bcjr/METRICS.md](metrics/bcjr/METRICS.md). The no-drift decoders
+(`viterbi`, `bcjr`) sweep only the flip and erase channels; the drift-tolerant ones
+(`hybrid`, `vindel`, `maxir`) sweep insert and drop as well. The `bcjr` and `maxir`
+harnesses currently ship a coarse first pass (see their notes).
 
 ## Install
 

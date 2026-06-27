@@ -51,6 +51,17 @@ is unspecified (a *don't-care* on the way in, a *don't-know* on the way out), an
 [Data-flow semantics](doc/data_flow_semantics.md) for the complete symbol model
 — the transmit vs output domains and what each stage consumes and produces.
 
+## Documentation
+
+This README is the overview. The full reference lives in [`doc/`](doc/README.md):
+
+- [Data-flow semantics](doc/data_flow_semantics.md) — the complete `DT_` symbol
+  model: the transmit vs output domains and what each pipeline stage consumes and
+  produces.
+- [Convolutional coding (`doc/cc/`)](doc/cc/README.md) — per-codec reference for
+  the shared encoder and the five decoders (`viterbi`, `vindel`, `hybrid`,
+  `maxir`, `bcjr`), with a guide to choosing one.
+
 ## Choosing a codec
 
 All five share the same code (`dt_cc_code`) and the same encoder; they differ only
@@ -109,12 +120,12 @@ dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
 
 /* 2. Encode. Each interface is a vtable you call through: begin writes any
  *    preamble, encode appends coded bits, finalize flushes the tail. */
-dt_encoder *enc = dt_cc_hybrid_encoder_create(code);
+dt_encoder *enc = dt_cc_encoder_create(code);
 dt_bit coded[CAP];                /* size ~ (n_bits + K) * dt_cc_code_n(code) */
 int clen  = enc->begin(enc, coded, CAP);
 clen     += enc->encode(enc, coded + clen, CAP - clen, bits, n_bits);
 clen     += enc->finalize(enc, coded + clen, CAP - clen);
-dt_cc_hybrid_encoder_destroy(enc);
+dt_cc_encoder_destroy(enc);
 
 /* 3. Decode the received bits. */
 dt_decoder *dec = dt_cc_hybrid_decoder_create(code, &(dt_cc_hybrid_stream_params){

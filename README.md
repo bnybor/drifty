@@ -43,8 +43,13 @@ Build one with its `dt_<codec>_*_create` factories — `dt_viterbi_*`, `dt_bcjr_
 the encoder, so you can swap codecs without re-encoding. See
 [Choosing a codec](#choosing-a-codec).
 
-Bits are carried one per byte as `dt_bit` symbols: `DT_FALSE`, `DT_TRUE`, or
-`DT_ERASURE` to mark a received bit as lost (defined in `<drifty/bit.h>`).
+Bits are carried one per byte as `dt_bit` symbols (defined in `<drifty/bit.h>`):
+`DT_TRUE` / `DT_FALSE` for a bound value, `DT_ERASURE` for a position whose value
+is unspecified (a *don't-care* on the way in, a *don't-know* on the way out), and
+`DT_INVALID` for a deliberate non-value; a decoder may additionally emit
+`DT_ABSENT` for a position it infers was dropped in transit. See
+[Data-flow semantics](drifty-data-flow-semantics.md) for the complete symbol model
+— the transmit vs output domains and what each stage consumes and produces.
 
 ## Choosing a codec
 
@@ -52,14 +57,13 @@ All five share the same code (`dt_ccode`) and the same encoder; they differ only
 in the decoder. Pick the least capable one that covers your channel — it is the
 simplest and fastest.
 
-|                                        | `viterbi`            | `bcjr`               | `vindel`           | `hybrid`          | `maxir`            |
-|----------------------------------------|----------------------|----------------------|--------------------|-------------------|--------------------|
-| Corrects flips & erasures              | ✓                    | ✓                    | ✓                  | ✓                 | ✓                  |
-| Tracks drift (inserted / dropped bits) | —                    | —                    | ✓                  | ✓                 | ✓                  |
-| Blind acquisition (join mid-stream)    | —                    | ✓                    | ✓                  | ✓                 | ✓                  |
-| Soft output (per-bit consistencies)    | —                    | ✓ full               | —                  | ✓                 | ✓ full             |
-| Settings to tune                       | none                 | channel rates        | channel rates      | channel rates (richer) | channel rates (richer) |
-| Header                                 | `<drifty/cc/viterbi.h>` | `<drifty/cc/bcjr.h>` | `<drifty/cc/vindel.h>`| `<drifty/cc/hybrid.h>` | `<drifty/cc/maxir.h>` |
+|                       | `viterbi` | `bcjr` | `vindel` | `hybrid` | `maxir` |
+| --------------------- | :-------: | :----: | :------: | :------: | :-----: |
+| Flips & erasures      |     ✓     |   ✓    |    ✓     |    ✓     |    ✓    |
+| Drift (insert / drop) |     —     |   —    |    ✓     |    ✓     |    ✓    |
+| Blind acquisition     |     —     |   ✓    |    ✓     |    ✓     |    ✓    |
+| Soft output           |     —     | ✓ full |    —     |    ✓     | ✓ full  |
+| Channel model         |   none    | rates  |  rates   |   rich   |  rich   |
 
 *Full* soft output (the max-log-MAP codecs `bcjr` and `maxir`) additionally reports
 the `c_invalid` and `c_absent` consistencies that `hybrid` leaves at 0 — see
@@ -198,9 +202,11 @@ n     += sd->finalize(sd, soft + n, OUT - n);
 dt_hybrid_soft_decoder_destroy(sd);
 ```
 
-`dt_soft_decoder_out` also carries `c_invalid` and `c_absent`; the hybrid codec
-does not model those and leaves them 0, while the max-log-MAP codecs (bcjr and
-maxir) populate them.
+`dt_soft_decoder_out` also carries `c_invalid` — the position reads as the
+encoder's deliberate non-value (`DT_INVALID`) — and `c_absent` — the position reads
+as dropped in transit (`DT_ABSENT`). The hybrid codec does not model those and
+leaves them 0, while the *full* max-log-MAP codecs (`bcjr` and `maxir`) populate
+them.
 
 ## Build
 

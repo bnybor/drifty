@@ -58,7 +58,7 @@ extern "C" {
  *         poison) and a DT_ERASURE input's are emitted DT_ERASURE (deferred).
  *
  * `data` is the implementation's private state - do not touch it. Build an
- * encoder with a factory such as dt_cc_basic_encoder_create() and free it with
+ * encoder with a factory such as dt_cc_encoder_create() and free it with
  * the matching _destroy().
  */
 typedef struct dt_encoder_t dt_encoder;

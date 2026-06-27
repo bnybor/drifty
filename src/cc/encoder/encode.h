@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_CC_BASIC_ENCODER_H
-#define DRIFTY_CC_BASIC_ENCODER_H
+#ifndef DRIFTY_CC_ENCODER_H
+#define DRIFTY_CC_ENCODER_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -40,17 +40,21 @@ extern "C" {
 
 /* clang-format off */
 /*
- * basic encoder - the plain convolutional encode side, standalone: it depends
- * only on the code (dt_cc_code), not on any other codec. It adds redundancy to a
- * stream of bits; it corrects nothing on its own. Pair it with whatever decoder
- * shares the same code.
+ * encoder - the convolutional encode side, standalone: it depends only on
+ * the code (dt_cc_code), not on any other codec, and every codec encodes through
+ * it. It is the ordinary convolutional encoder, and it also tracks non-boolean
+ * inputs - a DT_INVALID input emits DT_INVALID coded bits (structural poison),
+ * and a DT_ERASURE input emits DT_ERASURE coded bits (an unbound value deferred
+ * to the channel). Pair it with whatever decoder shares the same code (e.g. maxir
+ * or bcjr, which read those markers).
  *
  *   dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
  *
  *   // encode (in one or more chunks)
  *   int state = 0;
- *   int len  = dt_cc_basic_encoder_encode(code, bits, n_bits, &state, out);
- *   len     += dt_cc_basic_encoder_flush(code, &state, out + len);
+ *   unsigned int unknown = 0;
+ *   int len  = dt_cc_encoder_encode(code, bits, n_bits, &state, &unknown, out);
+ *   len     += dt_cc_encoder_flush(code, &state, &unknown, out + len);
  *
  *   dt_cc_code_destroy(code);
  *
@@ -64,29 +68,37 @@ extern "C" {
 /* ------------------------------------------------------------------------- */
 
 /*
- * Encode `n_bits` input bits (each DT_FALSE or DT_TRUE) into `out`, which needs
- * room for n_bits * dt_cc_code_n(code) bits.
+ * Encode `n_bits` input bits into `out`, which needs room for
+ * n_bits * dt_cc_code_n(code) bits. Each input is normally DT_FALSE or DT_TRUE; a
+ * non-boolean input has no boolean value to encode, and the coded bits that
+ * would carry it are marked per kind: a DT_INVALID input emits DT_INVALID
+ * (structural poison the decoder reads as a deliberate tie at that position),
+ * while a DT_ERASURE input emits DT_ERASURE (an unbound value deferred to the
+ * channel, which may concretize it - encoder output is not decoder input).
  *
- * Encoding is one continuous stream: keep an `int state`, set it to 0 before
- * the first call, and pass the same variable to every call - so you can encode
+ * Encoding is one continuous stream: keep an `int state` and an
+ * `unsigned int unknown` (the in-flight poison register), set both to 0 before
+ * the first call, and pass the same variables to every call - so you can encode
  * in as many chunks as you like. When the whole message is encoded, call
- * dt_cc_basic_encoder_flush() once to finish it.
+ * dt_cc_encoder_flush() once to finish it.
  *
  * Returns the number of bits written, or DT_CC_ERR_ARG.
  */
-int dt_cc_basic_encoder_encode(const dt_cc_code *code, const uint8_t *bits,
-                               int n_bits, int *state, uint8_t *out);
+int dt_cc_encoder_encode(const dt_cc_code *code, const uint8_t *bits,
+                              int n_bits, int *state, unsigned int *unknown,
+                              uint8_t *out);
 
 /*
  * Finish an encoded stream: writes (K-1) * dt_cc_code_n(code) trailing bits so the
- * decoder can recover the last input bits cleanly. Pass the same `state` you
- * gave dt_cc_basic_encoder_encode(). Returns the number of bits written, or
- * DT_CC_ERR_ARG.
+ * decoder can recover the last input bits cleanly. Pass the same `state` and
+ * `unknown` you gave dt_cc_encoder_encode(). Returns the number of bits
+ * written, or DT_CC_ERR_ARG.
  */
-int dt_cc_basic_encoder_flush(const dt_cc_code *code, int *state, uint8_t *out);
+int dt_cc_encoder_flush(const dt_cc_code *code, int *state,
+                             unsigned int *unknown, uint8_t *out);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DRIFTY_CC_BASIC_ENCODER_H */
+#endif /* DRIFTY_FULL_ENCODE_H */

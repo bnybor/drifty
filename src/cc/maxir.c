@@ -27,7 +27,7 @@
 /*
  * MAXIR codec: realizes the abstract dt_decoder / dt_soft_decoder interfaces
  * over the MAXIR decode engine. The code handle is dt_cc_code throughout. To
- * encode, use the standalone full encoder (src/cc/full_encoder).
+ * encode, use the standalone encoder (src/cc/encoder).
  */
 
 #include <drifty/cc/maxir.h>

@@ -28,7 +28,7 @@
  * Viterbi codec: realizes the abstract dt_decoder interface over the Viterbi
  * hard-decision decode engine. The code handle is dt_cc_code throughout. The
  * decoder takes no channel-model parameters. To encode, use the standalone
- * basic encoder (src/cc/basic_encoder).
+ * encoder (src/cc/encoder).
  *
  * The decode engine (see viterbi/decode.c) is complete; this file is just the
  * vtable plumbing that adapts it to the abstract interface.

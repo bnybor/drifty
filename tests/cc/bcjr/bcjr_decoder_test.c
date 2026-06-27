@@ -26,7 +26,7 @@
 
 /*
  * Tests for the bcjr codec. The encoder is exercised for real (length, chunked
- * == one-shot, flush, error paths, all presets, and the full encoder vtable).
+ * == one-shot, flush, error paths, all presets, and the encoder vtable).
  * The decoder is the max-log-MAP core, so it is tested end to end:
  * channel-model validation, clean round trip and flip correction across the
  * presets, the soft-output invariants, the DT_INVALID poison contract and
@@ -76,9 +76,9 @@ static void test_encode_length_and_chunked(void) {
     /* Same message, encoded as 80 + 120 through one running state, then flush. */
     int state = 0, len_two = 0;
     unsigned int unknown = 0;
-    len_two += dt_cc_full_encoder_encode(code, msg, 80, &state, &unknown, two);
-    len_two += dt_cc_full_encoder_encode(code, msg + 80, 120, &state, &unknown, two + len_two);
-    int flushed = dt_cc_full_encoder_flush(code, &state, &unknown, two + len_two);
+    len_two += dt_cc_encoder_encode(code, msg, 80, &state, &unknown, two);
+    len_two += dt_cc_encoder_encode(code, msg + 80, 120, &state, &unknown, two + len_two);
+    int flushed = dt_cc_encoder_flush(code, &state, &unknown, two + len_two);
     len_two += flushed;
 
     check(PRESET_NAMES[p], 1);
@@ -107,36 +107,36 @@ static void test_encode_error_paths(void) {
   unsigned int unknown = 0;
 
   check("encode rejects NULL code",
-        dt_cc_full_encoder_encode(NULL, msg, 4, &state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_encoder_encode(NULL, msg, 4, &state, &unknown, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL state",
-        dt_cc_full_encoder_encode(code, msg, 4, NULL, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_encoder_encode(code, msg, 4, NULL, &unknown, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL unknown",
-        dt_cc_full_encoder_encode(code, msg, 4, &state, NULL, out) == DT_CC_ERR_ARG);
+        dt_cc_encoder_encode(code, msg, 4, &state, NULL, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL out",
-        dt_cc_full_encoder_encode(code, msg, 4, &state, &unknown, NULL) == DT_CC_ERR_ARG);
+        dt_cc_encoder_encode(code, msg, 4, &state, &unknown, NULL) == DT_CC_ERR_ARG);
   check("encode rejects negative n_bits",
-        dt_cc_full_encoder_encode(code, msg, -1, &state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_encoder_encode(code, msg, -1, &state, &unknown, out) == DT_CC_ERR_ARG);
   int bad_state = 999999;
   check("encode rejects out-of-range state",
-        dt_cc_full_encoder_encode(code, msg, 4, &bad_state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_encoder_encode(code, msg, 4, &bad_state, &unknown, out) == DT_CC_ERR_ARG);
   check("flush rejects NULL code",
-        dt_cc_full_encoder_flush(NULL, &state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_encoder_flush(NULL, &state, &unknown, out) == DT_CC_ERR_ARG);
 
   dt_cc_code_destroy(code);
 }
 
-/* The full encoder vtable drives begin/encode/finalize and produces the same
+/* The encoder vtable drives begin/encode/finalize and produces the same
  * total length as the engine helper. */
 static void test_encoder_vtable(void) {
   check("encoder_create rejects NULL code",
-        dt_cc_full_encoder_create(NULL) == NULL);
+        dt_cc_encoder_create(NULL) == NULL);
 
   dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
   REQUIRE("code created", code != NULL);
   const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 64;
 
-  dt_encoder *enc = dt_cc_full_encoder_create(code);
+  dt_encoder *enc = dt_cc_encoder_create(code);
   REQUIRE("encoder created", enc != NULL);
 
   uint64_t rng = 0x5151u;
@@ -152,14 +152,14 @@ static void test_encoder_vtable(void) {
         len == info_bits * n + (K - 1) * n);
 
   /* A too-small destination is reported, not overrun. */
-  dt_encoder *enc2 = dt_cc_full_encoder_create(code);
+  dt_encoder *enc2 = dt_cc_encoder_create(code);
   REQUIRE("encoder created", enc2 != NULL);
   enc2->begin(enc2, out, 1);
   check("vtable encode rejects too-small dst",
         enc2->encode(enc2, out, 1, msg, info_bits) == DT_CC_ERR_ARG);
 
-  dt_cc_full_encoder_destroy(enc);
-  dt_cc_full_encoder_destroy(enc2);
+  dt_cc_encoder_destroy(enc);
+  dt_cc_encoder_destroy(enc2);
   free(msg);
   free(out);
   dt_cc_code_destroy(code);

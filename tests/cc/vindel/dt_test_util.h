@@ -36,7 +36,7 @@
 #define DT_VINDEL_TEST_UTIL_H
 
 #include <cc/vindel/decode.h>
-#include <cc/basic_encoder/encode.h>
+#include <cc/encoder/encode.h>
 
 #include <assert.h>
 #include <stdint.h>
@@ -139,8 +139,9 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 static inline int vindel_encode_all(const dt_cc_code *code, const uint8_t *msg,
                                     int info_bits, uint8_t *out) {
   int state = 0;
-  int len = dt_cc_basic_encoder_encode(code, msg, info_bits, &state, out);
-  len += dt_cc_basic_encoder_flush(code, &state, out + len);
+  unsigned int unknown = 0;
+  int len = dt_cc_encoder_encode(code, msg, info_bits, &state, &unknown, out);
+  len += dt_cc_encoder_flush(code, &state, &unknown, out + len);
   return len;
 }
 
@@ -197,7 +198,8 @@ static inline double decoder_lock_mean(const dt_cc_code *enc, const dt_cc_code *
   int clen = info_bits * dt_cc_code_n(enc);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dt_cc_basic_encoder_encode(enc, msg, info_bits, &st, coded);
+  unsigned int unknown = 0;
+  dt_cc_encoder_encode(enc, msg, info_bits, &st, &unknown, coded);
 
   dt_cc_vindel_stream_decoder *sd =
       make_decoder(dec, depth, 4, 0.01, 0.01, 0.01, 0.0);

@@ -27,7 +27,7 @@
 /*
  * Hybrid codec: realizes the abstract dt_decoder / dt_soft_decoder interfaces
  * over the drift-tolerant stream-decode engine. The code handle is dt_cc_code
- * throughout. To encode, use the standalone basic encoder (src/cc/basic_encoder).
+ * throughout. To encode, use the standalone encoder (src/cc/encoder).
  */
 
 #include <drifty/cc/hybrid.h>

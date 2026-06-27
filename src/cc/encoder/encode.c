@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * full encoder: the ordinary convolutional encoder over the shared dt_cc_code
+ * encoder: the ordinary convolutional encoder over the shared dt_cc_code
  * trellis tables, extended to carry non-boolean inputs (DT_ERASURE / DT_INVALID)
  * through to marked coded bits. Standalone - it shares no engine with any codec.
  */
@@ -93,7 +93,7 @@ static int emit_group(const dt_cc_code *code, int *state, unsigned int *unknown,
   return code->n;
 }
 
-int dt_cc_full_encoder_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits,
+int dt_cc_encoder_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits,
                    int *state, unsigned int *unknown, uint8_t *out) {
   if (!code || !state || !unknown || n_bits < 0 || (n_bits > 0 && !bits) ||
       !out) {
@@ -121,7 +121,7 @@ int dt_cc_full_encoder_encode(const dt_cc_code *code, const uint8_t *bits, int n
   return written;
 }
 
-int dt_cc_full_encoder_flush(const dt_cc_code *code, int *state, unsigned int *unknown,
+int dt_cc_encoder_flush(const dt_cc_code *code, int *state, unsigned int *unknown,
                          uint8_t *out) {
   if (!code || !state || !unknown || !out) {
     return DT_CC_ERR_ARG;

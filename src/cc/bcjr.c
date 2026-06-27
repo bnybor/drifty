@@ -27,7 +27,7 @@
 /*
  * BCJR codec: realizes the abstract dt_decoder / dt_soft_decoder interfaces over
  * the BCJR decode engine. The code handle is dt_cc_code throughout. To encode, use
- * the standalone full encoder (src/cc/full_encoder).
+ * the standalone encoder (src/cc/encoder).
  *
  * The decode engine (see bcjr/decode.c) is complete; this file is just the
  * vtable plumbing that adapts it to the abstract interfaces.

@@ -48,10 +48,8 @@ add_library(drifty_bare_obj OBJECT
     src/cc/bcjr.c
     src/cc/maxir/decode.c
     src/cc/maxir.c
-    src/cc/basic_encoder/encode.c
-    src/cc/basic_encoder/basic_encoder.c
-    src/cc/full_encoder/encode.c
-    src/cc/full_encoder/full_encoder.c)
+    src/cc/encoder/encode.c
+    src/cc/encoder/encoder.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
 # Optional host-specific tuning. -march=native lets the numeric inner loops use
@@ -75,16 +73,15 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 # alone, so the bare archive still asks the consumer to supply the shims and the
 # full archive still resolves libc at the consumer's final link.
 # The public API is the abstract surface in include/: the dt_cc_code descriptor
-# (cc/ccode.h, implemented in src/cc/ccode.c), the two standalone encoders
-# (cc/encoders.h, dt_cc_basic_encoder_* / dt_cc_full_encoder_*) that every codec
-# encodes through, plus the per-codec decoder factories dt_cc_hybrid_* / dt_cc_vindel_* /
-# dt_cc_viterbi_* / dt_cc_bcjr_* / dt_cc_maxir_* (cc/hybrid.h, cc/vindel.h, cc/viterbi.h,
-# cc/bcjr.h, cc/maxir.h). The only encoder implementations are the two standalone
-# encoders above (src/cc/basic_encoder/, src/cc/full_encoder/); each codec's decode
-# engine (dt_cc_stream_* / dt_cc_vindel_stream_* / dt_cc_viterbi_stream_* /
-# dt_cc_bcjr_stream_* / dt_cc_maxir_stream_*) and the encoders' one-shot helpers
-# (dt_cc_basic_encoder_encode/_flush, dt_cc_full_encoder_encode/_flush) are private -
-# their headers live under src/cc/ - so they are localized, not exported.
+# (cc/ccode.h, implemented in src/cc/ccode.c), the standalone encoder
+# (cc/encoders.h, dt_cc_encoder_*) that every codec encodes through, plus the
+# per-codec decoder factories dt_cc_hybrid_* / dt_cc_vindel_* / dt_cc_viterbi_* /
+# dt_cc_bcjr_* / dt_cc_maxir_* (cc/hybrid.h, cc/vindel.h, cc/viterbi.h, cc/bcjr.h,
+# cc/maxir.h). The encoder (src/cc/encoder/) is the only encoder
+# implementation; each codec's decode engine (dt_cc_stream_* / dt_cc_vindel_stream_* /
+# dt_cc_viterbi_stream_* / dt_cc_bcjr_stream_* / dt_cc_maxir_stream_*) and the encoder's
+# one-shot helpers (dt_cc_encoder_encode/_flush) are private - their headers live
+# under src/cc/ - so they are localized, not exported.
 set(_dt_public_symbols
     dt_cc_code_create dt_cc_code_create_standard dt_cc_code_destroy
     dt_cc_code_k dt_cc_code_n
@@ -96,8 +93,7 @@ set(_dt_public_symbols
     dt_cc_bcjr_soft_decoder_create dt_cc_bcjr_soft_decoder_destroy
     dt_cc_maxir_decoder_create dt_cc_maxir_decoder_destroy
     dt_cc_maxir_soft_decoder_create dt_cc_maxir_soft_decoder_destroy
-    dt_cc_basic_encoder_create dt_cc_basic_encoder_destroy
-    dt_cc_full_encoder_create dt_cc_full_encoder_destroy)
+    dt_cc_encoder_create dt_cc_encoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

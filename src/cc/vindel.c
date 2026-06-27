@@ -27,7 +27,7 @@
 /*
  * Vindel codec: realizes the abstract dt_decoder interface over the
  * drift-tolerant stream-decode engine. The code handle is dt_cc_code throughout.
- * To encode, use the standalone basic encoder (src/cc/basic_encoder).
+ * To encode, use the standalone encoder (src/cc/encoder).
  */
 
 #include <drifty/cc/vindel.h>

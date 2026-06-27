@@ -37,7 +37,7 @@
 #define DT_VITERBI_TEST_UTIL_H
 
 #include <cc/viterbi/decode.h>
-#include <cc/basic_encoder/encode.h>
+#include <cc/encoder/encode.h>
 
 #include <assert.h>
 #include <stdint.h>
@@ -105,8 +105,9 @@ static inline void rand_bits(uint8_t *bits, int n, uint64_t *rng) {
 static inline int viterbi_encode_all(const dt_cc_code *code, const uint8_t *msg,
                                      int info_bits, uint8_t *out) {
   int state = 0;
-  int len = dt_cc_basic_encoder_encode(code, msg, info_bits, &state, out);
-  len += dt_cc_basic_encoder_flush(code, &state, out + len);
+  unsigned int unknown = 0;
+  int len = dt_cc_encoder_encode(code, msg, info_bits, &state, &unknown, out);
+  len += dt_cc_encoder_flush(code, &state, &unknown, out + len);
   return len;
 }
 

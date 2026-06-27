@@ -35,7 +35,7 @@
 #define DT_TEST_UTIL_H
 
 #include <cc/hybrid/decode.h>
-#include <cc/basic_encoder/encode.h>
+#include <cc/encoder/encode.h>
 
 #include <assert.h>
 #include <stdint.h>
@@ -187,8 +187,9 @@ static inline size_t encode(dt_cc_standard_code which, const uint8_t *msg,
   *n = dt_cc_code_n(code);
   *k = dt_cc_code_k(code);
   int state = 0;
-  int len = dt_cc_basic_encoder_encode(code, msg, info_bits, &state, out);
-  len += dt_cc_basic_encoder_flush(code, &state, out + len);
+  unsigned int unknown = 0;
+  int len = dt_cc_encoder_encode(code, msg, info_bits, &state, &unknown, out);
+  len += dt_cc_encoder_flush(code, &state, &unknown, out + len);
   dt_cc_code_destroy(code);
   return (size_t)len;
 }
@@ -307,7 +308,8 @@ static inline double decoder_lock_mean(const dt_cc_code *enc, const dt_cc_code *
   int clen = info_bits * dt_cc_code_n(enc);
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
-  dt_cc_basic_encoder_encode(enc, msg, info_bits, &st, coded);
+  unsigned int unknown = 0;
+  dt_cc_encoder_encode(enc, msg, info_bits, &st, &unknown, coded);
 
   dt_cc_stream_decoder *sd = make_decoder(dec, depth, 4, 0.01, 0.01, 0.01, 0.0);
   assert(sd != NULL);

@@ -25,11 +25,11 @@
 /* clang-format on */
 
 /*
- * Full encoder: realizes the abstract dt_encoder interface over a standalone
+ * Encoder: realizes the abstract dt_encoder interface over a standalone
  * convolutional encode engine (encode.c in this directory) that also carries
  * non-boolean inputs (DT_ERASURE / DT_INVALID) through to marked coded bits. The
- * code handle is dt_cc_code throughout. Like the basic encoder this is
- * self-contained - it shares no engine with maxir, bcjr, or any other codec.
+ * code handle is dt_cc_code throughout. This is the one encoder every codec
+ * encodes through; it is self-contained - it shares no engine with any decoder.
  *
  * The encode engine is complete; this file is just the vtable plumbing that
  * adapts it to the abstract interface.
@@ -37,7 +37,7 @@
 
 #include <drifty/cc/encoders.h>
 
-#include "encode.h" /* dt_cc_full_encoder_encode + dt_cc_full_encoder_flush */
+#include "encode.h" /* dt_cc_encoder_encode + dt_cc_encoder_flush */
 #include <drifty/stdlib.h>
 
 /* dt_bit is uint8_t (bit.h), the same element type the engine's encode buffers
@@ -49,10 +49,10 @@ typedef struct {
   const dt_cc_code *code; /* the convolutional code this encoder emits */
   int state;            /* running shift-register state across encode calls */
   unsigned int unknown; /* in-flight poison register (non-boolean inputs) */
-} cc_full_encoder;
+} cc_encoder;
 
-static int cc_full_encoder_begin(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
-  cc_full_encoder *st = enc->data;
+static int cc_encoder_begin(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
+  cc_encoder *st = enc->data;
   st->state = 0; /* fresh stream; the convolutional encoder needs no preamble */
   st->unknown = 0;
   (void)dst;
@@ -60,34 +60,34 @@ static int cc_full_encoder_begin(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
   return 0;
 }
 
-static int cc_full_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
+static int cc_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
                                   const dt_bit *src, size_t src_len) {
-  cc_full_encoder *st = enc->data;
+  cc_encoder *st = enc->data;
   /* The engine writes src_len * n coded bits and does not bound-check, so gate
    * it on the caller's capacity here. */
   if ((size_t)dt_cc_code_n(st->code) * src_len > dst_len) {
     return DT_CC_ERR_ARG;
   }
-  return dt_cc_full_encoder_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
+  return dt_cc_encoder_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
                         dst);
 }
 
-static int cc_full_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
-  cc_full_encoder *st = enc->data;
+static int cc_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
+  cc_encoder *st = enc->data;
   /* Flush writes (K-1) * n trailing bits to drain the register back to state 0. */
   if ((size_t)(dt_cc_code_k(st->code) - 1) * (size_t)dt_cc_code_n(st->code) >
       dst_len) {
     return DT_CC_ERR_ARG;
   }
-  return dt_cc_full_encoder_flush(st->code, &st->state, &st->unknown, dst);
+  return dt_cc_encoder_flush(st->code, &st->state, &st->unknown, dst);
 }
 
-dt_encoder *dt_cc_full_encoder_create(const dt_cc_code *code) {
+dt_encoder *dt_cc_encoder_create(const dt_cc_code *code) {
   if (!code) {
     return NULL;
   }
   dt_encoder *enc = dt_malloc(sizeof(*enc));
-  cc_full_encoder *st = dt_malloc(sizeof(*st));
+  cc_encoder *st = dt_malloc(sizeof(*st));
   if (!enc || !st) {
     dt_free(enc);
     dt_free(st);
@@ -96,14 +96,14 @@ dt_encoder *dt_cc_full_encoder_create(const dt_cc_code *code) {
   st->code = code;
   st->state = 0;
   st->unknown = 0;
-  enc->begin = cc_full_encoder_begin;
-  enc->encode = cc_full_encoder_encode;
-  enc->finalize = cc_full_encoder_finalize;
+  enc->begin = cc_encoder_begin;
+  enc->encode = cc_encoder_encode;
+  enc->finalize = cc_encoder_finalize;
   enc->data = st;
   return enc;
 }
 
-void dt_cc_full_encoder_destroy(dt_encoder *enc) {
+void dt_cc_encoder_destroy(dt_encoder *enc) {
   if (!enc) {
     return;
   }

@@ -66,7 +66,7 @@
  */
 
 #include <cc/vindel/decode.h>
-#include <cc/basic_encoder/encode.h>
+#include <cc/encoder/encode.h>
 
 #include <limits.h>
 #include <stdint.h>
@@ -494,8 +494,9 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
    * a flush tail, so the message bits sit in the stream interior. */
   const int coded_cap = (info_bits + m.constraint_len) * m.code_n;
   int enc_state = 0;
-  int coded_len = dt_cc_basic_encoder_encode(code, message, info_bits, &enc_state, coded);
-  coded_len += dt_cc_basic_encoder_flush(code, &enc_state, coded + coded_len);
+  unsigned int unknown = 0;
+  int coded_len = dt_cc_encoder_encode(code, message, info_bits, &enc_state, &unknown, coded);
+  coded_len += dt_cc_encoder_flush(code, &enc_state, &unknown, coded + coded_len);
 
   uint8_t *received = NULL;
   int received_len = apply_channel(coded, coded_len, channel_sub, channel_ins,

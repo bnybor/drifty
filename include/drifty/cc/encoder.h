@@ -40,9 +40,9 @@ extern "C" {
  * poison) and a DT_ERASURE input emits DT_ERASURE coded bits (deferred to the
  * channel) - which decoders that read those markers (e.g. maxir, bcjr) rely on.
  * Returns NULL on a bad argument or out of memory. */
-dt_encoder *dt_cc_encoder_create(const dt_cc_code *code);
+dt_stream_encoder *dt_cc_encoder_create(const dt_cc_code *code);
 /* Free an encoder from dt_cc_encoder_create(). Passing NULL is fine. */
-void dt_cc_encoder_destroy(dt_encoder *enc);
+void dt_cc_encoder_destroy(dt_stream_encoder *enc);
 
 #ifdef __cplusplus
 }

@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * BCJR codec: realizes the abstract dt_decoder / dt_soft_decoder interfaces over
+ * BCJR codec: realizes the abstract dt_stream_decoder / dt_stream_soft_decoder interfaces over
  * the BCJR decode engine. The code handle is dt_cc_code throughout. To encode, use
  * the standalone encoder (src/cc/encoder).
  *
@@ -43,26 +43,26 @@
 
 /* -- decoder --------------------------------------------------------------- */
 
-static int bcjr_decoder_begin(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int bcjr_decoder_begin(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
   (void)dec;
   (void)dst;
   (void)dst_len;
   return 0; /* no preamble to emit */
 }
 
-static int bcjr_decoder_decode(dt_decoder *dec, dt_bit *dst, size_t dst_len,
+static int bcjr_decoder_decode(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len,
                                const dt_bit *src, size_t src_len) {
   dt_cc_bcjr_stream_decoder *sd = dec->data;
   /* The hard decoder ignores the per-bit soft output (pass NULL details). */
   return dt_cc_bcjr_stream_decode(sd, src, (int)src_len, dst, NULL, (int)dst_len);
 }
 
-static int bcjr_decoder_finalize(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int bcjr_decoder_finalize(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
   dt_cc_bcjr_stream_decoder *sd = dec->data;
   return dt_cc_bcjr_stream_decode_flush(sd, dst, NULL, (int)dst_len);
 }
 
-dt_decoder *dt_cc_bcjr_decoder_create(const dt_cc_code *code,
+dt_stream_decoder *dt_cc_bcjr_decoder_create(const dt_cc_code *code,
                                    const dt_cc_bcjr_stream_params *params) {
   if (!code || !params) {
     return NULL;
@@ -71,7 +71,7 @@ dt_decoder *dt_cc_bcjr_decoder_create(const dt_cc_code *code,
   if (!sd) {
     return NULL;
   }
-  dt_decoder *dec = dt_malloc(sizeof(*dec));
+  dt_stream_decoder *dec = dt_malloc(sizeof(*dec));
   if (!dec) {
     dt_cc_bcjr_stream_decoder_destroy(sd);
     return NULL;
@@ -83,7 +83,7 @@ dt_decoder *dt_cc_bcjr_decoder_create(const dt_cc_code *code,
   return dec;
 }
 
-void dt_cc_bcjr_decoder_destroy(dt_decoder *dec) {
+void dt_cc_bcjr_decoder_destroy(dt_stream_decoder *dec) {
   if (!dec) {
     return;
   }
@@ -93,13 +93,13 @@ void dt_cc_bcjr_decoder_destroy(dt_decoder *dec) {
 
 /* -- soft decoder ---------------------------------------------------------- */
 
-/* Map the engine's per-bit soft output onto a dt_soft_decoder_out. The fields
+/* Map the engine's per-bit soft output onto a dt_stream_soft_decoder_out. The fields
  * line up one-to-one: c_lost is the "erasure / unknowable value" consistency,
  * and the engine also reports c_invalid (the slot's coded group was the
  * encoder's DT_INVALID poison marker) and c_absent (1 - c_lock; the slot is not
  * backed by a tracked codeword stream), so both pass straight through. */
 static void details_to_soft(const dt_cc_bcjr_decode_details *d,
-                            dt_soft_decoder_out *o) {
+                            dt_stream_soft_decoder_out *o) {
   o->c_false = d->c_false;
   o->c_true = d->c_true;
   o->c_erasure = d->c_lost;
@@ -112,14 +112,14 @@ static void details_to_soft(const dt_cc_bcjr_decode_details *d,
  * so decode/finalize need no allocation. */
 #define BCJR_SOFT_CHUNK 64
 
-static int bcjr_soft_begin(dt_soft_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int bcjr_soft_begin(dt_stream_soft_decoder *dec, dt_bit *dst, size_t dst_len) {
   (void)dec;
   (void)dst;
   (void)dst_len;
   return 0; /* no preamble to emit */
 }
 
-static int bcjr_soft_decode(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
+static int bcjr_soft_decode(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
                             size_t dst_len, const dt_bit *src, size_t src_len) {
   dt_cc_bcjr_stream_decoder *sd = dec->data;
   dt_cc_bcjr_decode_details chunk[BCJR_SOFT_CHUNK];
@@ -149,7 +149,7 @@ static int bcjr_soft_decode(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
   return (int)written;
 }
 
-static int bcjr_soft_finalize(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
+static int bcjr_soft_finalize(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
                               size_t dst_len) {
   dt_cc_bcjr_stream_decoder *sd = dec->data;
   dt_cc_bcjr_decode_details chunk[BCJR_SOFT_CHUNK];
@@ -172,7 +172,7 @@ static int bcjr_soft_finalize(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
   return (int)written;
 }
 
-dt_soft_decoder *dt_cc_bcjr_soft_decoder_create(
+dt_stream_soft_decoder *dt_cc_bcjr_soft_decoder_create(
     const dt_cc_code *code, const dt_cc_bcjr_stream_params *params) {
   if (!code || !params) {
     return NULL;
@@ -181,7 +181,7 @@ dt_soft_decoder *dt_cc_bcjr_soft_decoder_create(
   if (!sd) {
     return NULL;
   }
-  dt_soft_decoder *dec = dt_malloc(sizeof(*dec));
+  dt_stream_soft_decoder *dec = dt_malloc(sizeof(*dec));
   if (!dec) {
     dt_cc_bcjr_stream_decoder_destroy(sd);
     return NULL;
@@ -193,7 +193,7 @@ dt_soft_decoder *dt_cc_bcjr_soft_decoder_create(
   return dec;
 }
 
-void dt_cc_bcjr_soft_decoder_destroy(dt_soft_decoder *dec) {
+void dt_cc_bcjr_soft_decoder_destroy(dt_stream_soft_decoder *dec) {
   if (!dec) {
     return;
   }

@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * Encoder: realizes the abstract dt_encoder interface over a standalone
+ * Encoder: realizes the abstract dt_stream_encoder interface over a standalone
  * convolutional encode engine (encode.c in this directory) that also carries
  * non-boolean inputs (DT_ERASURE / DT_INVALID) through to marked coded bits. The
  * code handle is dt_cc_code throughout. This is the one encoder every codec
@@ -51,7 +51,7 @@ typedef struct {
   unsigned int unknown; /* in-flight poison register (non-boolean inputs) */
 } cc_encoder;
 
-static int cc_encoder_begin(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
+static int cc_encoder_begin(dt_stream_encoder *enc, dt_bit *dst, size_t dst_len) {
   cc_encoder *st = enc->data;
   st->state = 0; /* fresh stream; the convolutional encoder needs no preamble */
   st->unknown = 0;
@@ -60,7 +60,7 @@ static int cc_encoder_begin(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
   return 0;
 }
 
-static int cc_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
+static int cc_encoder_encode(dt_stream_encoder *enc, dt_bit *dst, size_t dst_len,
                                   const dt_bit *src, size_t src_len) {
   cc_encoder *st = enc->data;
   /* The engine writes src_len * n coded bits and does not bound-check, so gate
@@ -72,7 +72,7 @@ static int cc_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
                         dst);
 }
 
-static int cc_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
+static int cc_encoder_finalize(dt_stream_encoder *enc, dt_bit *dst, size_t dst_len) {
   cc_encoder *st = enc->data;
   /* Flush writes (K-1) * n trailing bits to drain the register back to state 0. */
   if ((size_t)(dt_cc_code_k(st->code) - 1) * (size_t)dt_cc_code_n(st->code) >
@@ -82,11 +82,11 @@ static int cc_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len) {
   return dt_cc_encoder_flush(st->code, &st->state, &st->unknown, dst);
 }
 
-dt_encoder *dt_cc_encoder_create(const dt_cc_code *code) {
+dt_stream_encoder *dt_cc_encoder_create(const dt_cc_code *code) {
   if (!code) {
     return NULL;
   }
-  dt_encoder *enc = dt_malloc(sizeof(*enc));
+  dt_stream_encoder *enc = dt_malloc(sizeof(*enc));
   cc_encoder *st = dt_malloc(sizeof(*st));
   if (!enc || !st) {
     dt_free(enc);
@@ -103,7 +103,7 @@ dt_encoder *dt_cc_encoder_create(const dt_cc_code *code) {
   return enc;
 }
 
-void dt_cc_encoder_destroy(dt_encoder *enc) {
+void dt_cc_encoder_destroy(dt_stream_encoder *enc) {
   if (!enc) {
     return;
   }

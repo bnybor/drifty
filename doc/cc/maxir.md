@@ -53,14 +53,14 @@ typedef struct {
 } dt_cc_maxir_stream_params;
 
 /* hard decision */
-dt_decoder      *dt_cc_maxir_decoder_create(const dt_cc_code *code,
+dt_stream_decoder      *dt_cc_maxir_decoder_create(const dt_cc_code *code,
                                             const dt_cc_maxir_stream_params *params);
-void             dt_cc_maxir_decoder_destroy(dt_decoder *dec);
+void             dt_cc_maxir_decoder_destroy(dt_stream_decoder *dec);
 
 /* soft output */
-dt_soft_decoder *dt_cc_maxir_soft_decoder_create(const dt_cc_code *code,
+dt_stream_soft_decoder *dt_cc_maxir_soft_decoder_create(const dt_cc_code *code,
                                                  const dt_cc_maxir_stream_params *params);
-void             dt_cc_maxir_soft_decoder_destroy(dt_soft_decoder *dec);
+void             dt_cc_maxir_soft_decoder_destroy(dt_stream_soft_decoder *dec);
 ```
 
 Both factories take the same `params` (copied; need not outlive the call). The
@@ -90,7 +90,7 @@ Hard and soft front ends are driven the same way — `begin` → `decode` (repea
 
 ### Soft output
 
-`maxir` populates the **full** `dt_soft_decoder_out` alphabet (unlike `hybrid`,
+`maxir` populates the **full** `dt_stream_soft_decoder_out` alphabet (unlike `hybrid`,
 which leaves `c_invalid` / `c_absent` at 0). Each field is a graded consistency in
 `[0, 1]` (not a probability split):
 

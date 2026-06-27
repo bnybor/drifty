@@ -40,9 +40,9 @@ typedef struct {
   float p_erase;
 } dt_cc_vindel_stream_params;
 
-dt_decoder *dt_cc_vindel_decoder_create(const dt_cc_code *code,
+dt_stream_decoder *dt_cc_vindel_decoder_create(const dt_cc_code *code,
                                         const dt_cc_vindel_stream_params *params);
-void        dt_cc_vindel_decoder_destroy(dt_decoder *dec);
+void        dt_cc_vindel_decoder_destroy(dt_stream_decoder *dec);
 ```
 
 `params` is copied and need not outlive the call. The code must outlive the
@@ -63,7 +63,7 @@ fine — only their relative sizes matter.
 
 ## Driving the decoder
 
-Identical to every cc decoder — drive the `dt_decoder` vtable through
+Identical to every cc decoder — drive the `dt_stream_decoder` vtable through
 `begin` → `decode` (repeat) → `finalize` (see `<drifty/decoder.h>`). Mind the
 **warm-up delay** (first ~`decision_depth` bits are unreliable) and the
 **buffering** rule (a `decode` returning exactly `dst_len` has more buffered —

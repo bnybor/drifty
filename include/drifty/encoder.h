@@ -36,7 +36,7 @@ extern "C" {
 #endif
 
 /*
- * dt_encoder - the encode side of the streaming codec, called through function
+ * dt_stream_encoder - the encode side of the streaming codec, called through function
  * pointers. It turns a stream of input bits into a longer stream of coded bits.
  *
  * Drive one instance through three phases:
@@ -61,15 +61,15 @@ extern "C" {
  * encoder with a factory such as dt_cc_encoder_create() and free it with
  * the matching _destroy().
  */
-typedef struct dt_encoder_t dt_encoder;
-struct dt_encoder_t {
+typedef struct dt_stream_encoder_t dt_stream_encoder;
+struct dt_stream_encoder_t {
   // Initialise the encoder and write any preamble. Call once, before encode().
-  int (*begin)(dt_encoder *enc, dt_bit *dst, size_t dst_len);
+  int (*begin)(dt_stream_encoder *enc, dt_bit *dst, size_t dst_len);
   // Encode src_len input bits, appending the coded bits to dst.
-  int (*encode)(dt_encoder *enc, dt_bit *dst, size_t dst_len, const dt_bit *src,
+  int (*encode)(dt_stream_encoder *enc, dt_bit *dst, size_t dst_len, const dt_bit *src,
                 size_t src_len);
   // Flush in-progress bits and write the trailer. Call once, at end of stream.
-  int (*finalize)(dt_encoder *enc, dt_bit *dst, size_t dst_len);
+  int (*finalize)(dt_stream_encoder *enc, dt_bit *dst, size_t dst_len);
 
   // implementation-private state; do not access
   void *data;

@@ -312,7 +312,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
    */
   const int coded_cap = (info_bits + constraint_len) * code_n;
   uint8_t *coded = xmalloc((size_t)coded_cap);
-  dt_encoder *encoder = dt_cc_encoder_create(code);
+  dt_stream_encoder *encoder = dt_cc_encoder_create(code);
   if (!encoder) {
     fprintf(stderr, "dt_cc_viterbi_metrics: encoder create failed\n");
     exit(1);
@@ -331,7 +331,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   /* Decode through the public API, feeding in 64-bit chunks then flushing. */
   const int decoded_cap = info_bits + 256;
   uint8_t *decoded = xmalloc((size_t)decoded_cap);
-  dt_decoder *dec = dt_cc_viterbi_decoder_create(code);
+  dt_stream_decoder *dec = dt_cc_viterbi_decoder_create(code);
   if (!dec) {
     fprintf(stderr, "dt_cc_viterbi_metrics: decoder create failed\n");
     exit(1);

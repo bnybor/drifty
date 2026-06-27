@@ -43,14 +43,14 @@ typedef struct {
 } dt_cc_hybrid_stream_params;
 
 /* hard decision */
-dt_decoder      *dt_cc_hybrid_decoder_create(const dt_cc_code *code,
+dt_stream_decoder      *dt_cc_hybrid_decoder_create(const dt_cc_code *code,
                                              const dt_cc_hybrid_stream_params *params);
-void             dt_cc_hybrid_decoder_destroy(dt_decoder *dec);
+void             dt_cc_hybrid_decoder_destroy(dt_stream_decoder *dec);
 
 /* soft output */
-dt_soft_decoder *dt_cc_hybrid_soft_decoder_create(const dt_cc_code *code,
+dt_stream_soft_decoder *dt_cc_hybrid_soft_decoder_create(const dt_cc_code *code,
                                                   const dt_cc_hybrid_stream_params *params);
-void             dt_cc_hybrid_soft_decoder_destroy(dt_soft_decoder *dec);
+void             dt_cc_hybrid_soft_decoder_destroy(dt_stream_soft_decoder *dec);
 ```
 
 Both factories take the same `params` (copied; need not outlive the call). The
@@ -80,7 +80,7 @@ so `begin(dec, NULL, 0)` is fine.
 
 ### Soft output
 
-The soft front end reports a `dt_soft_decoder_out` per recovered position — a
+The soft front end reports a `dt_stream_soft_decoder_out` per recovered position — a
 graded consistency in `[0, 1]` for each hypothesis (not a probability split, so
 the fields need not sum to 1):
 

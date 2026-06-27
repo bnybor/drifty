@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * Vindel codec: realizes the abstract dt_decoder interface over the
+ * Vindel codec: realizes the abstract dt_stream_decoder interface over the
  * drift-tolerant stream-decode engine. The code handle is dt_cc_code throughout.
  * To encode, use the standalone encoder (src/cc/encoder).
  */
@@ -40,26 +40,26 @@
 
 /* -- decoder --------------------------------------------------------------- */
 
-static int vindel_decoder_begin(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int vindel_decoder_begin(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
   (void)dec;
   (void)dst;
   (void)dst_len;
   return 0; /* the stream decoder self-acquires; no preamble to emit */
 }
 
-static int vindel_decoder_decode(dt_decoder *dec, dt_bit *dst, size_t dst_len,
+static int vindel_decoder_decode(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len,
                                  const dt_bit *src, size_t src_len) {
   dt_cc_vindel_stream_decoder *sd = dec->data;
   /* The hard decoder ignores the per-bit lock probability (pass NULL). */
   return dt_cc_vindel_stream_decode(sd, src, (int)src_len, dst, NULL, (int)dst_len);
 }
 
-static int vindel_decoder_finalize(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int vindel_decoder_finalize(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
   dt_cc_vindel_stream_decoder *sd = dec->data;
   return dt_cc_vindel_stream_decode_flush(sd, dst, (int)dst_len);
 }
 
-dt_decoder *dt_cc_vindel_decoder_create(const dt_cc_code *code,
+dt_stream_decoder *dt_cc_vindel_decoder_create(const dt_cc_code *code,
                                      const dt_cc_vindel_stream_params *params) {
   if (!code || !params) {
     return NULL;
@@ -68,7 +68,7 @@ dt_decoder *dt_cc_vindel_decoder_create(const dt_cc_code *code,
   if (!sd) {
     return NULL;
   }
-  dt_decoder *dec = dt_malloc(sizeof(*dec));
+  dt_stream_decoder *dec = dt_malloc(sizeof(*dec));
   if (!dec) {
     dt_cc_vindel_stream_decoder_destroy(sd);
     return NULL;
@@ -80,7 +80,7 @@ dt_decoder *dt_cc_vindel_decoder_create(const dt_cc_code *code,
   return dec;
 }
 
-void dt_cc_vindel_decoder_destroy(dt_decoder *dec) {
+void dt_cc_vindel_decoder_destroy(dt_stream_decoder *dec) {
   if (!dec) {
     return;
   }

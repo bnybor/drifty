@@ -101,18 +101,18 @@ typedef struct {
 /* Build a hard-decision MAXIR decoder over `code` with the channel model in
  * `params`. `params` is copied and need not outlive the call. Returns NULL on a
  * bad argument (including an invalid `params`) or out of memory. */
-dt_decoder *dt_cc_maxir_decoder_create(const dt_cc_code *code,
+dt_stream_decoder *dt_cc_maxir_decoder_create(const dt_cc_code *code,
                                    const dt_cc_maxir_stream_params *params);
 /* Free a decoder from dt_cc_maxir_decoder_create(). Passing NULL is fine. */
-void dt_cc_maxir_decoder_destroy(dt_decoder *dec);
+void dt_cc_maxir_decoder_destroy(dt_stream_decoder *dec);
 
 /* Build a soft-output MAXIR decoder - same inputs as dt_cc_maxir_decoder_create(),
  * but it reports per-bit consistencies instead of a hard decision. Returns NULL
  * on a bad argument or out of memory. */
-dt_soft_decoder *dt_cc_maxir_soft_decoder_create(
+dt_stream_soft_decoder *dt_cc_maxir_soft_decoder_create(
     const dt_cc_code *code, const dt_cc_maxir_stream_params *params);
 /* Free a soft decoder from dt_cc_maxir_soft_decoder_create(). NULL is fine. */
-void dt_cc_maxir_soft_decoder_destroy(dt_soft_decoder *dec);
+void dt_cc_maxir_soft_decoder_destroy(dt_stream_soft_decoder *dec);
 
 #ifdef __cplusplus
 }

@@ -138,7 +138,7 @@ static void test_encoder_vtable(void) {
   const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
   const int info_bits = 64;
 
-  dt_encoder *enc = dt_cc_encoder_create(code);
+  dt_stream_encoder *enc = dt_cc_encoder_create(code);
   REQUIRE("encoder created", enc != NULL);
 
   uint64_t rng = 0x5151u;
@@ -154,7 +154,7 @@ static void test_encoder_vtable(void) {
         len == info_bits * n + (K - 1) * n);
 
   /* A too-small destination is reported, not overrun. */
-  dt_encoder *enc2 = dt_cc_encoder_create(code);
+  dt_stream_encoder *enc2 = dt_cc_encoder_create(code);
   REQUIRE("encoder created", enc2 != NULL);
   enc2->begin(enc2, out, 1);
   check("vtable encode rejects too-small dst",
@@ -545,7 +545,7 @@ static void test_decoder_vtable(void) {
   rand_bits(msg, info_bits, &rng);
   int clen = maxir_encode_all(code, msg, info_bits, coded);
 
-  dt_decoder *dec = dt_cc_maxir_decoder_create(code, &p);
+  dt_stream_decoder *dec = dt_cc_maxir_decoder_create(code, &p);
   REQUIRE("decoder created", dec != NULL);
   REQUIRE("vtable begin ok", dec->begin(dec, out, info_bits + K + 8) >= 0);
   int total = 0;
@@ -592,11 +592,11 @@ static void test_soft_decoder_vtable(void) {
   const int cap = (info_bits + K) * n;
   uint8_t *msg = malloc((size_t)info_bits);
   uint8_t *coded = malloc((size_t)cap);
-  dt_soft_decoder_out *soft = malloc(sizeof(*soft) * (size_t)(info_bits + K + 8));
+  dt_stream_soft_decoder_out *soft = malloc(sizeof(*soft) * (size_t)(info_bits + K + 8));
   rand_bits(msg, info_bits, &rng);
   int clen = maxir_encode_all(code, msg, info_bits, coded);
 
-  dt_soft_decoder *sd = dt_cc_maxir_soft_decoder_create(code, &p);
+  dt_stream_soft_decoder *sd = dt_cc_maxir_soft_decoder_create(code, &p);
   REQUIRE("soft decoder created", sd != NULL);
   REQUIRE("soft begin ok", sd->begin(sd, NULL, 0) >= 0);
   int total = 0;

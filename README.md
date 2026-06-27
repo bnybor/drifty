@@ -15,9 +15,9 @@ A **code** (`dt_cc_code`) is the redundancy scheme — pick a ready-made one or 
 your own; the sender and receiver must use the same code. Encoding and decoding go
 through small **interfaces** you call by function pointer:
 
-- `dt_encoder` — turn input bits into coded bits.
-- `dt_decoder` — turn received bits back into input bits (a hard decision).
-- `dt_soft_decoder` — the same, but report per-bit *consistencies* rather than a
+- `dt_stream_encoder` — turn input bits into coded bits.
+- `dt_stream_decoder` — turn received bits back into input bits (a hard decision).
+- `dt_stream_soft_decoder` — the same, but report per-bit *consistencies* rather than a
   hard decision.
 
 drifty ships **five codecs** that implement these interfaces over a `dt_cc_code`,
@@ -120,7 +120,7 @@ dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
 
 /* 2. Encode. Each interface is a vtable you call through: begin writes any
  *    preamble, encode appends coded bits, finalize flushes the tail. */
-dt_encoder *enc = dt_cc_encoder_create(code);
+dt_stream_encoder *enc = dt_cc_encoder_create(code);
 dt_bit coded[CAP];                /* size ~ (n_bits + K) * dt_cc_code_n(code) */
 int clen  = enc->begin(enc, coded, CAP);
 clen     += enc->encode(enc, coded + clen, CAP - clen, bits, n_bits);
@@ -128,7 +128,7 @@ clen     += enc->finalize(enc, coded + clen, CAP - clen);
 dt_cc_encoder_destroy(enc);
 
 /* 3. Decode the received bits. */
-dt_decoder *dec = dt_cc_hybrid_decoder_create(code, &(dt_cc_hybrid_stream_params){
+dt_stream_decoder *dec = dt_cc_hybrid_decoder_create(code, &(dt_cc_hybrid_stream_params){
     .decision_depth = 40,   /* output delay; try ~6 * the code's K */
     .max_drift      = 4,    /* set 0 to correct flips only         */
     .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
@@ -143,7 +143,7 @@ dt_cc_hybrid_decoder_destroy(dec);
 dt_cc_code_destroy(code);   /* the code must outlive everything built from it */
 ```
 
-`dt_cc_code`, `dt_encoder`, and `dt_decoder` are made with `_create` and freed with
+`dt_cc_code`, `dt_stream_encoder`, and `dt_stream_decoder` are made with `_create` and freed with
 `_destroy`. Every `begin` / `encode` / `decode` / `finalize` call returns the
 number of bits it wrote into the output buffer, or a negative value on a bad
 argument (such as too little room). `dt_cc_code_n()` gives output-bits-per-input-bit
@@ -202,8 +202,8 @@ codecs, **`bcjr`**, **`hybrid`**, and **`maxir`** offer a soft decoder — `bcjr
 a bit-aligned channel, `hybrid` and `maxir` when you also need drift tolerance.
 
 ```c
-dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &params);
-dt_soft_decoder_out soft[OUT];
+dt_stream_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &params);
+dt_stream_soft_decoder_out soft[OUT];
 int n  = sd->begin(sd, NULL, 0);     /* the hybrid codec emits no preamble */
 n     += sd->decode(sd, soft + n, OUT - n, received, n_received);
 n     += sd->finalize(sd, soft + n, OUT - n);
@@ -213,7 +213,7 @@ n     += sd->finalize(sd, soft + n, OUT - n);
 dt_cc_hybrid_soft_decoder_destroy(sd);
 ```
 
-`dt_soft_decoder_out` also carries `c_invalid` — the position reads as the
+`dt_stream_soft_decoder_out` also carries `c_invalid` — the position reads as the
 encoder's deliberate non-value (`DT_INVALID`) — and `c_absent` — the position reads
 as dropped in transit (`DT_ABSENT`). The hybrid codec does not model those and
 leaves them 0, while the *full* max-log-MAP codecs (`bcjr` and `maxir`) populate

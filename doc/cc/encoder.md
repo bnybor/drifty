@@ -39,20 +39,20 @@ machinery is engaged and every codec sees the same coded bits.
 ```c
 #include <drifty/cc/encoder.h>
 
-dt_encoder *dt_cc_encoder_create(const dt_cc_code *code);
-void        dt_cc_encoder_destroy(dt_encoder *enc);
+dt_stream_encoder *dt_cc_encoder_create(const dt_cc_code *code);
+void        dt_cc_encoder_destroy(dt_stream_encoder *enc);
 ```
 
-`dt_cc_encoder_create` returns a `dt_encoder` over `code` (NULL on a bad argument
+`dt_cc_encoder_create` returns a `dt_stream_encoder` over `code` (NULL on a bad argument
 or out of memory). The code must outlive the encoder. The matching decoder is
 built from the same `dt_cc_code` with that codec's `dt_cc_<codec>_decoder_create`.
 
 ## Driving the encoder
 
-Drive the returned `dt_encoder` through its vtable (see `<drifty/encoder.h>`):
+Drive the returned `dt_stream_encoder` through its vtable (see `<drifty/encoder.h>`):
 
 ```c
-dt_encoder *enc = dt_cc_encoder_create(code);
+dt_stream_encoder *enc = dt_cc_encoder_create(code);
 
 int n = enc->begin(enc, dst, dst_len);                 // once, first
 n += enc->encode(enc, dst + n, dst_len - n, src, src_len);  // any number of times

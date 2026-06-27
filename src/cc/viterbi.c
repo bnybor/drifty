@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * Viterbi codec: realizes the abstract dt_decoder interface over the Viterbi
+ * Viterbi codec: realizes the abstract dt_stream_decoder interface over the Viterbi
  * hard-decision decode engine. The code handle is dt_cc_code throughout. The
  * decoder takes no channel-model parameters. To encode, use the standalone
  * encoder (src/cc/encoder).
@@ -44,25 +44,25 @@
 
 /* -- decoder --------------------------------------------------------------- */
 
-static int viterbi_decoder_begin(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int viterbi_decoder_begin(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
   (void)dec;
   (void)dst;
   (void)dst_len;
   return 0; /* no preamble to emit */
 }
 
-static int viterbi_decoder_decode(dt_decoder *dec, dt_bit *dst, size_t dst_len,
+static int viterbi_decoder_decode(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len,
                                   const dt_bit *src, size_t src_len) {
   dt_cc_viterbi_stream_decoder *sd = dec->data;
   return dt_cc_viterbi_stream_decode(sd, src, (int)src_len, dst, (int)dst_len);
 }
 
-static int viterbi_decoder_finalize(dt_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int viterbi_decoder_finalize(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
   dt_cc_viterbi_stream_decoder *sd = dec->data;
   return dt_cc_viterbi_stream_decode_flush(sd, dst, (int)dst_len);
 }
 
-dt_decoder *dt_cc_viterbi_decoder_create(const dt_cc_code *code) {
+dt_stream_decoder *dt_cc_viterbi_decoder_create(const dt_cc_code *code) {
   if (!code) {
     return NULL;
   }
@@ -70,7 +70,7 @@ dt_decoder *dt_cc_viterbi_decoder_create(const dt_cc_code *code) {
   if (!sd) {
     return NULL;
   }
-  dt_decoder *dec = dt_malloc(sizeof(*dec));
+  dt_stream_decoder *dec = dt_malloc(sizeof(*dec));
   if (!dec) {
     dt_cc_viterbi_stream_decoder_destroy(sd);
     return NULL;
@@ -82,7 +82,7 @@ dt_decoder *dt_cc_viterbi_decoder_create(const dt_cc_code *code) {
   return dec;
 }
 
-void dt_cc_viterbi_decoder_destroy(dt_decoder *dec) {
+void dt_cc_viterbi_decoder_destroy(dt_stream_decoder *dec) {
   if (!dec) {
     return;
   }

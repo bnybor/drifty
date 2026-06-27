@@ -254,7 +254,7 @@ static double lock_mean(const dt_cc_code *enc, const dt_cc_code *dec,
   /* Encode with the encoder. begin + encode, no finalize: the lock
    * metric reads only the streaming output, so the flush tail is unnecessary
    * (and omitting it keeps this measurement identical to the original). */
-  dt_encoder *e = dt_cc_encoder_create(enc);
+  dt_stream_encoder *e = dt_cc_encoder_create(enc);
   int written = e->begin(e, coded, clen);
   written += e->encode(e, coded + written, clen - written, msg, info_bits);
   dt_cc_encoder_destroy(e);
@@ -266,13 +266,13 @@ static double lock_mean(const dt_cc_code *enc, const dt_cc_code *dec,
                              .p_ins_false = 0.005,
                              .p_del = 0.01,
                              .p_ovr_erase = 0.0};
-  dt_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(dec, &params);
+  dt_stream_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(dec, &params);
   if (!sd) {
     free(coded);
     return 1.0; /* treat as worst case (indistinguishable) */
   }
   const int cap = info_bits + 64;
-  dt_soft_decoder_out *soft = xmalloc((size_t)cap * sizeof(*soft));
+  dt_stream_soft_decoder_out *soft = xmalloc((size_t)cap * sizeof(*soft));
   int got = sd->decode(sd, soft, (size_t)cap, coded, (size_t)written);
 
   double result = 1.0;

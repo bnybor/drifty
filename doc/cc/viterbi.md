@@ -33,8 +33,8 @@ If your channel inserts or drops bits, use [`vindel`](vindel.md),
 ```c
 #include <drifty/cc/viterbi.h>
 
-dt_decoder *dt_cc_viterbi_decoder_create(const dt_cc_code *code);
-void        dt_cc_viterbi_decoder_destroy(dt_decoder *dec);
+dt_stream_decoder *dt_cc_viterbi_decoder_create(const dt_cc_code *code);
+void        dt_cc_viterbi_decoder_destroy(dt_stream_decoder *dec);
 ```
 
 There are no channel-model parameters: the decoder is configured entirely by the
@@ -43,7 +43,7 @@ standalone encoder in `<drifty/cc/encoder.h>` (`dt_cc_encoder_*`).
 
 ## Driving the decoder
 
-Drive the returned `dt_decoder` through its vtable (see `<drifty/decoder.h>`):
+Drive the returned `dt_stream_decoder` through its vtable (see `<drifty/decoder.h>`):
 
 ```c
 dec->begin(dec, dst, dst_len);                       // once, first

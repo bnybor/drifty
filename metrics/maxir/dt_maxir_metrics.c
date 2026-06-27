@@ -480,7 +480,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   /* Encode with the encoder: begin, then encode, then finalize
    * (which writes the flush tail). */
   const int coded_cap = (info_bits + m.constraint_len) * m.code_n;
-  dt_encoder *encoder = dt_cc_encoder_create(code);
+  dt_stream_encoder *encoder = dt_cc_encoder_create(code);
   if (!encoder) {
     fprintf(stderr, "dt_cc_maxir_metrics: encoder create failed\n");
     exit(1);
@@ -504,11 +504,11 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
    * `finalize`). */
   const int decoded_cap = info_bits + 256;
   uint8_t *decoded = NULL;
-  dt_soft_decoder_out *soft = NULL;
+  dt_stream_soft_decoder_out *soft = NULL;
   int n_stream = 0, n_decoded;
   if (which_metric == METRIC_EDIT) {
     decoded = xmalloc((size_t)decoded_cap);
-    dt_decoder *dec = dt_cc_maxir_decoder_create(code, &m.params);
+    dt_stream_decoder *dec = dt_cc_maxir_decoder_create(code, &m.params);
     if (!dec) {
       fprintf(stderr, "dt_cc_maxir_metrics: decoder create failed\n");
       exit(1);
@@ -535,7 +535,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
     dt_cc_maxir_decoder_destroy(dec);
   } else { /* METRIC_LOCK */
     soft = xmalloc((size_t)decoded_cap * sizeof(*soft));
-    dt_soft_decoder *sd = dt_cc_maxir_soft_decoder_create(code, &m.params);
+    dt_stream_soft_decoder *sd = dt_cc_maxir_soft_decoder_create(code, &m.params);
     if (!sd) {
       fprintf(stderr, "dt_cc_maxir_metrics: decoder create failed\n");
       exit(1);

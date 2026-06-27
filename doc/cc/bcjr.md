@@ -48,14 +48,14 @@ typedef struct {
 } dt_cc_bcjr_stream_params;
 
 /* hard decision */
-dt_decoder      *dt_cc_bcjr_decoder_create(const dt_cc_code *code,
+dt_stream_decoder      *dt_cc_bcjr_decoder_create(const dt_cc_code *code,
                                            const dt_cc_bcjr_stream_params *params);
-void             dt_cc_bcjr_decoder_destroy(dt_decoder *dec);
+void             dt_cc_bcjr_decoder_destroy(dt_stream_decoder *dec);
 
 /* soft output */
-dt_soft_decoder *dt_cc_bcjr_soft_decoder_create(const dt_cc_code *code,
+dt_stream_soft_decoder *dt_cc_bcjr_soft_decoder_create(const dt_cc_code *code,
                                                 const dt_cc_bcjr_stream_params *params);
-void             dt_cc_bcjr_soft_decoder_destroy(dt_soft_decoder *dec);
+void             dt_cc_bcjr_soft_decoder_destroy(dt_stream_soft_decoder *dec);
 ```
 
 Both factories take the same `params` (copied; need not outlive the call). The
@@ -83,7 +83,7 @@ and `<drifty/soft_decoder.h>`.
 
 ### Soft output
 
-`bcjr` populates the **full** `dt_soft_decoder_out` alphabet. Each field is a
+`bcjr` populates the **full** `dt_stream_soft_decoder_out` alphabet. Each field is a
 graded consistency in `[0, 1]` (not a probability split, so the fields need not
 sum to 1):
 

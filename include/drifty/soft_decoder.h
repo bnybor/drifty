@@ -46,8 +46,8 @@ extern "C" {
  * c_invalid and c_absent at 0, while the max-log-MAP codecs (bcjr, maxir)
  * populate the full alphabet.
  */
-typedef struct dt_soft_decoder_out_t dt_soft_decoder_out;
-struct dt_soft_decoder_out_t {
+typedef struct dt_stream_soft_decoder_out_t dt_stream_soft_decoder_out;
+struct dt_stream_soft_decoder_out_t {
   // Consistency that the bit position holds false (DT_FALSE)
   float c_false;
   // Consistency that the bit position holds true (DT_TRUE)
@@ -65,8 +65,8 @@ struct dt_soft_decoder_out_t {
 };
 
 /*
- * dt_soft_decoder - like dt_decoder, but each recovered position is reported as
- * a dt_soft_decoder_out record of consistencies rather than a single hard bit.
+ * dt_stream_soft_decoder - like dt_stream_decoder, but each recovered position is reported as
+ * a dt_stream_soft_decoder_out record of consistencies rather than a single hard bit.
  * It is driven and behaves identically otherwise: the same begin / decode /
  * finalize phases, the same warm-up delay, and the same buffering - a decode
  * call that returns exactly `dst_len` records has more buffered, so call again
@@ -78,15 +78,15 @@ struct dt_soft_decoder_out_t {
  * not touch it. Build one with dt_cc_hybrid_soft_decoder_create() and free it with
  * the matching _destroy().
  */
-typedef struct dt_soft_decoder_t dt_soft_decoder;
-struct dt_soft_decoder_t {
+typedef struct dt_stream_soft_decoder_t dt_stream_soft_decoder;
+struct dt_stream_soft_decoder_t {
   // Initialise the decoder and write any preamble. Call once, before decode().
-  int (*begin)(dt_soft_decoder *dec, dt_bit *dst, size_t dst_len);
+  int (*begin)(dt_stream_soft_decoder *dec, dt_bit *dst, size_t dst_len);
   // Decode src_len received bits, writing up to dst_len soft records to dst.
-  int (*decode)(dt_soft_decoder *dec, dt_soft_decoder_out *dst, size_t dst_len,
+  int (*decode)(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst, size_t dst_len,
                 const dt_bit *src, size_t src_len);
   // Drain records still in flight. Call once, at end of stream.
-  int (*finalize)(dt_soft_decoder *dec, dt_soft_decoder_out *dst,
+  int (*finalize)(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
                   size_t dst_len);
 
   // implementation-private state; do not access

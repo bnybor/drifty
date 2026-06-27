@@ -36,7 +36,7 @@
 #define DT_CC_BCJR_TEST_UTIL_H
 
 #include <cc/bcjr/decode.h>
-#include <cc/bcjr/encode.h>
+#include <cc/full_encoder/encode.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -104,8 +104,8 @@ static inline int bcjr_encode_all(const dt_cc_code *code, const uint8_t *msg,
                                   int info_bits, uint8_t *out) {
   int state = 0;
   unsigned int unknown = 0;
-  int len = dt_cc_bcjr_encode(code, msg, info_bits, &state, &unknown, out);
-  len += dt_cc_bcjr_encode_flush(code, &state, &unknown, out + len);
+  int len = dt_cc_full_encoder_encode(code, msg, info_bits, &state, &unknown, out);
+  len += dt_cc_full_encoder_flush(code, &state, &unknown, out + len);
   return len;
 }
 

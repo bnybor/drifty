@@ -26,7 +26,7 @@
 
 /*
  * Tests for the viterbi codec - a plain Viterbi hard-decision decoder - through
- * its encoder (dt_cc_viterbi_encode) and streaming decoder (dt_cc_viterbi_stream_*):
+ * its encoder (dt_cc_basic_encoder_encode) and streaming decoder (dt_cc_viterbi_stream_*):
  * chunked encoding, clean decoding, flip correction, erasure handling, the
  * standard presets, and argument handling. Bits crossing the API are dt_bit
  * symbols (DT_FALSE / DT_TRUE / DT_ERASURE).
@@ -64,20 +64,20 @@ static void test_encode_stream(void) {
 
   uint8_t *ref = malloc((size_t)total_len);
   int rstate = 0, ri = 0;
-  ri += dt_cc_viterbi_encode(code, msg, n_info, &rstate, ref);
-  ri += dt_cc_viterbi_encode_flush(code, &rstate, ref + ri);
+  ri += dt_cc_basic_encoder_encode(code, msg, n_info, &rstate, ref);
+  ri += dt_cc_basic_encoder_flush(code, &rstate, ref + ri);
   check("one-shot length and end state", ri == total_len && rstate == 0);
 
   uint8_t *out = malloc((size_t)total_len);
   int state = 0, oi = 0;
   const int n1 = 80, n2 = n_info - n1;
-  int w = dt_cc_viterbi_encode(code, msg, n1, &state, out);
+  int w = dt_cc_basic_encoder_encode(code, msg, n1, &state, out);
   check("chunk 1 length", w == n1 * N_GEN);
   oi += w;
-  w = dt_cc_viterbi_encode(code, msg + n1, n2, &state, out + oi);
+  w = dt_cc_basic_encoder_encode(code, msg + n1, n2, &state, out + oi);
   check("chunk 2 length", w == n2 * N_GEN);
   oi += w;
-  w = dt_cc_viterbi_encode_flush(code, &state, out + oi);
+  w = dt_cc_basic_encoder_flush(code, &state, out + oi);
   check("flush length", w == FLUSH * N_GEN);
   oi += w;
 
@@ -300,7 +300,7 @@ static void test_error_paths(void) {
   uint8_t bit = DT_TRUE, obuf[N_GEN];
   int badstate = 1 << 20;
   check("encode rejects bad state",
-        dt_cc_viterbi_encode(code, &bit, 1, &badstate, obuf) == DT_CC_ERR_ARG);
+        dt_cc_basic_encoder_encode(code, &bit, 1, &badstate, obuf) == DT_CC_ERR_ARG);
 
   /* Decoder creation rejects a null code (it takes no other arguments). */
   check("decoder rejects null code",

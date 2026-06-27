@@ -28,11 +28,11 @@
 #define DRIFTY_VINDEL_DECODE_H
 
 /* The vindel decoder is a drift-tolerant Viterbi decoder. It is built from a
- * dt_cc_code and shares the result codes defined alongside the encoder;
+ * dt_cc_code and shares the cc result codes;
  * dt_cc_vindel_stream_decoder_create takes the dt_cc_vindel_stream_params channel
  * model, which lives in <drifty/cc/vindel.h>. */
 #include <drifty/cc/vindel.h>
-#include "encode.h"
+#include "../result.h"
 
 #include <stdint.h>
 

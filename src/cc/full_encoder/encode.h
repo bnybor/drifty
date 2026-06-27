@@ -24,12 +24,13 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_FULL_ENCODE_H
-#define DRIFTY_FULL_ENCODE_H
+#ifndef DRIFTY_CC_FULL_ENCODER_H
+#define DRIFTY_CC_FULL_ENCODER_H
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../result.h" /* DT_CC_OK / DT_CC_ERR_* */
 #include <drifty/bit.h>
 #include <drifty/cc/ccode.h> /* dt_cc_code (the code handle these functions take) */
 
@@ -52,8 +53,8 @@ extern "C" {
  *   // encode (in one or more chunks)
  *   int state = 0;
  *   unsigned int unknown = 0;
- *   int len  = dt_cc_full_encode(code, bits, n_bits, &state, &unknown, out);
- *   len     += dt_cc_full_encode_flush(code, &state, &unknown, out + len);
+ *   int len  = dt_cc_full_encoder_encode(code, bits, n_bits, &state, &unknown, out);
+ *   len     += dt_cc_full_encoder_flush(code, &state, &unknown, out + len);
  *
  *   dt_cc_code_destroy(code);
  *
@@ -61,13 +62,6 @@ extern "C" {
  * Functions return DT_CC_OK (0) or a count on success, or a negative DT_CC_ERR_* code.
  */
 /* clang-format on */
-
-/* Result codes for functions that don't return a count. */
-enum {
-  DT_CC_OK = 0,
-  DT_CC_ERR_ARG = -1,  /* a bad argument was passed */
-  DT_CC_ERR_ALLOC = -2 /* ran out of memory         */
-};
 
 /* ------------------------------------------------------------------------- */
 /* Encoder                                                                   */
@@ -86,21 +80,22 @@ enum {
  * `unsigned int unknown` (the in-flight poison register), set both to 0 before
  * the first call, and pass the same variables to every call - so you can encode
  * in as many chunks as you like. When the whole message is encoded, call
- * dt_cc_full_encode_flush() once to finish it.
+ * dt_cc_full_encoder_flush() once to finish it.
  *
  * Returns the number of bits written, or DT_CC_ERR_ARG.
  */
-int dt_cc_full_encode(const dt_cc_code *code, const uint8_t *bits, int n_bits,
-                   int *state, unsigned int *unknown, uint8_t *out);
+int dt_cc_full_encoder_encode(const dt_cc_code *code, const uint8_t *bits,
+                              int n_bits, int *state, unsigned int *unknown,
+                              uint8_t *out);
 
 /*
  * Finish an encoded stream: writes (K-1) * dt_cc_code_n(code) trailing bits so the
  * decoder can recover the last input bits cleanly. Pass the same `state` and
- * `unknown` you gave dt_cc_full_encode(). Returns the number of bits written, or
- * DT_CC_ERR_ARG.
+ * `unknown` you gave dt_cc_full_encoder_encode(). Returns the number of bits
+ * written, or DT_CC_ERR_ARG.
  */
-int dt_cc_full_encode_flush(const dt_cc_code *code, int *state, unsigned int *unknown,
-                         uint8_t *out);
+int dt_cc_full_encoder_flush(const dt_cc_code *code, int *state,
+                             unsigned int *unknown, uint8_t *out);
 
 #ifdef __cplusplus
 }

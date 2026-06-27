@@ -37,7 +37,7 @@
 
 #include <drifty/cc/encoders.h>
 
-#include "encode.h" /* dt_cc_full_encode + dt_cc_full_encode_flush */
+#include "encode.h" /* dt_cc_full_encoder_encode + dt_cc_full_encoder_flush */
 #include <drifty/stdlib.h>
 
 /* dt_bit is uint8_t (bit.h), the same element type the engine's encode buffers
@@ -68,7 +68,7 @@ static int cc_full_encoder_encode(dt_encoder *enc, dt_bit *dst, size_t dst_len,
   if ((size_t)dt_cc_code_n(st->code) * src_len > dst_len) {
     return DT_CC_ERR_ARG;
   }
-  return dt_cc_full_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
+  return dt_cc_full_encoder_encode(st->code, src, (int)src_len, &st->state, &st->unknown,
                         dst);
 }
 
@@ -79,7 +79,7 @@ static int cc_full_encoder_finalize(dt_encoder *enc, dt_bit *dst, size_t dst_len
       dst_len) {
     return DT_CC_ERR_ARG;
   }
-  return dt_cc_full_encode_flush(st->code, &st->state, &st->unknown, dst);
+  return dt_cc_full_encoder_flush(st->code, &st->state, &st->unknown, dst);
 }
 
 dt_encoder *dt_cc_full_encoder_create(const dt_cc_code *code) {

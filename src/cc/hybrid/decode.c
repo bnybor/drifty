@@ -26,6 +26,7 @@
 
 #include "decode.h"
 
+#include <drifty/bit.h>
 #include <drifty/stdlib.h>
 
 #include <math.h>

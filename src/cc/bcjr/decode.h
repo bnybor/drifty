@@ -27,11 +27,11 @@
 #ifndef DRIFTY_BCJR_DECODE_H
 #define DRIFTY_BCJR_DECODE_H
 
-/* The decoder is built from a dt_cc_code and shares the result codes defined
- * alongside the encoder. dt_cc_bcjr_stream_decoder_create takes the
- * dt_cc_bcjr_stream_params channel model, which lives in <drifty/cc/bcjr.h>. */
+/* The decoder is built from a dt_cc_code and shares the cc result codes.
+ * dt_cc_bcjr_stream_decoder_create takes the dt_cc_bcjr_stream_params channel
+ * model, which lives in <drifty/cc/bcjr.h>. */
 #include <drifty/cc/bcjr.h>
-#include "encode.h"
+#include "../result.h"
 
 #include <stdint.h>
 

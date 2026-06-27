@@ -27,9 +27,9 @@
 #ifndef DRIFTY_VITERBI_DECODE_H
 #define DRIFTY_VITERBI_DECODE_H
 
-/* The decoder is built from a dt_cc_code and shares the result codes defined
- * alongside the encoder. */
-#include "encode.h"
+/* The decoder is built from a dt_cc_code and shares the cc result codes. */
+#include "../result.h"
+#include <drifty/cc/ccode.h>
 
 #include <stdint.h>
 

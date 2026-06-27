@@ -27,11 +27,11 @@
 #ifndef DRIFTY_MAXIR_DECODE_H
 #define DRIFTY_MAXIR_DECODE_H
 
-/* The decoder is built from a dt_cc_code and shares the result codes defined
- * alongside the encoder. dt_cc_maxir_stream_decoder_create takes the
- * dt_cc_maxir_stream_params channel model, which lives in <drifty/cc/maxir.h>. */
+/* The decoder is built from a dt_cc_code and shares the cc result codes.
+ * dt_cc_maxir_stream_decoder_create takes the dt_cc_maxir_stream_params channel
+ * model, which lives in <drifty/cc/maxir.h>. */
 #include <drifty/cc/maxir.h>
-#include "encode.h"
+#include "../result.h"
 
 #include <stdint.h>
 

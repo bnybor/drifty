@@ -76,9 +76,9 @@ static void test_encode_length_and_chunked(void) {
     /* Same message, encoded as 80 + 120 through one running state, then flush. */
     int state = 0, len_two = 0;
     unsigned int unknown = 0;
-    len_two += dt_cc_bcjr_encode(code, msg, 80, &state, &unknown, two);
-    len_two += dt_cc_bcjr_encode(code, msg + 80, 120, &state, &unknown, two + len_two);
-    int flushed = dt_cc_bcjr_encode_flush(code, &state, &unknown, two + len_two);
+    len_two += dt_cc_full_encoder_encode(code, msg, 80, &state, &unknown, two);
+    len_two += dt_cc_full_encoder_encode(code, msg + 80, 120, &state, &unknown, two + len_two);
+    int flushed = dt_cc_full_encoder_flush(code, &state, &unknown, two + len_two);
     len_two += flushed;
 
     check(PRESET_NAMES[p], 1);
@@ -107,20 +107,20 @@ static void test_encode_error_paths(void) {
   unsigned int unknown = 0;
 
   check("encode rejects NULL code",
-        dt_cc_bcjr_encode(NULL, msg, 4, &state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_full_encoder_encode(NULL, msg, 4, &state, &unknown, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL state",
-        dt_cc_bcjr_encode(code, msg, 4, NULL, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_full_encoder_encode(code, msg, 4, NULL, &unknown, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL unknown",
-        dt_cc_bcjr_encode(code, msg, 4, &state, NULL, out) == DT_CC_ERR_ARG);
+        dt_cc_full_encoder_encode(code, msg, 4, &state, NULL, out) == DT_CC_ERR_ARG);
   check("encode rejects NULL out",
-        dt_cc_bcjr_encode(code, msg, 4, &state, &unknown, NULL) == DT_CC_ERR_ARG);
+        dt_cc_full_encoder_encode(code, msg, 4, &state, &unknown, NULL) == DT_CC_ERR_ARG);
   check("encode rejects negative n_bits",
-        dt_cc_bcjr_encode(code, msg, -1, &state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_full_encoder_encode(code, msg, -1, &state, &unknown, out) == DT_CC_ERR_ARG);
   int bad_state = 999999;
   check("encode rejects out-of-range state",
-        dt_cc_bcjr_encode(code, msg, 4, &bad_state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_full_encoder_encode(code, msg, 4, &bad_state, &unknown, out) == DT_CC_ERR_ARG);
   check("flush rejects NULL code",
-        dt_cc_bcjr_encode_flush(NULL, &state, &unknown, out) == DT_CC_ERR_ARG);
+        dt_cc_full_encoder_flush(NULL, &state, &unknown, out) == DT_CC_ERR_ARG);
 
   dt_cc_code_destroy(code);
 }

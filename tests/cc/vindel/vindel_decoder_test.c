@@ -26,7 +26,7 @@
 
 /*
  * Tests for the vindel codec, exercised
- * through its encoder (dt_cc_vindel_encode) and streaming decoder
+ * through its encoder (dt_cc_basic_encoder_encode) and streaming decoder
  * (dt_cc_vindel_stream_*): chunked encoding, clean and noisy stream decoding
  * (erasures, indels, re-anchoring, blind acquisition), the standard presets,
  * lock probability, and argument handling. Bits crossing the API are dt_bit
@@ -58,20 +58,20 @@ static void test_encode_stream(void) {
 
   uint8_t *ref = malloc((size_t)total_len);
   int rstate = 0, ri = 0;
-  ri += dt_cc_vindel_encode(code, msg, n_info, &rstate, ref);
-  ri += dt_cc_vindel_encode_flush(code, &rstate, ref + ri);
+  ri += dt_cc_basic_encoder_encode(code, msg, n_info, &rstate, ref);
+  ri += dt_cc_basic_encoder_flush(code, &rstate, ref + ri);
   check("one-shot length and end state", ri == total_len && rstate == 0);
 
   uint8_t *out = malloc((size_t)total_len);
   int state = 0, oi = 0;
   const int n1 = 80, n2 = n_info - n1;
-  int w = dt_cc_vindel_encode(code, msg, n1, &state, out);
+  int w = dt_cc_basic_encoder_encode(code, msg, n1, &state, out);
   check("chunk 1 length", w == n1 * N_GEN);
   oi += w;
-  w = dt_cc_vindel_encode(code, msg + n1, n2, &state, out + oi);
+  w = dt_cc_basic_encoder_encode(code, msg + n1, n2, &state, out + oi);
   check("chunk 2 length", w == n2 * N_GEN);
   oi += w;
-  w = dt_cc_vindel_encode_flush(code, &state, out + oi);
+  w = dt_cc_basic_encoder_flush(code, &state, out + oi);
   check("flush length", w == (K - 1) * N_GEN);
   oi += w;
 
@@ -100,7 +100,7 @@ static void test_stream_clean(void) {
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
   check("encode length",
-        dt_cc_vindel_encode(code, msg, n_info, &st, coded) == clen);
+        dt_cc_basic_encoder_encode(code, msg, n_info, &st, coded) == clen);
 
   dt_cc_vindel_stream_decoder *sd =
       make_decoder(code, 40, 4, 0.01, 0.01, 0.01, 0.0);
@@ -135,7 +135,7 @@ static void test_stream_erasures(void) {
   int clen = n_info * N_GEN;
   uint8_t *rx = malloc((size_t)clen);
   int st = 0;
-  check("encode length", dt_cc_vindel_encode(code, msg, n_info, &st, rx) == clen);
+  check("encode length", dt_cc_basic_encoder_encode(code, msg, n_info, &st, rx) == clen);
   for (int i = 700; i < 716; ++i) rx[i] = DT_ERASURE; /* 16-bit burst */
 
   dt_cc_vindel_stream_decoder *sd =
@@ -172,7 +172,7 @@ static void test_stream_reanchor(void) {
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
   check("encode length",
-        dt_cc_vindel_encode(code, msg, n_info, &st, coded) == clen);
+        dt_cc_basic_encoder_encode(code, msg, n_info, &st, coded) == clen);
 
   /* Delete one coded bit every 100 -> ~20 deletions, cumulative drift ~ -20. */
   const int del_period = 100;
@@ -232,7 +232,7 @@ static void test_stream_midgroup_indel(void) {
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
   check("encode length",
-        dt_cc_vindel_encode(code, msg, n_info, &st, coded) == clen);
+        dt_cc_basic_encoder_encode(code, msg, n_info, &st, coded) == clen);
 
   /* Drop a bit at phase 2 and insert one at phase 62 of every 120 coded bits.
    * 120 is a multiple of N_GEN, so both land at offset 2 within a group - mid
@@ -295,7 +295,7 @@ static void test_standard_code(void) {
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
   check("encode length",
-        dt_cc_vindel_encode(code, msg, n_info, &st, coded) == clen);
+        dt_cc_basic_encoder_encode(code, msg, n_info, &st, coded) == clen);
 
   dt_cc_vindel_stream_decoder *sd =
       make_decoder(code, 48, 4, 0.01, 0.01, 0.01, 0.0);
@@ -335,7 +335,7 @@ static void test_blind_acquisition(void) {
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
   check("encode length",
-        dt_cc_vindel_encode(code, msg, n_info, &st, coded) == clen);
+        dt_cc_basic_encoder_encode(code, msg, n_info, &st, coded) == clen);
 
   /* Start decoding from input step 100 (a group boundary), where the encoder
    * state is some unknown non-zero value. */
@@ -387,7 +387,7 @@ static void test_stream_flips_only(void) {
   int clen = n_info * N_GEN;
   uint8_t *rx = malloc((size_t)clen);
   int st = 0;
-  check("encode length", dt_cc_vindel_encode(code, msg, n_info, &st, rx) == clen);
+  check("encode length", dt_cc_basic_encoder_encode(code, msg, n_info, &st, rx) == clen);
 
   int flips[] = {123, 400, 777, 1100, 1450};
   const int nflip = (int)(sizeof(flips) / sizeof(flips[0]));
@@ -451,7 +451,7 @@ static void test_all_presets(void) {
     int clen = n_info * presets[idx].n;
     uint8_t *coded = malloc((size_t)clen);
     int st = 0;
-    if (dt_cc_vindel_encode(code, msg, n_info, &st, coded) != clen) {
+    if (dt_cc_basic_encoder_encode(code, msg, n_info, &st, coded) != clen) {
       all_ok = 0;
     }
 
@@ -492,7 +492,7 @@ static void test_lock_probability(void) {
   uint8_t *coded = malloc((size_t)clen);
   int st = 0;
   check("encode length",
-        dt_cc_vindel_encode(code, msg, n_info, &st, coded) == clen);
+        dt_cc_basic_encoder_encode(code, msg, n_info, &st, coded) == clen);
 
   int cap = n_info + 32;
   uint8_t *out = malloc((size_t)cap);
@@ -664,7 +664,7 @@ static void test_error_paths(void) {
   uint8_t bit = DT_TRUE, obuf[N_GEN];
   int badstate = 1 << 20;
   check("encode rejects bad state",
-        dt_cc_vindel_encode(code, &bit, 1, &badstate, obuf) == DT_CC_ERR_ARG);
+        dt_cc_basic_encoder_encode(code, &bit, 1, &badstate, obuf) == DT_CC_ERR_ARG);
 
   /* Decoder creation rejects bad settings by returning NULL. */
   dt_cc_vindel_stream_params ok = {

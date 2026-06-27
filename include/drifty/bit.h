@@ -38,7 +38,7 @@ extern "C" {
  * coded, received, or recovered - is one byte holding one of the six DT_ symbols
  * below (one symbol per byte, never a packed bitfield). The native unit is the
  * *position*; a *value* is a property a position may or may not carry, which is
- * why the alphabet is richer than {0, 1}. See drifty-data-flow-semantics.md for
+ * why the alphabet is richer than {0, 1}. See doc/data_flow_semantics.md for
  * the full per-interface treatment.
  *
  *   DT_FALSE, DT_TRUE - a bound boolean: value 0 / 1.

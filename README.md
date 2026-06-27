@@ -48,7 +48,7 @@ Bits are carried one per byte as `dt_bit` symbols (defined in `<drifty/bit.h>`):
 is unspecified (a *don't-care* on the way in, a *don't-know* on the way out), and
 `DT_INVALID` for a deliberate non-value; a decoder may additionally emit
 `DT_ABSENT` for a position it infers was dropped in transit. See
-[Data-flow semantics](drifty-data-flow-semantics.md) for the complete symbol model
+[Data-flow semantics](doc/data_flow_semantics.md) for the complete symbol model
 — the transmit vs output domains and what each stage consumes and produces.
 
 ## Choosing a codec

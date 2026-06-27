@@ -58,6 +58,7 @@
  * Usage: dt_metrics [trials] [info_bits] [seed]
  */
 
+#include <drifty/cc/encoders.h>
 #include <drifty/cc/hybrid.h>
 
 #include <limits.h>
@@ -476,10 +477,10 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
   for (int i = 0; i < info_bits; ++i) {
     message[i] = bit_sym((unsigned int)rng_next(rng));
   }
-  /* Encode with the public hybrid encoder: begin, then encode, then finalize
+  /* Encode with the basic encoder: begin, then encode, then finalize
    * (which writes the flush tail). */
   const int coded_cap = (info_bits + m.constraint_len) * m.code_n;
-  dt_encoder *encoder = dt_hybrid_encoder_create(code);
+  dt_encoder *encoder = dt_cc_basic_encoder_create(code);
   if (!encoder) {
     fprintf(stderr, "dt_metrics: encoder create failed\n");
     exit(1);
@@ -490,7 +491,7 @@ static trial_result run_one_trial(const dt_ccode *code, axis channel_axis,
                                (size_t)info_bits);
   coded_len += encoder->finalize(encoder, coded + coded_len,
                                  (size_t)(coded_cap - coded_len));
-  dt_hybrid_encoder_destroy(encoder);
+  dt_cc_basic_encoder_destroy(encoder);
 
   uint8_t *received = NULL;
   int received_len = apply_channel(coded, coded_len, channel_sub, channel_ins,

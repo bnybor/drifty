@@ -54,6 +54,7 @@
  * Usage: dt_codesearch [trials] [info_bits] [seed] [pool]
  */
 
+#include <drifty/cc/encoders.h>
 #include <drifty/cc/hybrid.h>
 
 #include <stdint.h>
@@ -250,13 +251,13 @@ static double lock_mean(const dt_ccode *enc, const dt_ccode *dec,
   const int clen = info_bits * dt_ccode_n(enc);
   uint8_t *coded = xmalloc((size_t)clen);
 
-  /* Encode with the public hybrid encoder. begin + encode, no finalize: the lock
+  /* Encode with the basic encoder. begin + encode, no finalize: the lock
    * metric reads only the streaming output, so the flush tail is unnecessary
    * (and omitting it keeps this measurement identical to the original). */
-  dt_encoder *e = dt_hybrid_encoder_create(enc);
+  dt_encoder *e = dt_cc_basic_encoder_create(enc);
   int written = e->begin(e, coded, clen);
   written += e->encode(e, coded + written, clen - written, msg, info_bits);
-  dt_hybrid_encoder_destroy(e);
+  dt_cc_basic_encoder_destroy(e);
 
   dt_hybrid_stream_params params = {.decision_depth = depth,
                              .max_drift = 4,

@@ -24,12 +24,11 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_HYBRID_H
-#define DRIFTY_HYBRID_H
+#ifndef DRIFTY_CC_HYBRID_H
+#define DRIFTY_CC_HYBRID_H
 
 #include <drifty/cc/ccode.h>
 #include <drifty/decoder.h>
-#include <drifty/encoder.h>
 #include <drifty/soft_decoder.h>
 
 #ifdef __cplusplus
@@ -41,10 +40,10 @@ extern "C" {
  * the encoder / decoder / soft-decoder interfaces. This is the single header to
  * include for the whole public API.
  *
- * Build a codec object over a dt_ccode with one of the factories below, drive
- * it through its vtable (see encoder.h / decoder.h / soft_decoder.h), and free
- * it with the matching _destroy(). The code must outlive everything built from
- * it.
+ * Build a decoder over a dt_ccode with one of the factories below, drive it
+ * through its vtable (see decoder.h / soft_decoder.h), and free it with the
+ * matching _destroy(). The code must outlive everything built from it. To
+ * encode, use the standalone basic encoder in <drifty/cc/encoders.h>.
  */
 
 /* clang-format off */
@@ -97,12 +96,6 @@ typedef struct {
   float p_ovr_erase;
 } dt_hybrid_stream_params;
 
-/* Build an encoder over `code`. Returns NULL on a bad argument or out of
- * memory. */
-dt_encoder *dt_hybrid_encoder_create(const dt_ccode *code);
-/* Free an encoder from dt_hybrid_encoder_create(). Passing NULL is fine. */
-void dt_hybrid_encoder_destroy(dt_encoder *enc);
-
 /* Build a hard-decision decoder over `code` with the channel model in `params`.
  * `params` is copied and need not outlive the call. Returns NULL on a bad
  * argument (including an invalid `params`) or out of memory. */
@@ -123,4 +116,4 @@ void dt_hybrid_soft_decoder_destroy(dt_soft_decoder *dec);
 }
 #endif
 
-#endif /* DRIFTY_HYBRID_H */
+#endif /* DRIFTY_CC_HYBRID_H */

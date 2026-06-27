@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_BCJR_H
-#define DRIFTY_BCJR_H
+#ifndef DRIFTY_CC_BCJR_H
+#define DRIFTY_CC_BCJR_H
 
 #include <drifty/cc/ccode.h>
 #include <drifty/decoder.h>
@@ -98,4 +98,4 @@ void dt_bcjr_soft_decoder_destroy(dt_soft_decoder *dec);
 }
 #endif
 
-#endif /* DRIFTY_BCJR_H */
+#endif /* DRIFTY_CC_BCJR_H */

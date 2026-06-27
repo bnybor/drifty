@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_MAXIR_H
-#define DRIFTY_MAXIR_H
+#ifndef DRIFTY_CC_MAXIR_H
+#define DRIFTY_CC_MAXIR_H
 
 #include <drifty/cc/ccode.h>
 #include <drifty/decoder.h>
@@ -124,4 +124,4 @@ void dt_maxir_soft_decoder_destroy(dt_soft_decoder *dec);
 }
 #endif
 
-#endif /* DRIFTY_MAXIR_H */
+#endif /* DRIFTY_CC_MAXIR_H */

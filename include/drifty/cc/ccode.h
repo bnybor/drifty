@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_CCODE_H
-#define DRIFTY_CCODE_H
+#ifndef DRIFTY_CC_CCODE_H
+#define DRIFTY_CC_CCODE_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,4 +103,4 @@ int dt_ccode_k(const dt_ccode *code);
 }
 #endif
 
-#endif /* DRIFTY_CCODE_H */
+#endif /* DRIFTY_CC_CCODE_H */

@@ -86,7 +86,7 @@ fine — only their relative sizes matter. (The fields match
 
 Hard and soft front ends are driven the same way — `begin` → `decode` (repeat) →
 `finalize` — sharing the warm-up delay and buffering rule (see
-`<drifty/decoder.h>` and `<drifty/soft_decoder.h>`).
+`<drifty/stream_decoder.h>` and `<drifty/stream_soft_decoder.h>`).
 
 ### Soft output
 

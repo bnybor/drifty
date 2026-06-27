@@ -64,7 +64,7 @@ fine — only their relative sizes matter.
 ## Driving the decoder
 
 Identical to every cc decoder — drive the `dt_stream_decoder` vtable through
-`begin` → `decode` (repeat) → `finalize` (see `<drifty/decoder.h>`). Mind the
+`begin` → `decode` (repeat) → `finalize` (see `<drifty/stream_decoder.h>`). Mind the
 **warm-up delay** (first ~`decision_depth` bits are unreliable) and the
 **buffering** rule (a `decode` returning exactly `dst_len` has more buffered —
 call again with `src_len == 0` to drain). Deletions surface on output as

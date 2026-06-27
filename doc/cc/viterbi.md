@@ -43,7 +43,7 @@ standalone encoder in `<drifty/cc/encoder.h>` (`dt_cc_encoder_*`).
 
 ## Driving the decoder
 
-Drive the returned `dt_stream_decoder` through its vtable (see `<drifty/decoder.h>`):
+Drive the returned `dt_stream_decoder` through its vtable (see `<drifty/stream_decoder.h>`):
 
 ```c
 dec->begin(dec, dst, dst_len);                       // once, first

@@ -78,8 +78,8 @@ fine — only their relative sizes matter.
 Hard and soft front ends are driven the same way — `begin` → `decode` (repeat) →
 `finalize` — sharing the warm-up delay (first ~`decision_depth` bits are
 unreliable) and the buffering rule (a `decode` returning exactly `dst_len` has
-more buffered — call again with `src_len == 0` to drain). See `<drifty/decoder.h>`
-and `<drifty/soft_decoder.h>`.
+more buffered — call again with `src_len == 0` to drain). See `<drifty/stream_decoder.h>`
+and `<drifty/stream_soft_decoder.h>`.
 
 ### Soft output
 

@@ -24,28 +24,19 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_CC_ENCODER_H
-#define DRIFTY_CC_ENCODER_H
-
-#include <drifty/cc/ccode.h>
-#include <drifty/stream_encoder.h>
+#ifndef DRIFTY_BLOCK_SOFT_DECODER_H
+#define DRIFTY_BLOCK_SOFT_DECODER_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Build an encoder over `code` - the convolutional encoder every codec
- * encodes through. Input bits are normally DT_FALSE / DT_TRUE; it also carries
- * non-boolean inputs - a DT_INVALID input emits DT_INVALID coded bits (structural
- * poison) and a DT_ERASURE input emits DT_ERASURE coded bits (deferred to the
- * channel) - which decoders that read those markers (e.g. maxir, bcjr) rely on.
- * Returns NULL on a bad argument or out of memory. */
-dt_stream_encoder *dt_cc_encoder_create(const dt_cc_code *code);
-/* Free an encoder from dt_cc_encoder_create(). Passing NULL is fine. */
-void dt_cc_encoder_destroy(dt_stream_encoder *enc);
+/* TODO: the block-oriented soft-decoder interface - the fixed-size-block
+ * counterpart to the streaming dt_stream_soft_decoder in
+ * <drifty/stream_soft_decoder.h>. */
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DRIFTY_CC_ENCODER_H */
+#endif /* DRIFTY_BLOCK_SOFT_DECODER_H */

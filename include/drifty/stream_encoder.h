@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_ENCODER_H
-#define DRIFTY_ENCODER_H
+#ifndef DRIFTY_STREAM_ENCODER_H
+#define DRIFTY_STREAM_ENCODER_H
 
 #include <drifty/bit.h>
 #include <stddef.h>
@@ -79,4 +79,4 @@ struct dt_stream_encoder_t {
 }
 #endif
 
-#endif /* DRIFTY_ENCODER_H */
+#endif /* DRIFTY_STREAM_ENCODER_H */

@@ -28,8 +28,8 @@
 #define DRIFTY_CC_BCJR_H
 
 #include <drifty/cc/ccode.h>
-#include <drifty/decoder.h>
-#include <drifty/soft_decoder.h>
+#include <drifty/stream_decoder.h>
+#include <drifty/stream_soft_decoder.h>
 
 #ifdef __cplusplus
 extern "C" {

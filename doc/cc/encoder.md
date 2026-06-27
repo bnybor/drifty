@@ -49,7 +49,7 @@ built from the same `dt_cc_code` with that codec's `dt_cc_<codec>_decoder_create
 
 ## Driving the encoder
 
-Drive the returned `dt_stream_encoder` through its vtable (see `<drifty/encoder.h>`):
+Drive the returned `dt_stream_encoder` through its vtable (see `<drifty/stream_encoder.h>`):
 
 ```c
 dt_stream_encoder *enc = dt_cc_encoder_create(code);

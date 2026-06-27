@@ -28,7 +28,7 @@
 #define DRIFTY_CC_VINDEL_H
 
 #include <drifty/cc/ccode.h>
-#include <drifty/decoder.h>
+#include <drifty/stream_decoder.h>
 
 #ifdef __cplusplus
 extern "C" {

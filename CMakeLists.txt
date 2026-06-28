@@ -62,6 +62,20 @@ if(DRIFTY_NATIVE)
 endif()
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
 
+# Reed-Solomon outer code (contrib/rs251), compiled into the drifty archives for
+# internal use only. A separate OBJECT library so it keeps its own flags; it is
+# freestanding like the core (brings its own mem* helpers, no libc). Its rs251_* /
+# RS251_* symbols are deliberately absent from the public keep-list below, so the
+# archive localization hides them - callable from drifty internals, never exported.
+add_library(rs251_obj OBJECT contrib/rs251/src/rs251.c)
+target_compile_features(rs251_obj PUBLIC c_std_11)
+target_compile_options(rs251_obj PRIVATE -ffreestanding -fno-builtin)
+target_compile_definitions(rs251_obj PRIVATE RS251_VERSION="0.1.0")
+target_include_directories(rs251_obj PUBLIC contrib/rs251/include)
+
+# Let drifty's own sources #include <rs251/rs251.h> and call into it.
+target_include_directories(drifty_bare_obj PRIVATE contrib/rs251/include)
+
 # Only the public API - the symbols declared in the installed include/ headers -
 # should be exported from the archives. The decoder shares internal helpers across
 # translation units (dt_cc_decode_step, dt_cc_trellis_*, dt_cc_decode_ctx_*), and the full
@@ -136,13 +150,13 @@ endfunction()
 
 # The freestanding core on its own, as libdrifty_bare.a (no stdlib shims -
 # the consumer supplies those, so they stay undefined here).
-dt_add_archive(drifty_bare drifty_bare_obj)
+dt_add_archive(drifty_bare drifty_bare_obj rs251_obj)
 target_link_libraries(drifty_bare PUBLIC drifty_interface)
 target_compile_features(drifty_bare PUBLIC c_std_11)
 
 # The public library: the core and the stdlib shims archived together into one
 # self-contained libdrifty.a. libm is carried through for the shims' math.
-dt_add_archive(drifty drifty_bare_obj drifty_stdlib)
+dt_add_archive(drifty drifty_bare_obj drifty_stdlib rs251_obj)
 target_link_libraries(drifty PUBLIC drifty_interface PRIVATE m)
 target_compile_features(drifty PUBLIC c_std_11)
 add_library(drifty::drifty ALIAS drifty)

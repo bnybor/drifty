@@ -49,7 +49,9 @@ add_library(drifty_bare_obj OBJECT
     src/cc/maxir/decode.c
     src/cc/maxir.c
     src/cc/encoder/encode.c
-    src/cc/encoder/encoder.c)
+    src/cc/encoder/encoder.c
+    src/rs/rs251.c
+    contrib/rs251/src/rs251.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
 # Optional host-specific tuning. -march=native lets the numeric inner loops use
@@ -62,19 +64,16 @@ if(DRIFTY_NATIVE)
 endif()
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
 
-# Reed-Solomon outer code (contrib/rs251), compiled into the drifty archives for
-# internal use only. A separate OBJECT library so it keeps its own flags; it is
-# freestanding like the core (brings its own mem* helpers, no libc). Its rs251_* /
-# RS251_* symbols are deliberately absent from the public keep-list below, so the
-# archive localization hides them - callable from drifty internals, never exported.
-add_library(rs251_obj OBJECT contrib/rs251/src/rs251.c)
-target_compile_features(rs251_obj PUBLIC c_std_11)
-target_compile_options(rs251_obj PRIVATE -ffreestanding -fno-builtin)
-target_compile_definitions(rs251_obj PRIVATE RS251_VERSION="0.1.0")
-target_include_directories(rs251_obj PUBLIC contrib/rs251/include)
-
-# Let drifty's own sources #include <rs251/rs251.h> and call into it.
+# Reed-Solomon outer code from contrib/rs251 is compiled into the core above (its
+# engine source plus the src/rs/ adapter), so it travels with every consumer of
+# drifty_bare_obj (the archives and the tests, which link the objects directly).
+# It is freestanding like the core (brings its own mem* helpers, no libc). The
+# internal rs251_* / RS251_* engine symbols are deliberately absent from the
+# public keep-list below, so the archive localization hides them; only the
+# dt_rs_rs251_* block factories (src/rs/) are exported.
 target_include_directories(drifty_bare_obj PRIVATE contrib/rs251/include)
+set_source_files_properties(contrib/rs251/src/rs251.c PROPERTIES
+    COMPILE_DEFINITIONS "RS251_VERSION=\"0.1.0\"")
 
 # Only the public API - the symbols declared in the installed include/ headers -
 # should be exported from the archives. The decoder shares internal helpers across
@@ -107,7 +106,9 @@ set(_dt_public_symbols
     dt_cc_bcjr_soft_decoder_create dt_cc_bcjr_soft_decoder_destroy
     dt_cc_maxir_decoder_create dt_cc_maxir_decoder_destroy
     dt_cc_maxir_soft_decoder_create dt_cc_maxir_soft_decoder_destroy
-    dt_cc_encoder_create dt_cc_encoder_destroy)
+    dt_cc_encoder_create dt_cc_encoder_destroy
+    dt_rs_rs251_block_encoder_create dt_rs_rs251_block_encoder_destroy
+    dt_rs_rs251_block_decoder_create dt_rs_rs251_block_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")
@@ -150,13 +151,13 @@ endfunction()
 
 # The freestanding core on its own, as libdrifty_bare.a (no stdlib shims -
 # the consumer supplies those, so they stay undefined here).
-dt_add_archive(drifty_bare drifty_bare_obj rs251_obj)
+dt_add_archive(drifty_bare drifty_bare_obj)
 target_link_libraries(drifty_bare PUBLIC drifty_interface)
 target_compile_features(drifty_bare PUBLIC c_std_11)
 
 # The public library: the core and the stdlib shims archived together into one
 # self-contained libdrifty.a. libm is carried through for the shims' math.
-dt_add_archive(drifty drifty_bare_obj drifty_stdlib rs251_obj)
+dt_add_archive(drifty drifty_bare_obj drifty_stdlib)
 target_link_libraries(drifty PUBLIC drifty_interface PRIVATE m)
 target_compile_features(drifty PUBLIC c_std_11)
 add_library(drifty::drifty ALIAS drifty)

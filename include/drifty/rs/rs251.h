@@ -1,0 +1,66 @@
+/* clang-format off */
+/*
+ * MIT License
+ *
+ * Copyright (c) 2026 Robyn Kirkman
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+/* clang-format on */
+
+#ifndef DRIFTY_RS_RS251_H
+#define DRIFTY_RS_RS251_H
+
+#include <drifty/block_decoder.h>
+#include <drifty/block_encoder.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * The rs251 block codec - a Reed-Solomon code over GF(251), presented through
+ * the block encoder / decoder interfaces (<drifty/block_encoder.h>,
+ * <drifty/block_decoder.h>). It is a systematic RS(n, k) code: k information
+ * symbols become an n-symbol codeword with n - k parity symbols, and the decoder
+ * corrects errors and erasures while 2*errors + erasures <= n - k. A natural
+ * outer code for the inner convolutional codecs in <drifty/cc/>.
+ *
+ * Build a codec over a chosen (n, k) with the factories below and free it with
+ * the matching _destroy(). Requires 1 <= k <= n <= 251.
+ */
+
+/* Build a block encoder for the systematic RS(n, k) code. Returns NULL on a bad
+ * argument (n / k out of range) or out of memory. */
+dt_block_encoder *dt_rs_rs251_block_encoder_create(uint16_t n, uint16_t k);
+/* Free an encoder from dt_rs_rs251_block_encoder_create(). Passing NULL is fine. */
+void dt_rs_rs251_block_encoder_destroy(dt_block_encoder *enc);
+
+/* Build a block decoder for the systematic RS(n, k) code - an errors-and-erasures
+ * hard-decision decoder. Returns NULL on a bad argument or out of memory. */
+dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k);
+/* Free a decoder from dt_rs_rs251_block_decoder_create(). Passing NULL is fine. */
+void dt_rs_rs251_block_decoder_destroy(dt_block_decoder *dec);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* DRIFTY_RS_RS251_H */

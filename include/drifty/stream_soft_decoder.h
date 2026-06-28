@@ -53,7 +53,7 @@ extern "C" {
 typedef struct dt_stream_soft_decoder_t dt_stream_soft_decoder;
 struct dt_stream_soft_decoder_t {
   // Initialise the decoder and write any preamble. Call once, before decode().
-  int (*begin)(dt_stream_soft_decoder *dec, dt_bit *dst, size_t dst_len);
+  int (*begin)(dt_stream_soft_decoder *dec, dt_soft_bit *dst, size_t dst_len);
   // Decode src_len received bits, writing up to dst_len soft records to dst.
   int (*decode)(dt_stream_soft_decoder *dec, dt_soft_bit *dst, size_t dst_len,
                 const dt_bit *src, size_t src_len);

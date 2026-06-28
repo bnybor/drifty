@@ -37,9 +37,10 @@ extern "C" {
  * asking the caller to call again. */
 typedef enum dt_result_t {
   DT_OK = 0,
-  DT_ERR_ARG = -1,   /* a bad argument was passed */
-  DT_ERR_ALLOC = -2, /* ran out of memory         */
-  DT_AGAIN = -3
+  DT_ERR_ARG = -1,    /* a bad argument was passed              */
+  DT_ERR_ALLOC = -2,  /* ran out of memory                     */
+  DT_AGAIN = -3,      /* incremental op not finished; call again */
+  DT_ERR_DECODE = -4  /* the input could not be decoded          */
 } dt_result;
 
 #ifdef __cplusplus

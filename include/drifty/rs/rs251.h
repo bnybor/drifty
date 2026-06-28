@@ -45,6 +45,16 @@ extern "C" {
  *
  * Build a codec over a chosen (n, k) with the factories below and free it with
  * the matching _destroy(). Requires 1 <= k <= n <= 251.
+ *
+ * Buffer layout (dt_bit, one symbol per byte; see the block interfaces):
+ *   - The decoded buffer is a whole number of bytes, each 8 dt_bit MSB-first; its
+ *     length is the bytes that fit in k GF(251) symbols, times 8.
+ *   - The encoded buffer is the n codeword symbols, each one GF(251) value as 8
+ *     dt_bit MSB-first, so its length is 8 * n.
+ * On decode, a received symbol whose 8 bits are not all DT_TRUE / DT_FALSE (i.e.
+ * any DT_ERASURE / DT_INVALID / DT_ABSENT), or whose value is not a valid GF(251)
+ * symbol (> 250), is treated as an erasure. decode() returns DT_ERR_DECODE when
+ * the code cannot recover the block (2*errors + erasures > n - k).
  */
 
 /* Build a block encoder for the systematic RS(n, k) code. Returns NULL on a bad

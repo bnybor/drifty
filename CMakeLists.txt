@@ -51,6 +51,7 @@ add_library(drifty_bare_obj OBJECT
     src/cc/encoder/encode.c
     src/cc/encoder/encoder.c
     src/bc/rs251.c
+    src/fc/naive.c
     contrib/rs251/src/rs251.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
@@ -109,7 +110,10 @@ set(_dt_public_symbols
     dt_cc_encoder_create dt_cc_encoder_destroy
     dt_bc_rs251_block_encoder_create dt_bc_rs251_block_encoder_destroy
     dt_bc_rs251_block_decoder_create dt_bc_rs251_block_decoder_destroy
-    dt_bc_rs251_block_soft_decoder_create dt_bc_rs251_block_soft_decoder_destroy)
+    dt_bc_rs251_block_soft_decoder_create dt_bc_rs251_block_soft_decoder_destroy
+    dt_fc_naive_frame_encoder_create dt_fc_naive_frame_encoder_destroy
+    dt_fc_naive_frame_decoder_create dt_fc_naive_frame_decoder_destroy
+    dt_fc_naive_frame_soft_decoder_create dt_fc_naive_frame_soft_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

@@ -64,8 +64,14 @@ dt_block_encoder *dt_rs_rs251_block_encoder_create(uint16_t n, uint16_t k);
 void dt_rs_rs251_block_encoder_destroy(dt_block_encoder *enc);
 
 /* Build a block decoder for the systematic RS(n, k) code - an errors-and-erasures
- * hard-decision decoder. Returns NULL on a bad argument or out of memory. */
-dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k);
+ * hard-decision decoder. `s` is the number of spare (unspent) check symbols
+ * required: a block spends 2*errors + erasures of its n - k check symbols, and a
+ * decode that leaves fewer than `s` of them unspent is rejected as DT_ERR_DECODE
+ * even though the algebra could correct it. Larger `s` trades correction power for
+ * a smaller chance of silent miscorrection; s = 0 uses the full n - k budget.
+ * Requires 0 <= s <= n - k. Returns NULL on a bad argument or out of memory. */
+dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k,
+                                                   uint16_t s);
 /* Free a decoder from dt_rs_rs251_block_decoder_create(). Passing NULL is fine. */
 void dt_rs_rs251_block_decoder_destroy(dt_block_decoder *dec);
 

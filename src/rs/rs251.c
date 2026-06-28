@@ -182,6 +182,8 @@ void dt_rs_rs251_block_encoder_destroy(dt_block_encoder *enc) {
 
 typedef struct {
   rs251_codec codec; /* the underlying RS(n, k) code */
+  uint16_t spare;    /* spare (unspent) check symbols required: reject a decode
+                      * spending more than (n - k) - spare of the budget */
   dt_bit *decoded;   /* owned output buffer: B bytes as bits (B*8 dt_bit) */
   dt_bit *encoded;   /* owned input buffer:  n symbols as bits (n*8 dt_bit) */
 } rs251_block_decoder;
@@ -214,15 +216,28 @@ static dt_result rs251_decoder_decode(dt_block_decoder *dec) {
   gf251_t msg[RS251_MAX_N];
   uint8_t bytes[RS251_MAX_N];
 
+  uint16_t erasures = 0;
   for (uint16_t i = 0; i < n; ++i) {
     recv[i] = pack_symbol(&st->encoded[(size_t)i * 8u]);
+    if (recv[i] == RS251_ERASURE) {
+      ++erasures;
+    }
   }
-  const rs251_status s = rs251_decode(&st->codec, recv, msg, NULL);
+  uint16_t errors = 0;
+  const rs251_status s = rs251_decode(&st->codec, recv, msg, &errors);
   if (s == RS251_ERR_DECODE) {
     return DT_ERR_DECODE;
   }
   if (s != RS251_OK || rs251_message_to_bytes(&st->codec, msg, bytes) != RS251_OK) {
     return DT_ERR_ARG;
+  }
+  /* A block spends 2*errors + erasures of its n - k check symbols; require at
+   * least `spare` of them to be left unspent, else reject the (algebraically
+   * valid) decode to guard against silent miscorrection. */
+  const uint16_t budget = (uint16_t)(st->codec.n - st->codec.k);
+  const uint32_t spent = (uint32_t)2u * errors + erasures;
+  if (spent + st->spare > budget) {
+    return DT_ERR_DECODE;
   }
   for (uint16_t i = 0; i < b; ++i) {
     unpack_byte(bytes[i], &st->decoded[(size_t)i * 8u]);
@@ -235,7 +250,8 @@ static dt_result rs251_decoder_reset(dt_block_decoder *dec) {
   return DT_OK;
 }
 
-dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k) {
+dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k,
+                                                   uint16_t s) {
   dt_block_decoder *dec = dt_malloc(sizeof(*dec));
   rs251_block_decoder *st = dt_malloc(sizeof(*st));
   if (!dec || !st) {
@@ -248,6 +264,14 @@ dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k) {
     dt_free(st);
     return NULL;
   }
+  /* `s` spare check symbols must fit within the n - k budget. (codec_init has
+   * already validated k <= n, so n - k does not underflow.) */
+  if (s > (uint16_t)(st->codec.n - st->codec.k)) {
+    dt_free(dec);
+    dt_free(st);
+    return NULL;
+  }
+  st->spare = s;
   const size_t dec_bytes = (size_t)rs251_message_bytes(&st->codec) * 8u;
   const size_t enc_bytes = (size_t)st->codec.n * 8u;
   st->decoded = dec_bytes ? dt_malloc(dec_bytes) : NULL;

@@ -90,9 +90,10 @@ static void sym_erase(dt_bit *enc, int sym) {
  * encoder's decoded buffer, encode, and copy the codeword into the decoder's
  * encoded buffer. The original message bits are saved to *orig (malloc'd). The
  * encoder is destroyed. Returns 1 iff setup + encode succeeded. */
-static int setup(dt_block_decoder **dec_out, dt_bit **orig_out, size_t *dlen_out) {
+static int setup_s(uint16_t s, dt_block_decoder **dec_out, dt_bit **orig_out,
+                   size_t *dlen_out) {
   dt_block_encoder *enc = dt_rs_rs251_block_encoder_create(N, K);
-  dt_block_decoder *dec = dt_rs_rs251_block_decoder_create(N, K);
+  dt_block_decoder *dec = dt_rs_rs251_block_decoder_create(N, K, s);
   if (!enc || !dec) {
     dt_rs_rs251_block_encoder_destroy(enc);
     dt_rs_rs251_block_decoder_destroy(dec);
@@ -115,6 +116,11 @@ static int setup(dt_block_decoder **dec_out, dt_bit **orig_out, size_t *dlen_out
   return ok;
 }
 
+/* Setup with no spare requirement (the full n - k correction budget). */
+static int setup(dt_block_decoder **dec_out, dt_bit **orig_out, size_t *dlen_out) {
+  return setup_s(0, dec_out, orig_out, dlen_out);
+}
+
 static int recovered(dt_block_decoder *dec, const dt_bit *orig, size_t dlen) {
   return memcmp(dec->decoded_buf(dec), orig, dlen) == 0;
 }
@@ -131,6 +137,16 @@ static void test_lengths(void) {
   check("encoded_len == 8*N", enc->encoded_len(enc) == (size_t)8 * N);
   check("bad params reject", dt_rs_rs251_block_encoder_create(5, 9) == NULL);
   dt_rs_rs251_block_encoder_destroy(enc);
+
+  /* The decoder accepts 0 <= s <= n - k and rejects s > n - k. */
+  dt_block_decoder *d0 = dt_rs_rs251_block_decoder_create(N, K, 0);
+  check("decoder s=0 ok", d0 != NULL);
+  dt_rs_rs251_block_decoder_destroy(d0);
+  dt_block_decoder *dmax = dt_rs_rs251_block_decoder_create(N, K, N - K);
+  check("decoder s=n-k ok", dmax != NULL);
+  dt_rs_rs251_block_decoder_destroy(dmax);
+  check("decoder s>n-k reject",
+        dt_rs_rs251_block_decoder_create(N, K, N - K + 1) == NULL);
 }
 
 static void test_clean(void) {
@@ -213,6 +229,38 @@ static void test_uncorrectable(void) {
   dt_rs_rs251_block_decoder_destroy(dec);
 }
 
+/* With s spare required, a decode may spend at most (n-k) - s of the budget. For
+ * s=2 (budget 8): 6 erasures leave exactly 2 spare and decode; 7 erasures leave
+ * only 1 and are rejected, even though the algebra (7 <= 8) could correct them. */
+static void test_spare(void) {
+  const uint16_t s = 2;
+  dt_block_decoder *dec;
+  dt_bit *orig;
+  size_t dlen;
+
+  if (!check("spare: setup+encode (6 erasures)", setup_s(s, &dec, &orig, &dlen))) {
+    return;
+  }
+  for (int i = 0; i < (N - K) - s; ++i) { /* 6 erasures: leaves 2 spare */
+    sym_erase(dec->encoded_buf(dec), i);
+  }
+  check("spare: 6 erasures decode OK", dec->decode(dec) == DT_OK);
+  check("spare: 6 erasures recovered", recovered(dec, orig, dlen));
+  free(orig);
+  dt_rs_rs251_block_decoder_destroy(dec);
+
+  if (!check("spare: setup+encode (7 erasures)", setup_s(s, &dec, &orig, &dlen))) {
+    return;
+  }
+  for (int i = 0; i < (N - K) - s + 1; ++i) { /* 7 erasures: only 1 spare left */
+    sym_erase(dec->encoded_buf(dec), i);
+  }
+  check("spare: 7 erasures rejected (DT_ERR_DECODE)",
+        dec->decode(dec) == DT_ERR_DECODE);
+  free(orig);
+  dt_rs_rs251_block_decoder_destroy(dec);
+}
+
 int main(void) {
   printf("rs251 block codec, RS(%d, %d):\n", N, K);
   test_lengths();
@@ -221,6 +269,7 @@ int main(void) {
   test_invalid_groups();
   test_errors();
   test_uncorrectable();
+  test_spare();
   printf("%s\n", g_failures ? "FAILED" : "OK");
   return g_failures ? 1 : 0;
 }

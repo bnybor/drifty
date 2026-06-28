@@ -228,8 +228,14 @@ static dt_result rs251_decoder_decode(dt_block_decoder *dec) {
   if (s == RS251_ERR_DECODE) {
     return DT_ERR_DECODE;
   }
-  if (s != RS251_OK || rs251_message_to_bytes(&st->codec, msg, bytes) != RS251_OK) {
+  if (s != RS251_OK) {
     return DT_ERR_ARG;
+  }
+  /* The recovered codeword is valid algebra, but if its message value does not
+   * fit in b bytes it was not a real encoding of one (a miscorrection or
+   * non-codeword input): a decode failure, not a bad argument. */
+  if (rs251_message_to_bytes(&st->codec, msg, bytes) != RS251_OK) {
+    return DT_ERR_DECODE;
   }
   /* A block spends 2*errors + erasures of its n - k check symbols; require at
    * least `spare` of them to be left unspent, else reject the (algebraically

@@ -47,10 +47,8 @@ consistencies as well as a hard decision, and how rich a channel model they take
 
 ## Driving any codec
 
-Every decoder is a `dt_stream_decoder` (or `dt_stream_soft_decoder`) driven through the same
-three-phase vtable — `begin` → `decode` (repeat) → `finalize` — with a warm-up
-delay and a buffering rule; the encoder is a `dt_stream_encoder` driven `begin` →
-`encode` → `finalize`. See [`stream_decoder.h`](../../include/drifty/stream_decoder.h),
-[`stream_soft_decoder.h`](../../include/drifty/stream_soft_decoder.h), and
-[`stream_encoder.h`](../../include/drifty/stream_encoder.h), and each codec's page
-for the specifics.
+Every decoder is a `dt_stream_decoder` (or `dt_stream_soft_decoder`) driven through
+the same three-phase vtable — `begin` → `decode` (repeat) → `finalize` — with a
+warm-up delay and a buffering rule; the encoder is a `dt_stream_encoder` driven
+`begin` → `encode` → `finalize`. See the [streaming interface](../stream.md) for
+the full contract, and each codec's page for the specifics.

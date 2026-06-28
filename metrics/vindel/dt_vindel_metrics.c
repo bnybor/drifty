@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * dt_cc_vindel_metrics - Monte-Carlo measurement of decoding-mistake rate as a
+ * dt_vindel_metrics - Monte-Carlo measurement of decoding-mistake rate as a
  * function of the channel's flip / insert / delete / erase rates, for each
  * standard code, for the vindel codec.
  *
@@ -62,7 +62,7 @@
  * Output is CSV on stdout (see header row); feed it to
  * metrics/vindel/plot_metrics.py.
  *
- * Usage: dt_cc_vindel_metrics [trials] [info_bits] [seed]
+ * Usage: dt_vindel_metrics [trials] [info_bits] [seed]
  */
 
 #include <cc/vindel/decode.h>
@@ -110,7 +110,7 @@ static uint64_t derive_seed(uint64_t base, int index) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dt_cc_vindel_metrics: out of memory\n");
+    fprintf(stderr, "dt_vindel_metrics: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -140,7 +140,7 @@ static int apply_channel(const uint8_t *coded, int coded_len, double p_flip,
       uint8_t *grown = realloc(received, (size_t)capacity);
       if (!grown) {
         free(received);
-        fprintf(stderr, "dt_cc_vindel_metrics: out of memory\n");
+        fprintf(stderr, "dt_vindel_metrics: out of memory\n");
         exit(1);
       }
       received = grown;
@@ -306,7 +306,7 @@ static int parse_variation(const char *s) {
 static int load_grids(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) {
-    fprintf(stderr, "dt_cc_vindel_metrics: cannot open rate-grid file '%s'\n",
+    fprintf(stderr, "dt_vindel_metrics: cannot open rate-grid file '%s'\n",
             path);
     return -1;
   }
@@ -324,7 +324,7 @@ static int load_grids(const char *path) {
     int m = mn ? name_index(mn, METRIC_NAME, N_METRICS) : -1;
     int a = an ? name_index(an, AXIS_NAME, N_AXES) : -1;
     if (v < 0 || m < 0 || a < 0) {
-      fprintf(stderr, "dt_cc_vindel_metrics: %s:%d: bad variation/metric/axis\n",
+      fprintf(stderr, "dt_vindel_metrics: %s:%d: bad variation/metric/axis\n",
               path, lineno);
       ok = 0;
       break;
@@ -335,7 +335,7 @@ static int load_grids(const char *path) {
       char *end;
       double value = strtod(t, &end);
       if (*end != '\0') {
-        fprintf(stderr, "dt_cc_vindel_metrics: %s:%d: bad rate '%s'\n", path,
+        fprintf(stderr, "dt_vindel_metrics: %s:%d: bad rate '%s'\n", path,
                 lineno, t);
         ok = 0;
         break;
@@ -344,7 +344,7 @@ static int load_grids(const char *path) {
         cap *= 2;
         double *grown = realloc(rates, (size_t)cap * sizeof(double));
         if (!grown) {
-          fprintf(stderr, "dt_cc_vindel_metrics: out of memory\n");
+          fprintf(stderr, "dt_vindel_metrics: out of memory\n");
           exit(1);
         }
         rates = grown;
@@ -356,7 +356,7 @@ static int load_grids(const char *path) {
       break;
     }
     if (n == 0) {
-      fprintf(stderr, "dt_cc_vindel_metrics: %s:%d: grid has no rates\n", path,
+      fprintf(stderr, "dt_vindel_metrics: %s:%d: grid has no rates\n", path,
               lineno);
       free(rates);
       ok = 0;
@@ -517,7 +517,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   dt_cc_vindel_stream_decoder *dec =
       dt_cc_vindel_stream_decoder_create(code, &m.params);
   if (!dec) {
-    fprintf(stderr, "dt_cc_vindel_metrics: decoder create failed\n");
+    fprintf(stderr, "dt_vindel_metrics: decoder create failed\n");
     exit(1);
   }
   /* Feed in 64-bit chunks (the decoder's output depends on feed granularity),
@@ -543,7 +543,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   dt_cc_vindel_stream_decoder_destroy(dec);
   free(received);
   if (n_decoded < 0) {
-    fprintf(stderr, "dt_cc_vindel_metrics: decode error %d\n", n_decoded);
+    fprintf(stderr, "dt_vindel_metrics: decode error %d\n", n_decoded);
     exit(1);
   }
 
@@ -631,7 +631,7 @@ int main(int argc, char **argv) {
     int parsed = parse_variation(argv[4]);
     if (parsed < 0) {
       fprintf(stderr,
-              "dt_cc_vindel_metrics: unknown variation '%s' "
+              "dt_vindel_metrics: unknown variation '%s' "
               "(use pegged|matched|overmatched)\n",
               argv[4]);
       return 2;
@@ -657,7 +657,7 @@ int main(int argc, char **argv) {
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
     codes[code_idx] = dt_cc_code_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
-      fprintf(stderr, "dt_cc_vindel_metrics: code create failed\n");
+      fprintf(stderr, "dt_vindel_metrics: code create failed\n");
       return 1;
     }
   }
@@ -672,7 +672,7 @@ int main(int argc, char **argv) {
       int count;
       metric_axis_rates(var, run_metrics[mi], (axis)axis_idx, &count);
       if (count == 0) {
-        fprintf(stderr, "dt_cc_vindel_metrics: %s: no grid for %s %s %s\n",
+        fprintf(stderr, "dt_vindel_metrics: %s: no grid for %s %s %s\n",
                 grids_path, argc > 4 ? argv[4] : "pegged",
                 METRIC_NAME[run_metrics[mi]], AXIS_NAME[axis_idx]);
         return 2;

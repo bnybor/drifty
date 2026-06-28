@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * dt_cc_viterbi_metrics - Monte-Carlo measurement of the decoding-mistake rate as
+ * dt_viterbi_metrics - Monte-Carlo measurement of the decoding-mistake rate as
  * a function of the channel's flip and erase rates, for each standard code, for
  * the viterbi codec (a plain Viterbi hard-decision decoder).
  *
@@ -47,7 +47,7 @@
  * through the public API. Output is CSV on stdout (see header row); feed it to
  * metrics/viterbi/plot_metrics.py.
  *
- * Usage: dt_cc_viterbi_metrics [trials] [info_bits] [seed] [rate_grids_file]
+ * Usage: dt_viterbi_metrics [trials] [info_bits] [seed] [rate_grids_file]
  */
 
 #include <drifty/cc/encoder.h>
@@ -95,7 +95,7 @@ static uint64_t derive_seed(uint64_t base, int index) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dt_cc_viterbi_metrics: out of memory\n");
+    fprintf(stderr, "dt_viterbi_metrics: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -226,7 +226,7 @@ static int axis_index(const char *name) {
 static int load_grids(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) {
-    fprintf(stderr, "dt_cc_viterbi_metrics: cannot open rate-grid file '%s'\n",
+    fprintf(stderr, "dt_viterbi_metrics: cannot open rate-grid file '%s'\n",
             path);
     return -1;
   }
@@ -240,7 +240,7 @@ static int load_grids(const char *path) {
     if (!first) continue; /* blank or comment-only line */
     int a = axis_index(first);
     if (a < 0) {
-      fprintf(stderr, "dt_cc_viterbi_metrics: %s:%d: bad axis '%s'\n", path,
+      fprintf(stderr, "dt_viterbi_metrics: %s:%d: bad axis '%s'\n", path,
               lineno, first);
       ok = 0;
       break;
@@ -251,7 +251,7 @@ static int load_grids(const char *path) {
       char *end;
       double value = strtod(t, &end);
       if (*end != '\0') {
-        fprintf(stderr, "dt_cc_viterbi_metrics: %s:%d: bad rate '%s'\n", path,
+        fprintf(stderr, "dt_viterbi_metrics: %s:%d: bad rate '%s'\n", path,
                 lineno, t);
         ok = 0;
         break;
@@ -260,7 +260,7 @@ static int load_grids(const char *path) {
         cap *= 2;
         double *grown = realloc(rates, (size_t)cap * sizeof(double));
         if (!grown) {
-          fprintf(stderr, "dt_cc_viterbi_metrics: out of memory\n");
+          fprintf(stderr, "dt_viterbi_metrics: out of memory\n");
           exit(1);
         }
         rates = grown;
@@ -272,7 +272,7 @@ static int load_grids(const char *path) {
       break;
     }
     if (n == 0) {
-      fprintf(stderr, "dt_cc_viterbi_metrics: %s:%d: grid has no rates\n", path,
+      fprintf(stderr, "dt_viterbi_metrics: %s:%d: grid has no rates\n", path,
               lineno);
       free(rates);
       ok = 0;
@@ -314,7 +314,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   uint8_t *coded = xmalloc((size_t)coded_cap);
   dt_stream_encoder *encoder = dt_cc_encoder_create(code);
   if (!encoder) {
-    fprintf(stderr, "dt_cc_viterbi_metrics: encoder create failed\n");
+    fprintf(stderr, "dt_viterbi_metrics: encoder create failed\n");
     exit(1);
   }
   int coded_len = encoder->begin(encoder, coded, (size_t)coded_cap);
@@ -333,7 +333,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   uint8_t *decoded = xmalloc((size_t)decoded_cap);
   dt_stream_decoder *dec = dt_cc_viterbi_decoder_create(code);
   if (!dec) {
-    fprintf(stderr, "dt_cc_viterbi_metrics: decoder create failed\n");
+    fprintf(stderr, "dt_viterbi_metrics: decoder create failed\n");
     exit(1);
   }
   int n_decoded = dec->begin(dec, decoded, (size_t)decoded_cap);
@@ -357,7 +357,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   dt_cc_viterbi_decoder_destroy(dec);
   free(received);
   if (n_decoded < 0) {
-    fprintf(stderr, "dt_cc_viterbi_metrics: decode error %d\n", n_decoded);
+    fprintf(stderr, "dt_viterbi_metrics: decode error %d\n", n_decoded);
     exit(1);
   }
 
@@ -421,7 +421,7 @@ int main(int argc, char **argv) {
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
     codes[code_idx] = dt_cc_code_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
-      fprintf(stderr, "dt_cc_viterbi_metrics: code create failed\n");
+      fprintf(stderr, "dt_viterbi_metrics: code create failed\n");
       return 1;
     }
   }
@@ -430,7 +430,7 @@ int main(int argc, char **argv) {
   int n_points = 0;
   for (int axis_idx = 0; axis_idx < N_AXES; ++axis_idx) {
     if (g_grids[axis_idx].count == 0) {
-      fprintf(stderr, "dt_cc_viterbi_metrics: %s: no grid for axis %s\n",
+      fprintf(stderr, "dt_viterbi_metrics: %s: no grid for axis %s\n",
               grids_path, AXIS_NAME[axis_idx]);
       return 2;
     }

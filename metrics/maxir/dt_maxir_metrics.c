@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * dt_cc_maxir_metrics - Monte-Carlo measurement of decoding-mistake rate as a function
+ * dt_maxir_metrics - Monte-Carlo measurement of decoding-mistake rate as a function
  * of the channel's flip / insert / delete / erase rates, for each standard code.
  *
  * For one data point we: generate a random message, encode it (with a flush so
@@ -55,7 +55,7 @@
  *
  * Output is CSV on stdout (see header row); feed it to metrics/maxir/plot_metrics.py.
  *
- * Usage: dt_cc_maxir_metrics [trials] [info_bits] [seed]
+ * Usage: dt_maxir_metrics [trials] [info_bits] [seed]
  */
 
 #include <drifty/cc/encoder.h>
@@ -103,7 +103,7 @@ static uint64_t derive_seed(uint64_t base, int index) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dt_cc_maxir_metrics: out of memory\n");
+    fprintf(stderr, "dt_maxir_metrics: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -133,7 +133,7 @@ static int apply_channel(const uint8_t *coded, int coded_len, double p_flip,
       uint8_t *grown = realloc(received, (size_t)capacity);
       if (!grown) {
         free(received);
-        fprintf(stderr, "dt_cc_maxir_metrics: out of memory\n");
+        fprintf(stderr, "dt_maxir_metrics: out of memory\n");
         exit(1);
       }
       received = grown;
@@ -297,7 +297,7 @@ static int parse_variation(const char *s) {
 static int load_grids(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) {
-    fprintf(stderr, "dt_cc_maxir_metrics: cannot open rate-grid file '%s'\n", path);
+    fprintf(stderr, "dt_maxir_metrics: cannot open rate-grid file '%s'\n", path);
     return -1;
   }
   char line[8192];
@@ -314,7 +314,7 @@ static int load_grids(const char *path) {
     int m = mn ? name_index(mn, METRIC_NAME, N_METRICS) : -1;
     int a = an ? name_index(an, AXIS_NAME, N_AXES) : -1;
     if (v < 0 || m < 0 || a < 0) {
-      fprintf(stderr, "dt_cc_maxir_metrics: %s:%d: bad variation/metric/axis\n", path,
+      fprintf(stderr, "dt_maxir_metrics: %s:%d: bad variation/metric/axis\n", path,
               lineno);
       ok = 0;
       break;
@@ -325,7 +325,7 @@ static int load_grids(const char *path) {
       char *end;
       double value = strtod(t, &end);
       if (*end != '\0') {
-        fprintf(stderr, "dt_cc_maxir_metrics: %s:%d: bad rate '%s'\n", path, lineno, t);
+        fprintf(stderr, "dt_maxir_metrics: %s:%d: bad rate '%s'\n", path, lineno, t);
         ok = 0;
         break;
       }
@@ -333,7 +333,7 @@ static int load_grids(const char *path) {
         cap *= 2;
         double *grown = realloc(rates, (size_t)cap * sizeof(double));
         if (!grown) {
-          fprintf(stderr, "dt_cc_maxir_metrics: out of memory\n");
+          fprintf(stderr, "dt_maxir_metrics: out of memory\n");
           exit(1);
         }
         rates = grown;
@@ -345,7 +345,7 @@ static int load_grids(const char *path) {
       break;
     }
     if (n == 0) {
-      fprintf(stderr, "dt_cc_maxir_metrics: %s:%d: grid has no rates\n", path, lineno);
+      fprintf(stderr, "dt_maxir_metrics: %s:%d: grid has no rates\n", path, lineno);
       free(rates);
       ok = 0;
       break;
@@ -482,7 +482,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   const int coded_cap = (info_bits + m.constraint_len) * m.code_n;
   dt_stream_encoder *encoder = dt_cc_encoder_create(code);
   if (!encoder) {
-    fprintf(stderr, "dt_cc_maxir_metrics: encoder create failed\n");
+    fprintf(stderr, "dt_maxir_metrics: encoder create failed\n");
     exit(1);
   }
   int coded_len = encoder->begin(encoder, coded, (size_t)coded_cap);
@@ -510,7 +510,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
     decoded = xmalloc((size_t)decoded_cap);
     dt_stream_decoder *dec = dt_cc_maxir_decoder_create(code, &m.params);
     if (!dec) {
-      fprintf(stderr, "dt_cc_maxir_metrics: decoder create failed\n");
+      fprintf(stderr, "dt_maxir_metrics: decoder create failed\n");
       exit(1);
     }
     /* Feed in 64-bit chunks (the decoder's output depends on feed granularity),
@@ -537,7 +537,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
     soft = xmalloc((size_t)decoded_cap * sizeof(*soft));
     dt_stream_soft_decoder *sd = dt_cc_maxir_soft_decoder_create(code, &m.params);
     if (!sd) {
-      fprintf(stderr, "dt_cc_maxir_metrics: decoder create failed\n");
+      fprintf(stderr, "dt_maxir_metrics: decoder create failed\n");
       exit(1);
     }
     for (int read_pos = 0; read_pos < received_len && n_stream < decoded_cap;) {
@@ -561,7 +561,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
   }
   free(received);
   if (n_decoded < 0) {
-    fprintf(stderr, "dt_cc_maxir_metrics: decode error %d\n", n_decoded);
+    fprintf(stderr, "dt_maxir_metrics: decode error %d\n", n_decoded);
     exit(1);
   }
 
@@ -650,7 +650,7 @@ int main(int argc, char **argv) {
     int parsed = parse_variation(argv[4]);
     if (parsed < 0) {
       fprintf(stderr,
-              "dt_cc_maxir_metrics: unknown variation '%s' "
+              "dt_maxir_metrics: unknown variation '%s' "
               "(use pegged|matched|overmatched)\n",
               argv[4]);
       return 2;
@@ -675,7 +675,7 @@ int main(int argc, char **argv) {
   for (int code_idx = 0; code_idx < N_CODES; ++code_idx) {
     codes[code_idx] = dt_cc_code_create_standard(CODES[code_idx].which);
     if (!codes[code_idx]) {
-      fprintf(stderr, "dt_cc_maxir_metrics: code create failed\n");
+      fprintf(stderr, "dt_maxir_metrics: code create failed\n");
       return 1;
     }
   }
@@ -690,7 +690,7 @@ int main(int argc, char **argv) {
       int count;
       metric_axis_rates(var, run_metrics[mi], (axis)axis_idx, &count);
       if (count == 0) {
-        fprintf(stderr, "dt_cc_maxir_metrics: %s: no grid for %s %s %s\n", grids_path,
+        fprintf(stderr, "dt_maxir_metrics: %s: no grid for %s %s %s\n", grids_path,
                 argc > 4 ? argv[4] : "pegged", METRIC_NAME[run_metrics[mi]],
                 AXIS_NAME[axis_idx]);
         return 2;

@@ -61,6 +61,8 @@ This README is the overview. The full reference lives in [`doc/`](doc/README.md)
 - [Convolutional coding (`doc/cc/`)](doc/cc/README.md) — per-codec reference for
   the shared encoder and the five decoders (`viterbi`, `vindel`, `hybrid`,
   `maxir`, `bcjr`), with a guide to choosing one.
+- [Reed–Solomon coding (`doc/rs/`)](doc/rs/rs251.md) — the `rs251` block codec,
+  an RS(n, k) outer code over GF(251).
 
 ## Choosing a codec
 
@@ -219,6 +221,25 @@ as dropped in transit (`DT_ABSENT`). The hybrid codec does not model those and
 leaves them 0, while the *full* max-log-MAP codecs (`bcjr` and `maxir`) populate
 them.
 
+## Block and frame codecs
+
+The codecs above are convolutional *inner* codes driven as a continuous stream.
+drifty also defines two other codec framings over the same `dt_bit` alphabet, each
+a small vtable interface whose operations return `dt_result` status codes
+(`<drifty/result.h>`):
+
+- **Block** — fixed-size `(k, n)` blocks: `<drifty/block_encoder.h>`,
+  `<drifty/block_decoder.h>`, and a soft-input `<drifty/block_soft_decoder.h>`.
+- **Frame** — a stream split into delimited frames with uncoded passthrough
+  between them: `<drifty/frame_encoder.h>`, `<drifty/frame_decoder.h>`.
+
+The implemented block codec is **[`rs251`](doc/rs/rs251.md)**
+(`<drifty/rs/rs251.h>`, `dt_rs_rs251_block_*`): a systematic Reed–Solomon RS(n, k)
+code over GF(251) that corrects errors and erasures while
+`2·errors + erasures ≤ n − k`. As an outer block code it pairs naturally with the
+convolutional inner codecs. The frame interfaces and the soft-input block
+interface are defined but not yet implemented.
+
 ## Build
 
 ```sh
@@ -228,9 +249,11 @@ cmake --build build
 
 This produces `libdrifty.a` (self-contained) and `libdrifty_bare.a` (the
 freestanding core, with the few libc shims left for you to supply). Only the
-public API — `dt_cc_code_*` and the codec factories `dt_cc_viterbi_*`, `dt_cc_bcjr_*`,
-`dt_cc_vindel_*`, `dt_cc_hybrid_*`, and `dt_cc_maxir_*` — is exported; the engine internals
-are hidden.
+public API is exported — `dt_cc_code_*`, the shared encoder `dt_cc_encoder_*`, the
+per-codec decoder factories `dt_cc_viterbi_*` / `dt_cc_bcjr_*` / `dt_cc_vindel_*` /
+`dt_cc_hybrid_*` / `dt_cc_maxir_*`, and the `dt_rs_rs251_block_*` Reed–Solomon block
+codec — while the engine internals (including the bundled `rs251` library) are
+hidden.
 
 A top-level build defaults to `CMAKE_BUILD_TYPE=Release` (`-O3`) — the decoders
 are numeric hot loops, so this matters. Override it explicitly when you need to,

@@ -1,6 +1,6 @@
 # maxir metrics
 
-`metrics/maxir/dt_cc_maxir_metrics.c` measures how well the **maxir** codec — a
+`metrics/maxir/dt_maxir_metrics.c` measures how well the **maxir** codec — a
 drift-tolerant max-log-MAP (forward-backward) decoder with soft output and
 re-acquisition — recovers a message across the four channel impairments it is built
 to survive. It is the maxir counterpart of [../hybrid/METRICS.md](../hybrid/METRICS.md):
@@ -37,13 +37,13 @@ relates to the channel:
 ```sh
 # Build the harness (off by default) and run a sweep to a CSV.
 cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
-cmake --build build --target dt_cc_maxir_metrics
-# dt_cc_maxir_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
+cmake --build build --target dt_maxir_metrics
+# dt_maxir_metrics <trials> <info_bits> <seed> <variation> <rate_grids_file>
 #   defaults: 50 1000 0xC0FFEE matched, grids = metrics/maxir/rate_grids.txt
 #   (run from the repo root; the grid file holds one block per variation)
-build/metrics/maxir/dt_cc_maxir_metrics 30 4000 0xC0FFEE matched     > metrics/maxir/tuned/metrics.csv
-build/metrics/maxir/dt_cc_maxir_metrics 30 4000 0xC0FFEE pegged      > metrics/maxir/untuned/metrics.csv
-build/metrics/maxir/dt_cc_maxir_metrics 30 4000 0xC0FFEE overmatched > metrics/maxir/overmatched/metrics.csv
+build/metrics/maxir/dt_maxir_metrics 30 4000 0xC0FFEE matched     > metrics/maxir/tuned/metrics.csv
+build/metrics/maxir/dt_maxir_metrics 30 4000 0xC0FFEE pegged      > metrics/maxir/untuned/metrics.csv
+build/metrics/maxir/dt_maxir_metrics 30 4000 0xC0FFEE overmatched > metrics/maxir/overmatched/metrics.csv
 
 # Plot the edit and lock metrics (one curve per code). Needs matplotlib:
 python3 -m venv .venv && .venv/bin/pip install matplotlib

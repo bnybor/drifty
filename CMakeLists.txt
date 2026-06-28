@@ -50,7 +50,7 @@ add_library(drifty_bare_obj OBJECT
     src/cc/maxir.c
     src/cc/encoder/encode.c
     src/cc/encoder/encoder.c
-    src/rs/rs251.c
+    src/bc/rs251.c
     contrib/rs251/src/rs251.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
@@ -65,12 +65,12 @@ endif()
 target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
 
 # Reed-Solomon outer code from contrib/rs251 is compiled into the core above (its
-# engine source plus the src/rs/ adapter), so it travels with every consumer of
+# engine source plus the src/bc/ adapter), so it travels with every consumer of
 # drifty_bare_obj (the archives and the tests, which link the objects directly).
 # It is freestanding like the core (brings its own mem* helpers, no libc). The
 # internal rs251_* / RS251_* engine symbols are deliberately absent from the
 # public keep-list below, so the archive localization hides them; only the
-# dt_rs_rs251_* block factories (src/rs/) are exported.
+# dt_bc_rs251_* block factories (src/bc/) are exported.
 target_include_directories(drifty_bare_obj PRIVATE contrib/rs251/include)
 set_source_files_properties(contrib/rs251/src/rs251.c PROPERTIES
     COMPILE_DEFINITIONS "RS251_VERSION=\"0.1.0\"")
@@ -107,9 +107,9 @@ set(_dt_public_symbols
     dt_cc_maxir_decoder_create dt_cc_maxir_decoder_destroy
     dt_cc_maxir_soft_decoder_create dt_cc_maxir_soft_decoder_destroy
     dt_cc_encoder_create dt_cc_encoder_destroy
-    dt_rs_rs251_block_encoder_create dt_rs_rs251_block_encoder_destroy
-    dt_rs_rs251_block_decoder_create dt_rs_rs251_block_decoder_destroy
-    dt_rs_rs251_block_soft_decoder_create dt_rs_rs251_block_soft_decoder_destroy)
+    dt_bc_rs251_block_encoder_create dt_bc_rs251_block_encoder_destroy
+    dt_bc_rs251_block_decoder_create dt_bc_rs251_block_decoder_destroy
+    dt_bc_rs251_block_soft_decoder_create dt_bc_rs251_block_soft_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

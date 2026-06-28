@@ -12,7 +12,7 @@ the other. Three function-pointer vtables over the `dt_bit` alphabet
   its received buffer holds `dt_soft_bit` consistencies rather than hard `dt_bit`s,
   and it still produces a hard decoded output.
 
-The Reed–Solomon [`rs251`](rs/rs251.md) codec implements the block encoder and
+The Reed–Solomon [`rs251`](bc/rs251.md) codec implements the block encoder and
 decoder.
 
 ## Buffers and lengths
@@ -58,7 +58,7 @@ on a fresh block — overwrite the input buffer, `reset()`, run again.
 
 ## See also
 
-- [`rs/rs251.md`](rs/rs251.md) — the Reed–Solomon block codec that implements this
+- [`bc/rs251.md`](bc/rs251.md) — the Reed–Solomon block codec that implements this
   interface.
 - [Symbols](bit.md) — `dt_bit` and the soft `dt_soft_bit`.
 - [Streaming interface](stream.md) — the continuous-stream alternative.

@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_RS_RS251_H
-#define DRIFTY_RS_RS251_H
+#ifndef DRIFTY_BC_RS251_H
+#define DRIFTY_BC_RS251_H
 
 #include <drifty/block_decoder.h>
 #include <drifty/block_encoder.h>
@@ -61,9 +61,9 @@ extern "C" {
 
 /* Build a block encoder for the systematic RS(n, k) code. Returns NULL on a bad
  * argument (n / k out of range) or out of memory. */
-dt_block_encoder *dt_rs_rs251_block_encoder_create(uint16_t n, uint16_t k);
-/* Free an encoder from dt_rs_rs251_block_encoder_create(). Passing NULL is fine. */
-void dt_rs_rs251_block_encoder_destroy(dt_block_encoder *enc);
+dt_block_encoder *dt_bc_rs251_block_encoder_create(uint16_t n, uint16_t k);
+/* Free an encoder from dt_bc_rs251_block_encoder_create(). Passing NULL is fine. */
+void dt_bc_rs251_block_encoder_destroy(dt_block_encoder *enc);
 
 /* Build a block decoder for the systematic RS(n, k) code - an errors-and-erasures
  * hard-decision decoder. `s` is the number of spare (unspent) check symbols
@@ -72,10 +72,10 @@ void dt_rs_rs251_block_encoder_destroy(dt_block_encoder *enc);
  * even though the algebra could correct it. Larger `s` trades correction power for
  * a smaller chance of silent miscorrection; s = 0 uses the full n - k budget.
  * Requires 0 <= s <= n - k. Returns NULL on a bad argument or out of memory. */
-dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k,
+dt_block_decoder *dt_bc_rs251_block_decoder_create(uint16_t n, uint16_t k,
                                                    uint16_t s);
-/* Free a decoder from dt_rs_rs251_block_decoder_create(). Passing NULL is fine. */
-void dt_rs_rs251_block_decoder_destroy(dt_block_decoder *dec);
+/* Free a decoder from dt_bc_rs251_block_decoder_create(). Passing NULL is fine. */
+void dt_bc_rs251_block_decoder_destroy(dt_block_decoder *dec);
 
 /* Build a soft-input block decoder for the systematic RS(n, k) code. Its encoded
  * buffer is dt_soft_bit (8 per codeword symbol; see <drifty/block_soft_decoder.h>),
@@ -86,15 +86,15 @@ void dt_rs_rs251_block_decoder_destroy(dt_block_decoder *dec);
  * constituent bit - the largest (c_invalid + c_absent) over its 8 soft bits - so a
  * symbol an upstream decoder flagged as poison or absent is erased first, trading a
  * wrong symbol (2 check symbols) for an erasure (1) until the block decodes. `s` is
- * the spare-check-symbol guard, exactly as for dt_rs_rs251_block_decoder_create().
+ * the spare-check-symbol guard, exactly as for dt_bc_rs251_block_decoder_create().
  * Requires 0 <= s <= n - k. Returns NULL on a bad argument or out of memory. */
-dt_block_soft_decoder *dt_rs_rs251_block_soft_decoder_create(uint16_t n, uint16_t k,
+dt_block_soft_decoder *dt_bc_rs251_block_soft_decoder_create(uint16_t n, uint16_t k,
                                                              uint16_t s);
-/* Free a soft decoder from dt_rs_rs251_block_soft_decoder_create(). NULL is fine. */
-void dt_rs_rs251_block_soft_decoder_destroy(dt_block_soft_decoder *dec);
+/* Free a soft decoder from dt_bc_rs251_block_soft_decoder_create(). NULL is fine. */
+void dt_bc_rs251_block_soft_decoder_destroy(dt_block_soft_decoder *dec);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DRIFTY_RS_RS251_H */
+#endif /* DRIFTY_BC_RS251_H */

@@ -34,7 +34,7 @@
 #include <drifty/block_decoder.h>
 #include <drifty/block_encoder.h>
 #include <drifty/result.h>
-#include <drifty/rs/rs251.h>
+#include <drifty/bc/rs251.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -92,11 +92,11 @@ static void sym_erase(dt_bit *enc, int sym) {
  * encoder is destroyed. Returns 1 iff setup + encode succeeded. */
 static int setup_s(uint16_t s, dt_block_decoder **dec_out, dt_bit **orig_out,
                    size_t *dlen_out) {
-  dt_block_encoder *enc = dt_rs_rs251_block_encoder_create(N, K);
-  dt_block_decoder *dec = dt_rs_rs251_block_decoder_create(N, K, s);
+  dt_block_encoder *enc = dt_bc_rs251_block_encoder_create(N, K);
+  dt_block_decoder *dec = dt_bc_rs251_block_decoder_create(N, K, s);
   if (!enc || !dec) {
-    dt_rs_rs251_block_encoder_destroy(enc);
-    dt_rs_rs251_block_decoder_destroy(dec);
+    dt_bc_rs251_block_encoder_destroy(enc);
+    dt_bc_rs251_block_decoder_destroy(dec);
     return 0;
   }
   const size_t dlen = enc->decoded_len(enc);
@@ -109,7 +109,7 @@ static int setup_s(uint16_t s, dt_block_decoder **dec_out, dt_bit **orig_out,
   }
   const int ok = (enc->encode(enc) == DT_OK);
   memcpy(dec->encoded_buf(dec), enc->encoded_buf(enc), elen);
-  dt_rs_rs251_block_encoder_destroy(enc);
+  dt_bc_rs251_block_encoder_destroy(enc);
   *dec_out = dec;
   *orig_out = orig;
   *dlen_out = dlen;
@@ -128,25 +128,25 @@ static int recovered(dt_block_decoder *dec, const dt_bit *orig, size_t dlen) {
 /* -- tests ----------------------------------------------------------------- */
 
 static void test_lengths(void) {
-  dt_block_encoder *enc = dt_rs_rs251_block_encoder_create(N, K);
+  dt_block_encoder *enc = dt_bc_rs251_block_encoder_create(N, K);
   if (!check("create encoder", enc != NULL)) {
     return;
   }
   /* B = bytes that fit in K symbols = K-1 = 11 -> 88 decoded bits; 8*N encoded. */
   check("decoded_len == 88", enc->decoded_len(enc) == 88u);
   check("encoded_len == 8*N", enc->encoded_len(enc) == (size_t)8 * N);
-  check("bad params reject", dt_rs_rs251_block_encoder_create(5, 9) == NULL);
-  dt_rs_rs251_block_encoder_destroy(enc);
+  check("bad params reject", dt_bc_rs251_block_encoder_create(5, 9) == NULL);
+  dt_bc_rs251_block_encoder_destroy(enc);
 
   /* The decoder accepts 0 <= s <= n - k and rejects s > n - k. */
-  dt_block_decoder *d0 = dt_rs_rs251_block_decoder_create(N, K, 0);
+  dt_block_decoder *d0 = dt_bc_rs251_block_decoder_create(N, K, 0);
   check("decoder s=0 ok", d0 != NULL);
-  dt_rs_rs251_block_decoder_destroy(d0);
-  dt_block_decoder *dmax = dt_rs_rs251_block_decoder_create(N, K, N - K);
+  dt_bc_rs251_block_decoder_destroy(d0);
+  dt_block_decoder *dmax = dt_bc_rs251_block_decoder_create(N, K, N - K);
   check("decoder s=n-k ok", dmax != NULL);
-  dt_rs_rs251_block_decoder_destroy(dmax);
+  dt_bc_rs251_block_decoder_destroy(dmax);
   check("decoder s>n-k reject",
-        dt_rs_rs251_block_decoder_create(N, K, N - K + 1) == NULL);
+        dt_bc_rs251_block_decoder_create(N, K, N - K + 1) == NULL);
 }
 
 static void test_clean(void) {
@@ -159,7 +159,7 @@ static void test_clean(void) {
   check("clean: decode OK", dec->decode(dec) == DT_OK);
   check("clean: recovered", recovered(dec, orig, dlen));
   free(orig);
-  dt_rs_rs251_block_decoder_destroy(dec);
+  dt_bc_rs251_block_decoder_destroy(dec);
 }
 
 static void test_erasures(void) {
@@ -176,7 +176,7 @@ static void test_erasures(void) {
   check("erasure: decode OK", dec->decode(dec) == DT_OK);
   check("erasure: recovered", recovered(dec, orig, dlen));
   free(orig);
-  dt_rs_rs251_block_decoder_destroy(dec);
+  dt_bc_rs251_block_decoder_destroy(dec);
 }
 
 static void test_invalid_groups(void) {
@@ -193,7 +193,7 @@ static void test_invalid_groups(void) {
   check("invalid: decode OK (treated as erasures)", dec->decode(dec) == DT_OK);
   check("invalid: recovered", recovered(dec, orig, dlen));
   free(orig);
-  dt_rs_rs251_block_decoder_destroy(dec);
+  dt_bc_rs251_block_decoder_destroy(dec);
 }
 
 static void test_errors(void) {
@@ -210,7 +210,7 @@ static void test_errors(void) {
   check("error: decode OK", dec->decode(dec) == DT_OK);
   check("error: recovered", recovered(dec, orig, dlen));
   free(orig);
-  dt_rs_rs251_block_decoder_destroy(dec);
+  dt_bc_rs251_block_decoder_destroy(dec);
 }
 
 static void test_uncorrectable(void) {
@@ -226,7 +226,7 @@ static void test_uncorrectable(void) {
   }
   check("uncorrectable: returns DT_ERR_DECODE", dec->decode(dec) == DT_ERR_DECODE);
   free(orig);
-  dt_rs_rs251_block_decoder_destroy(dec);
+  dt_bc_rs251_block_decoder_destroy(dec);
 }
 
 /* With s spare required, a decode may spend at most (n-k) - s of the budget. For
@@ -247,7 +247,7 @@ static void test_spare(void) {
   check("spare: 6 erasures decode OK", dec->decode(dec) == DT_OK);
   check("spare: 6 erasures recovered", recovered(dec, orig, dlen));
   free(orig);
-  dt_rs_rs251_block_decoder_destroy(dec);
+  dt_bc_rs251_block_decoder_destroy(dec);
 
   if (!check("spare: setup+encode (7 erasures)", setup_s(s, &dec, &orig, &dlen))) {
     return;
@@ -258,7 +258,7 @@ static void test_spare(void) {
   check("spare: 7 erasures rejected (DT_ERR_DECODE)",
         dec->decode(dec) == DT_ERR_DECODE);
   free(orig);
-  dt_rs_rs251_block_decoder_destroy(dec);
+  dt_bc_rs251_block_decoder_destroy(dec);
 }
 
 int main(void) {

@@ -37,7 +37,7 @@
 #include <drifty/block_encoder.h>
 #include <drifty/block_soft_decoder.h>
 #include <drifty/result.h>
-#include <drifty/rs/rs251.h>
+#include <drifty/bc/rs251.h>
 #include <drifty/soft_bit.h>
 
 #include <stdint.h>
@@ -89,7 +89,7 @@ static int hard_sym(const dt_bit *enc, int sym) {
 
 /* Encode a fresh random message; record its codeword symbols and message bits. */
 static int build_codeword(void) {
-  dt_block_encoder *enc = dt_rs_rs251_block_encoder_create(N, K);
+  dt_block_encoder *enc = dt_bc_rs251_block_encoder_create(N, K);
   if (!enc) {
     return 0;
   }
@@ -105,7 +105,7 @@ static int build_codeword(void) {
   for (int s = 0; s < N; ++s) {
     g_code[s] = hard_sym(code, s);
   }
-  dt_rs_rs251_block_encoder_destroy(enc);
+  dt_bc_rs251_block_encoder_destroy(enc);
   return ok;
 }
 
@@ -190,31 +190,31 @@ static int recovered(const dt_bit *out) {
 /* -- tests ----------------------------------------------------------------- */
 
 static void test_lengths(void) {
-  dt_block_soft_decoder *d = dt_rs_rs251_block_soft_decoder_create(N, K, 0);
+  dt_block_soft_decoder *d = dt_bc_rs251_block_soft_decoder_create(N, K, 0);
   if (!check("create", d != NULL)) {
     return;
   }
   check("decoded_len == 88", d->decoded_len(d) == 88u);     /* (K-1)*8 */
   check("encoded_len == 160", d->encoded_len(d) == 160u);   /* 8*N */
-  dt_rs_rs251_block_soft_decoder_destroy(d);
+  dt_bc_rs251_block_soft_decoder_destroy(d);
 
   check("s>n-k rejected",
-        dt_rs_rs251_block_soft_decoder_create(N, K, N - K + 1) == NULL);
-  dt_block_soft_decoder *dmax = dt_rs_rs251_block_soft_decoder_create(N, K, N - K);
+        dt_bc_rs251_block_soft_decoder_create(N, K, N - K + 1) == NULL);
+  dt_block_soft_decoder *dmax = dt_bc_rs251_block_soft_decoder_create(N, K, N - K);
   check("s=n-k ok", dmax != NULL);
-  dt_rs_rs251_block_soft_decoder_destroy(dmax);
+  dt_bc_rs251_block_soft_decoder_destroy(dmax);
 }
 
 static void test_clean(void) {
   if (!check("clean: build", build_codeword())) {
     return;
   }
-  dt_block_soft_decoder *d = dt_rs_rs251_block_soft_decoder_create(N, K, 0);
+  dt_block_soft_decoder *d = dt_bc_rs251_block_soft_decoder_create(N, K, 0);
   REQUIRE_NONNULL(d);
   fill_soft(d->encoded_buf(d), NULL, 0, NULL, 0, 0.0f);
   check("clean: decode OK", d->decode(d) == DT_OK);
   check("clean: recovered", recovered(d->decoded_buf(d)));
-  dt_rs_rs251_block_soft_decoder_destroy(d);
+  dt_bc_rs251_block_soft_decoder_destroy(d);
 }
 
 /* 6 wrong symbols (> hard's 4) flagged unreliable: the soft decoder erases exactly
@@ -224,20 +224,20 @@ static void test_soft_advantage(void) {
   if (!check("advantage: build", build_codeword())) {
     return;
   }
-  dt_block_soft_decoder *d = dt_rs_rs251_block_soft_decoder_create(N, K, 0);
+  dt_block_soft_decoder *d = dt_bc_rs251_block_soft_decoder_create(N, K, 0);
   REQUIRE_NONNULL(d);
   fill_soft(d->encoded_buf(d), err, 6, NULL, 0, 0.4f);
   check("advantage: soft decode OK", d->decode(d) == DT_OK);
   check("advantage: soft recovered", recovered(d->decoded_buf(d)));
-  dt_rs_rs251_block_soft_decoder_destroy(d);
+  dt_bc_rs251_block_soft_decoder_destroy(d);
 
   /* Same corruption, hard decoder: 6 errors > (n-k)/2 = 4 -> uncorrectable. */
-  dt_block_decoder *h = dt_rs_rs251_block_decoder_create(N, K, 0);
+  dt_block_decoder *h = dt_bc_rs251_block_decoder_create(N, K, 0);
   REQUIRE_NONNULL(h);
   fill_hard(h->encoded_buf(h), err, 6, NULL, 0);
   check("advantage: hard decode fails (DT_ERR_DECODE)",
         h->decode(h) == DT_ERR_DECODE);
-  dt_rs_rs251_block_decoder_destroy(h);
+  dt_bc_rs251_block_decoder_destroy(h);
 }
 
 /* 2 genuine erasures + 4 flagged errors: 2*4 + 2 = 10 > 8 at first, but erasing
@@ -248,12 +248,12 @@ static void test_mixed(void) {
   if (!check("mixed: build", build_codeword())) {
     return;
   }
-  dt_block_soft_decoder *d = dt_rs_rs251_block_soft_decoder_create(N, K, 0);
+  dt_block_soft_decoder *d = dt_bc_rs251_block_soft_decoder_create(N, K, 0);
   REQUIRE_NONNULL(d);
   fill_soft(d->encoded_buf(d), err, 4, era, 2, 0.4f);
   check("mixed: decode OK", d->decode(d) == DT_OK);
   check("mixed: recovered", recovered(d->decoded_buf(d)));
-  dt_rs_rs251_block_soft_decoder_destroy(d);
+  dt_bc_rs251_block_soft_decoder_destroy(d);
 }
 
 /* 9 flagged errors exceed the code: even erasing all that fit (8) cannot decode. */
@@ -262,11 +262,11 @@ static void test_uncorrectable(void) {
   if (!check("uncorrectable: build", build_codeword())) {
     return;
   }
-  dt_block_soft_decoder *d = dt_rs_rs251_block_soft_decoder_create(N, K, 0);
+  dt_block_soft_decoder *d = dt_bc_rs251_block_soft_decoder_create(N, K, 0);
   REQUIRE_NONNULL(d);
   fill_soft(d->encoded_buf(d), err, 9, NULL, 0, 0.4f);
   check("uncorrectable: DT_ERR_DECODE", d->decode(d) == DT_ERR_DECODE);
-  dt_rs_rs251_block_soft_decoder_destroy(d);
+  dt_bc_rs251_block_soft_decoder_destroy(d);
 }
 
 int main(void) {

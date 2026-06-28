@@ -30,7 +30,7 @@
  * interfaces. The factories below are the public surface; the rs251_* engine
  * stays internal.
  *
- * Buffer layout (see <drifty/rs/rs251.h>):
+ * Buffer layout (see <drifty/bc/rs251.h>):
  *   - decoded buffer: B = rs251_message_bytes() bytes, each as 8 dt_bit MSB-first.
  *   - encoded buffer: n GF(251) codeword symbols, each as 8 dt_bit MSB-first.
  * Encode packs the decoded bits into B bytes, converts them to k GF(251) symbols
@@ -40,7 +40,7 @@
  * is fed to the engine as an erasure (RS251_ERASURE).
  */
 
-#include <drifty/rs/rs251.h>
+#include <drifty/bc/rs251.h>
 
 #include <drifty/bit.h>      /* dt_bit, DT_BIT / DT_IS_BIT, DT_TRUE / DT_FALSE */
 #include <drifty/soft_bit.h> /* dt_soft_bit */
@@ -170,7 +170,7 @@ static dt_result rs251_encoder_reset(dt_block_encoder *enc) {
   return DT_OK;
 }
 
-dt_block_encoder *dt_rs_rs251_block_encoder_create(uint16_t n, uint16_t k) {
+dt_block_encoder *dt_bc_rs251_block_encoder_create(uint16_t n, uint16_t k) {
   dt_block_encoder *enc = dt_malloc(sizeof(*enc));
   rs251_block_encoder *st = dt_malloc(sizeof(*st));
   if (!enc || !st) {
@@ -204,7 +204,7 @@ dt_block_encoder *dt_rs_rs251_block_encoder_create(uint16_t n, uint16_t k) {
   return enc;
 }
 
-void dt_rs_rs251_block_encoder_destroy(dt_block_encoder *enc) {
+void dt_bc_rs251_block_encoder_destroy(dt_block_encoder *enc) {
   if (!enc) {
     return;
   }
@@ -293,7 +293,7 @@ static dt_result rs251_decoder_reset(dt_block_decoder *dec) {
   return DT_OK;
 }
 
-dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k,
+dt_block_decoder *dt_bc_rs251_block_decoder_create(uint16_t n, uint16_t k,
                                                    uint16_t s) {
   dt_block_decoder *dec = dt_malloc(sizeof(*dec));
   rs251_block_decoder *st = dt_malloc(sizeof(*st));
@@ -336,7 +336,7 @@ dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k,
   return dec;
 }
 
-void dt_rs_rs251_block_decoder_destroy(dt_block_decoder *dec) {
+void dt_bc_rs251_block_decoder_destroy(dt_block_decoder *dec) {
   if (!dec) {
     return;
   }
@@ -441,7 +441,7 @@ static dt_result rs251_soft_decoder_reset(dt_block_soft_decoder *dec) {
   return DT_OK;
 }
 
-dt_block_soft_decoder *dt_rs_rs251_block_soft_decoder_create(uint16_t n,
+dt_block_soft_decoder *dt_bc_rs251_block_soft_decoder_create(uint16_t n,
                                                              uint16_t k,
                                                              uint16_t s) {
   dt_block_soft_decoder *dec = dt_malloc(sizeof(*dec));
@@ -483,7 +483,7 @@ dt_block_soft_decoder *dt_rs_rs251_block_soft_decoder_create(uint16_t n,
   return dec;
 }
 
-void dt_rs_rs251_block_soft_decoder_destroy(dt_block_soft_decoder *dec) {
+void dt_bc_rs251_block_soft_decoder_destroy(dt_block_soft_decoder *dec) {
   if (!dec) {
     return;
   }

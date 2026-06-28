@@ -61,8 +61,8 @@ This README is the overview. The full reference lives in [`doc/`](doc/README.md)
 - [Convolutional coding (`doc/cc/`)](doc/cc/README.md) — per-codec reference for
   the shared encoder and the five decoders (`viterbi`, `vindel`, `hybrid`,
   `maxir`, `bcjr`), with a guide to choosing one.
-- [Reed–Solomon coding (`doc/rs/`)](doc/rs/rs251.md) — the `rs251` block codec,
-  an RS(n, k) outer code over GF(251).
+- [Block coding (`doc/bc/`)](doc/bc/rs251.md) — the `rs251` Reed–Solomon block
+  codec, an RS(n, k) code over GF(251).
 
 ## Choosing a codec
 
@@ -233,8 +233,8 @@ a small vtable interface whose operations return `dt_result` status codes
 - **Frame** — a stream split into delimited frames with uncoded passthrough
   between them: `<drifty/frame_encoder.h>`, `<drifty/frame_decoder.h>`.
 
-The implemented block codec is **[`rs251`](doc/rs/rs251.md)**
-(`<drifty/rs/rs251.h>`, `dt_rs_rs251_block_*`): a systematic Reed–Solomon RS(n, k)
+The implemented block codec is **[`rs251`](doc/bc/rs251.md)**
+(`<drifty/bc/rs251.h>`, `dt_bc_rs251_block_*`): a systematic Reed–Solomon RS(n, k)
 code over GF(251) that corrects errors and erasures while
 `2·errors + erasures ≤ n − k`. As an outer block code it pairs naturally with the
 convolutional inner codecs. The frame interfaces and the soft-input block
@@ -251,7 +251,7 @@ This produces `libdrifty.a` (self-contained) and `libdrifty_bare.a` (the
 freestanding core, with the few libc shims left for you to supply). Only the
 public API is exported — `dt_cc_code_*`, the shared encoder `dt_cc_encoder_*`, the
 per-codec decoder factories `dt_cc_viterbi_*` / `dt_cc_bcjr_*` / `dt_cc_vindel_*` /
-`dt_cc_hybrid_*` / `dt_cc_maxir_*`, and the `dt_rs_rs251_block_*` Reed–Solomon block
+`dt_cc_hybrid_*` / `dt_cc_maxir_*`, and the `dt_bc_rs251_block_*` Reed–Solomon block
 codec — while the engine internals (including the bundled `rs251` library) are
 hidden.
 

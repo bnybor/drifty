@@ -3,11 +3,17 @@
 The frame codec interface: a continuous stream split into delimited **frames**,
 with bits *between* frames passing through uncoded. It is the streaming interface
 plus frame delimiters — protected payload framed, unprotected headers or sync
-verbatim. Two function-pointer vtables over the `dt_bit` alphabet
+verbatim. Three function-pointer vtables over the `dt_bit` alphabet
 ([symbols](bit.md)):
 
 - `dt_frame_encoder` ([`frame_encoder.h`](../include/drifty/frame_encoder.h))
 - `dt_frame_decoder` ([`frame_decoder.h`](../include/drifty/frame_decoder.h))
+- `dt_frame_soft_decoder`
+  ([`frame_soft_decoder.h`](../include/drifty/frame_soft_decoder.h)) — the frame
+  decoder in fully soft bits (`dt_soft_bit` ([symbols](bit.md)) throughout, no hard
+  bits). It reframes a soft stream — the middle stage between a
+  [`stream_soft_decoder`](stream.md) and a [`block_soft_decoder`](block.md) — and
+  shares the same `get_state()` frame-state machine.
 
 > These interfaces are defined but **not yet implemented** by any codec.
 

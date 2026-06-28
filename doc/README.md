@@ -22,8 +22,9 @@ codecs that implement them.
 - **[Block interface](block.md)** — `dt_block_encoder` / `_decoder` /
   `_soft_decoder`: fixed-size `(k, n)` blocks. The [`rs251`](bc/rs251.md) codec
   implements it.
-- **[Frame interface](frame.md)** — `dt_frame_encoder` / `_decoder`: a stream split
-  into delimited frames with uncoded passthrough. Defined but not yet implemented.
+- **[Frame interface](frame.md)** — `dt_frame_encoder` / `_decoder` /
+  `_soft_decoder`: a stream split into delimited frames with uncoded passthrough.
+  Defined but not yet implemented.
 - **[Convolutional coding (`cc/`)](cc/README.md)** — the convolutional codecs: the
   shared encoder and the five decoders (`viterbi`, `vindel`, `hybrid`, `maxir`,
   `bcjr`), with per-codec references and a guide to choosing one.

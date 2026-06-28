@@ -29,6 +29,7 @@
 
 #include <drifty/block_decoder.h>
 #include <drifty/block_encoder.h>
+#include <drifty/block_soft_decoder.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -75,6 +76,22 @@ dt_block_decoder *dt_rs_rs251_block_decoder_create(uint16_t n, uint16_t k,
                                                    uint16_t s);
 /* Free a decoder from dt_rs_rs251_block_decoder_create(). Passing NULL is fine. */
 void dt_rs_rs251_block_decoder_destroy(dt_block_decoder *dec);
+
+/* Build a soft-input block decoder for the systematic RS(n, k) code. Its encoded
+ * buffer is dt_soft_bit (8 per codeword symbol; see <drifty/block_soft_decoder.h>),
+ * the recovered output stays hard dt_bit. Each symbol's hard value comes from the
+ * per-bit argmax, as in the hard decoder; on top of that the decoder corrects more
+ * than the hard ⌊(n - k) / 2⌋ errors by iteratively erasing the least reliable
+ * still-"known" symbol and retrying. A symbol's reliability is its least reliable
+ * constituent bit - the largest (c_invalid + c_absent) over its 8 soft bits - so a
+ * symbol an upstream decoder flagged as poison or absent is erased first, trading a
+ * wrong symbol (2 check symbols) for an erasure (1) until the block decodes. `s` is
+ * the spare-check-symbol guard, exactly as for dt_rs_rs251_block_decoder_create().
+ * Requires 0 <= s <= n - k. Returns NULL on a bad argument or out of memory. */
+dt_block_soft_decoder *dt_rs_rs251_block_soft_decoder_create(uint16_t n, uint16_t k,
+                                                             uint16_t s);
+/* Free a soft decoder from dt_rs_rs251_block_soft_decoder_create(). NULL is fine. */
+void dt_rs_rs251_block_soft_decoder_destroy(dt_block_soft_decoder *dec);
 
 #ifdef __cplusplus
 }

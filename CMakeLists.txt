@@ -108,7 +108,8 @@ set(_dt_public_symbols
     dt_cc_maxir_soft_decoder_create dt_cc_maxir_soft_decoder_destroy
     dt_cc_encoder_create dt_cc_encoder_destroy
     dt_rs_rs251_block_encoder_create dt_rs_rs251_block_encoder_destroy
-    dt_rs_rs251_block_decoder_create dt_rs_rs251_block_decoder_destroy)
+    dt_rs_rs251_block_decoder_create dt_rs_rs251_block_decoder_destroy
+    dt_rs_rs251_block_soft_decoder_create dt_rs_rs251_block_soft_decoder_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

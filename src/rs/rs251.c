@@ -42,9 +42,10 @@
 
 #include <drifty/rs/rs251.h>
 
-#include <drifty/bit.h>    /* dt_bit, DT_BIT / DT_IS_BIT, DT_TRUE / DT_FALSE */
-#include <drifty/stdlib.h> /* dt_malloc / dt_free */
-#include <rs251/rs251.h>   /* internal RS engine - not re-exported */
+#include <drifty/bit.h>      /* dt_bit, DT_BIT / DT_IS_BIT, DT_TRUE / DT_FALSE */
+#include <drifty/soft_bit.h> /* dt_soft_bit */
+#include <drifty/stdlib.h>   /* dt_malloc / dt_free */
+#include <rs251/rs251.h>     /* internal RS engine - not re-exported */
 
 /* -- bit <-> byte / symbol packing ----------------------------------------- */
 
@@ -77,6 +78,42 @@ static gf251_t pack_symbol(const dt_bit *bits) {
     v = (uint8_t)((v << 1) | DT_BIT(bits[i]));
   }
   return (v > 250u) ? RS251_ERASURE : (gf251_t)v;
+}
+
+/* Pack 8 received soft bits (MSB first) into a GF(251) symbol, and report the
+ * symbol's unreliability in *unrel. Each bit's hard reading is the argmax over the
+ * output alphabet, recoverability-first: a clean boolean iff the larger of
+ * {c_false, c_true} is at least the larger of {c_erasure, c_invalid, c_absent}.
+ * As in pack_symbol(), any non-boolean bit or an assembled value > 250 makes the
+ * whole symbol RS251_ERASURE. The unreliability is the symbol's *least reliable*
+ * constituent bit - the largest (c_invalid + c_absent) over the 8 bits - so the
+ * worst bit gates the symbol. */
+static gf251_t soft_pack_symbol(const dt_soft_bit *bits, float *unrel) {
+  uint8_t v = 0;
+  int erased = 0;
+  float worst = 0.0f;
+  for (int i = 0; i < 8; ++i) {
+    const dt_soft_bit *sb = &bits[i];
+    const float bit_unrel = sb->c_invalid + sb->c_absent;
+    if (bit_unrel > worst) {
+      worst = bit_unrel;
+    }
+    const float val = sb->c_true >= sb->c_false ? sb->c_true : sb->c_false;
+    float non = sb->c_erasure;
+    if (sb->c_invalid > non) {
+      non = sb->c_invalid;
+    }
+    if (sb->c_absent > non) {
+      non = sb->c_absent;
+    }
+    if (val >= non) { /* a clean boolean (recoverability-first ties to a value) */
+      v = (uint8_t)((v << 1) | (sb->c_true >= sb->c_false ? 1u : 0u));
+    } else {
+      erased = 1;
+    }
+  }
+  *unrel = worst;
+  return (erased || v > 250u) ? RS251_ERASURE : (gf251_t)v;
 }
 
 /* -- encoder --------------------------------------------------------------- */
@@ -304,6 +341,153 @@ void dt_rs_rs251_block_decoder_destroy(dt_block_decoder *dec) {
     return;
   }
   rs251_block_decoder *st = dec->data;
+  dt_free(st->decoded);
+  dt_free(st->encoded);
+  dt_free(st);
+  dt_free(dec);
+}
+
+/* -- soft decoder ---------------------------------------------------------- */
+
+typedef struct {
+  rs251_codec codec;      /* the underlying RS(n, k) code */
+  uint16_t spare;         /* spare (unspent) check symbols required */
+  dt_bit *decoded;        /* owned output buffer: B bytes as bits (B*8 dt_bit) */
+  dt_soft_bit *encoded;   /* owned input buffer:  n symbols as soft bits (n*8) */
+} rs251_block_soft_decoder;
+
+static size_t rs251_soft_decoder_decoded_len(dt_block_soft_decoder *dec) {
+  rs251_block_soft_decoder *st = dec->data;
+  return (size_t)rs251_message_bytes(&st->codec) * 8u;
+}
+
+static dt_bit *rs251_soft_decoder_decoded_buf(dt_block_soft_decoder *dec) {
+  rs251_block_soft_decoder *st = dec->data;
+  return st->decoded;
+}
+
+static size_t rs251_soft_decoder_encoded_len(dt_block_soft_decoder *dec) {
+  rs251_block_soft_decoder *st = dec->data;
+  return (size_t)st->codec.n * 8u;
+}
+
+static dt_soft_bit *rs251_soft_decoder_encoded_buf(dt_block_soft_decoder *dec) {
+  rs251_block_soft_decoder *st = dec->data;
+  return st->encoded;
+}
+
+static dt_result rs251_soft_decoder_decode(dt_block_soft_decoder *dec) {
+  rs251_block_soft_decoder *st = dec->data;
+  const uint16_t n = st->codec.n;
+  const uint16_t b = rs251_message_bytes(&st->codec);
+  const uint16_t budget = (uint16_t)(st->codec.n - st->codec.k);
+  gf251_t recv[RS251_MAX_N];
+  gf251_t msg[RS251_MAX_N];
+  uint8_t bytes[RS251_MAX_N];
+  float score[RS251_MAX_N]; /* per-symbol unreliability (least-reliable bit) */
+
+  uint16_t erasures = 0;
+  for (uint16_t i = 0; i < n; ++i) {
+    recv[i] = soft_pack_symbol(&st->encoded[(size_t)i * 8u], &score[i]);
+    if (recv[i] == RS251_ERASURE) {
+      ++erasures;
+    }
+  }
+
+  /* Decode; while it fails, erase the least reliable still-known symbol (the one
+   * whose worst constituent bit reads most as poison/absent) and retry, trading a
+   * wrong symbol for an erasure until 2*errors + erasures fits the n - k budget. */
+  for (;;) {
+    uint16_t errors = 0;
+    const rs251_status s = rs251_decode(&st->codec, recv, msg, &errors);
+    if (s == RS251_ERR_PARAMS) {
+      return DT_ERR_ARG;
+    }
+    if (s == RS251_OK) {
+      const uint32_t spent = (uint32_t)2u * errors + erasures;
+      if (spent + st->spare <= budget &&
+          rs251_message_to_bytes(&st->codec, msg, bytes) == RS251_OK) {
+        for (uint16_t i = 0; i < b; ++i) {
+          unpack_byte(bytes[i], &st->decoded[(size_t)i * 8u]);
+        }
+        return DT_OK;
+      }
+      /* Algebraically OK but rejected (marginal spare, or a miscorrection that does
+       * not map back to a message): keep erasing rather than accept it. */
+    }
+    /* RS251_ERR_DECODE, or OK-but-rejected: one more erasure can only help if it
+     * keeps the count within the n - k budget. */
+    if (erasures >= budget) {
+      return DT_ERR_DECODE;
+    }
+    int victim = -1;
+    float worst = -1.0f;
+    for (uint16_t i = 0; i < n; ++i) {
+      if (recv[i] != RS251_ERASURE && score[i] > worst) {
+        worst = score[i];
+        victim = (int)i;
+      }
+    }
+    if (victim < 0) {
+      return DT_ERR_DECODE; /* no known symbol left to erase */
+    }
+    recv[victim] = RS251_ERASURE;
+    ++erasures;
+  }
+}
+
+static dt_result rs251_soft_decoder_reset(dt_block_soft_decoder *dec) {
+  (void)dec; /* decode reads the whole encoded buffer fresh; no state to reset */
+  return DT_OK;
+}
+
+dt_block_soft_decoder *dt_rs_rs251_block_soft_decoder_create(uint16_t n,
+                                                             uint16_t k,
+                                                             uint16_t s) {
+  dt_block_soft_decoder *dec = dt_malloc(sizeof(*dec));
+  rs251_block_soft_decoder *st = dt_malloc(sizeof(*st));
+  if (!dec || !st) {
+    dt_free(dec);
+    dt_free(st);
+    return NULL;
+  }
+  if (rs251_codec_init(&st->codec, n, k) != RS251_OK) {
+    dt_free(dec);
+    dt_free(st);
+    return NULL;
+  }
+  if (s > (uint16_t)(st->codec.n - st->codec.k)) {
+    dt_free(dec);
+    dt_free(st);
+    return NULL;
+  }
+  st->spare = s;
+  const size_t dec_bytes = (size_t)rs251_message_bytes(&st->codec) * 8u;
+  const size_t enc_recs = (size_t)st->codec.n * 8u; /* one soft bit per coded bit */
+  st->decoded = dec_bytes ? dt_malloc(dec_bytes) : NULL;
+  st->encoded = dt_malloc(enc_recs * sizeof(dt_soft_bit)); /* n >= 1, non-zero */
+  if (!st->encoded || (dec_bytes && !st->decoded)) {
+    dt_free(st->decoded);
+    dt_free(st->encoded);
+    dt_free(dec);
+    dt_free(st);
+    return NULL;
+  }
+  dec->decoded_len = rs251_soft_decoder_decoded_len;
+  dec->decoded_buf = rs251_soft_decoder_decoded_buf;
+  dec->encoded_len = rs251_soft_decoder_encoded_len;
+  dec->encoded_buf = rs251_soft_decoder_encoded_buf;
+  dec->decode = rs251_soft_decoder_decode;
+  dec->reset = rs251_soft_decoder_reset;
+  dec->data = st;
+  return dec;
+}
+
+void dt_rs_rs251_block_soft_decoder_destroy(dt_block_soft_decoder *dec) {
+  if (!dec) {
+    return;
+  }
+  rs251_block_soft_decoder *st = dec->data;
   dt_free(st->decoded);
   dt_free(st->encoded);
   dt_free(st);

@@ -93,13 +93,13 @@ void dt_cc_bcjr_decoder_destroy(dt_stream_decoder *dec) {
 
 /* -- soft decoder ---------------------------------------------------------- */
 
-/* Map the engine's per-bit soft output onto a dt_stream_soft_decoder_out. The fields
+/* Map the engine's per-bit soft output onto a dt_soft_bit. The fields
  * line up one-to-one: c_lost is the "erasure / unknowable value" consistency,
  * and the engine also reports c_invalid (the slot's coded group was the
  * encoder's DT_INVALID poison marker) and c_absent (1 - c_lock; the slot is not
  * backed by a tracked codeword stream), so both pass straight through. */
 static void details_to_soft(const dt_cc_bcjr_decode_details *d,
-                            dt_stream_soft_decoder_out *o) {
+                            dt_soft_bit *o) {
   o->c_false = d->c_false;
   o->c_true = d->c_true;
   o->c_erasure = d->c_lost;
@@ -119,7 +119,7 @@ static int bcjr_soft_begin(dt_stream_soft_decoder *dec, dt_bit *dst, size_t dst_
   return 0; /* no preamble to emit */
 }
 
-static int bcjr_soft_decode(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
+static int bcjr_soft_decode(dt_stream_soft_decoder *dec, dt_soft_bit *dst,
                             size_t dst_len, const dt_bit *src, size_t src_len) {
   dt_cc_bcjr_stream_decoder *sd = dec->data;
   dt_cc_bcjr_decode_details chunk[BCJR_SOFT_CHUNK];
@@ -149,7 +149,7 @@ static int bcjr_soft_decode(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_
   return (int)written;
 }
 
-static int bcjr_soft_finalize(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
+static int bcjr_soft_finalize(dt_stream_soft_decoder *dec, dt_soft_bit *dst,
                               size_t dst_len) {
   dt_cc_bcjr_stream_decoder *sd = dec->data;
   dt_cc_bcjr_decode_details chunk[BCJR_SOFT_CHUNK];

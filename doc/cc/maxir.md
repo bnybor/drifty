@@ -90,7 +90,7 @@ Hard and soft front ends are driven the same way — `begin` → `decode` (repea
 
 ### Soft output
 
-`maxir` populates the **full** `dt_stream_soft_decoder_out` alphabet (unlike `hybrid`,
+`maxir` populates the **full** `dt_soft_bit` alphabet (unlike `hybrid`,
 which leaves `c_invalid` / `c_absent` at 0). Each field is a graded consistency in
 `[0, 1]` (not a probability split):
 

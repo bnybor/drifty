@@ -203,7 +203,7 @@ a bit-aligned channel, `hybrid` and `maxir` when you also need drift tolerance.
 
 ```c
 dt_stream_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &params);
-dt_stream_soft_decoder_out soft[OUT];
+dt_soft_bit soft[OUT];
 int n  = sd->begin(sd, NULL, 0);     /* the hybrid codec emits no preamble */
 n     += sd->decode(sd, soft + n, OUT - n, received, n_received);
 n     += sd->finalize(sd, soft + n, OUT - n);
@@ -213,7 +213,7 @@ n     += sd->finalize(sd, soft + n, OUT - n);
 dt_cc_hybrid_soft_decoder_destroy(sd);
 ```
 
-`dt_stream_soft_decoder_out` also carries `c_invalid` — the position reads as the
+`dt_soft_bit` also carries `c_invalid` — the position reads as the
 encoder's deliberate non-value (`DT_INVALID`) — and `c_absent` — the position reads
 as dropped in transit (`DT_ABSENT`). The hybrid codec does not model those and
 leaves them 0, while the *full* max-log-MAP codecs (`bcjr` and `maxir`) populate

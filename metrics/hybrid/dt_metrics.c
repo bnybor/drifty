@@ -504,7 +504,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
    * `finalize`). */
   const int decoded_cap = info_bits + 256;
   uint8_t *decoded = NULL;
-  dt_stream_soft_decoder_out *soft = NULL;
+  dt_soft_bit *soft = NULL;
   int n_stream = 0, n_decoded;
   if (which_metric == METRIC_EDIT) {
     decoded = xmalloc((size_t)decoded_cap);

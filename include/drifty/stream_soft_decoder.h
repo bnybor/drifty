@@ -28,6 +28,7 @@
 #define DRIFTY_STREAM_SOFT_DECODER_H
 
 #include <drifty/bit.h>
+#include <drifty/soft_bit.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -36,37 +37,8 @@ extern "C" {
 #endif
 
 /*
- * Soft output for one recovered information position: a graded *consistency* in
- * [0, 1] for each output-domain hypothesis - how well it fits the received
- * stream - not a probability split, so the fields need not sum to 1. The hard
- * symbol is the argmax projection over the alphabet (recoverability-first; see
- * decoder.h).
- *
- * An implementation need not model every hypothesis: the hybrid codec leaves
- * c_invalid and c_absent at 0, while the max-log-MAP codecs (bcjr, maxir)
- * populate the full alphabet.
- */
-typedef struct dt_stream_soft_decoder_out_t dt_stream_soft_decoder_out;
-struct dt_stream_soft_decoder_out_t {
-  // Consistency that the bit position holds false (DT_FALSE)
-  float c_false;
-  // Consistency that the bit position holds true (DT_TRUE)
-  float c_true;
-  // Consistency that the value is unrecoverable (DT_ERASURE)
-  float c_erasure;
-  // Consistency of a bound, non-boolean value (DT_INVALID)
-  float c_invalid;
-  // Consistency that the position was deleted (DT_ABSENT)
-  float c_absent;
-
-  // Consistency that the decoder is correctly tracking this stream - low during
-  // warm-up or after losing sync. Independent of the value fields above.
-  float c_locked;
-};
-
-/*
  * dt_stream_soft_decoder - like dt_stream_decoder, but each recovered position is reported as
- * a dt_stream_soft_decoder_out record of consistencies rather than a single hard bit.
+ * a dt_soft_bit record of consistencies rather than a single hard bit.
  * It is driven and behaves identically otherwise: the same begin / decode /
  * finalize phases, the same warm-up delay, and the same buffering - a decode
  * call that returns exactly `dst_len` records has more buffered, so call again
@@ -83,10 +55,10 @@ struct dt_stream_soft_decoder_t {
   // Initialise the decoder and write any preamble. Call once, before decode().
   int (*begin)(dt_stream_soft_decoder *dec, dt_bit *dst, size_t dst_len);
   // Decode src_len received bits, writing up to dst_len soft records to dst.
-  int (*decode)(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst, size_t dst_len,
+  int (*decode)(dt_stream_soft_decoder *dec, dt_soft_bit *dst, size_t dst_len,
                 const dt_bit *src, size_t src_len);
   // Drain records still in flight. Call once, at end of stream.
-  int (*finalize)(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
+  int (*finalize)(dt_stream_soft_decoder *dec, dt_soft_bit *dst,
                   size_t dst_len);
 
   // implementation-private state; do not access

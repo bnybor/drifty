@@ -53,7 +53,7 @@ static dt_cc_hybrid_stream_params clean_params(void) {
 
 /* The hard decision implied by a soft record - mirrors the engine's own rule
  * (erasure wins on a tie, else the more-consistent value). */
-static uint8_t soft_hard(const dt_stream_soft_decoder_out *o) {
+static uint8_t soft_hard(const dt_soft_bit *o) {
   if (o->c_erasure >= o->c_true && o->c_erasure >= o->c_false) {
     return DT_ERASURE;
   }
@@ -63,7 +63,7 @@ static uint8_t soft_hard(const dt_stream_soft_decoder_out *o) {
 /* Soft-decode a whole received buffer in small chunks, then drain. Returns the
  * number of soft records collected. */
 static int soft_decode_all(dt_stream_soft_decoder *sd, const uint8_t *rx, int rl,
-                           dt_stream_soft_decoder_out *out, int cap) {
+                           dt_soft_bit *out, int cap) {
   int got = sd->begin(sd, NULL, 0);
   for (int pos = 0; pos < rl;) {
     int chunk = (rl - pos < 41) ? (rl - pos) : 41;
@@ -133,14 +133,14 @@ static void test_soft_clean(void) {
   REQUIRE("soft decoder created", sd != NULL);
 
   const int cap = N + 64;
-  dt_stream_soft_decoder_out *out = malloc((size_t)cap * sizeof(*out));
+  dt_soft_bit *out = malloc((size_t)cap * sizeof(*out));
   int got = soft_decode_all(sd, coded, clen, out, cap);
 
   int oob = 0, nonzero_ia = 0, errors = 0;
   double min_lock = 1.0;
   const int hi = (got < N ? got : N) - WARMUP;
   for (int i = 0; i < got; ++i) {
-    const dt_stream_soft_decoder_out *o = &out[i];
+    const dt_soft_bit *o = &out[i];
     if (o->c_true < 0.0 || o->c_true > 1.0 || o->c_false < 0.0 ||
         o->c_false > 1.0 || o->c_erasure < 0.0 || o->c_erasure > 1.0 ||
         o->c_locked < 0.0 || o->c_locked > 1.0) {
@@ -190,7 +190,7 @@ static void test_soft_feed_only_pump(void) {
   REQUIRE("soft decoder created", sd != NULL);
 
   const int cap = N + 64;
-  dt_stream_soft_decoder_out *out = malloc((size_t)cap * sizeof(*out));
+  dt_soft_bit *out = malloc((size_t)cap * sizeof(*out));
   sd->begin(sd, NULL, 0);
 
   /* Pump: feed every coded bit with dst_len == 0 - a feed-only call collects no
@@ -253,7 +253,7 @@ static void test_soft_matches_hard(void) {
 
   const int cap = N + 64;
   uint8_t *hard = malloc((size_t)cap);
-  dt_stream_soft_decoder_out *soft = malloc((size_t)cap * sizeof(*soft));
+  dt_soft_bit *soft = malloc((size_t)cap * sizeof(*soft));
   int gh = hard_decode_all(hd, coded, clen, hard, cap);
   int gs = soft_decode_all(sd, coded, clen, soft, cap);
 

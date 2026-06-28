@@ -592,7 +592,7 @@ static void test_soft_decoder_vtable(void) {
   const int cap = (info_bits + K) * n;
   uint8_t *msg = malloc((size_t)info_bits);
   uint8_t *coded = malloc((size_t)cap);
-  dt_stream_soft_decoder_out *soft = malloc(sizeof(*soft) * (size_t)(info_bits + K + 8));
+  dt_soft_bit *soft = malloc(sizeof(*soft) * (size_t)(info_bits + K + 8));
   rand_bits(msg, info_bits, &rng);
   int clen = maxir_encode_all(code, msg, info_bits, coded);
 

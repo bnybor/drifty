@@ -89,13 +89,13 @@ void dt_cc_hybrid_decoder_destroy(dt_stream_decoder *dec) {
 
 /* -- soft decoder ---------------------------------------------------------- */
 
-/* Map the engine's per-bit soft output onto a dt_stream_soft_decoder_out. The engine
+/* Map the engine's per-bit soft output onto a dt_soft_bit. The engine
  * folds all information loss into c_lost (and decodes the bit as DT_ERASURE when
  * it wins), so c_lost is the "erasure / unknowable value" consistency; it does
  * not separately model a stuck non-truth value or a per-position deletion, so
  * c_invalid and c_absent are left 0. */
 static void details_to_soft(const dt_cc_decode_details *d,
-                            dt_stream_soft_decoder_out *o) {
+                            dt_soft_bit *o) {
   o->c_false = d->c_false;
   o->c_true = d->c_true;
   o->c_erasure = d->c_lost;
@@ -115,7 +115,7 @@ static int hybrid_soft_begin(dt_stream_soft_decoder *dec, dt_bit *dst, size_t ds
   return 0; /* the stream decoder self-acquires; no preamble to emit */
 }
 
-static int hybrid_soft_decode(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
+static int hybrid_soft_decode(dt_stream_soft_decoder *dec, dt_soft_bit *dst,
                               size_t dst_len, const dt_bit *src, size_t src_len) {
   dt_cc_stream_decoder *sd = dec->data;
   dt_cc_decode_details chunk[HYBRID_SOFT_CHUNK];
@@ -145,7 +145,7 @@ static int hybrid_soft_decode(dt_stream_soft_decoder *dec, dt_stream_soft_decode
   return (int)written;
 }
 
-static int hybrid_soft_finalize(dt_stream_soft_decoder *dec, dt_stream_soft_decoder_out *dst,
+static int hybrid_soft_finalize(dt_stream_soft_decoder *dec, dt_soft_bit *dst,
                                 size_t dst_len) {
   dt_cc_stream_decoder *sd = dec->data;
   dt_cc_decode_details chunk[HYBRID_SOFT_CHUNK];

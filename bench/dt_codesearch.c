@@ -272,7 +272,7 @@ static double lock_mean(const dt_cc_code *enc, const dt_cc_code *dec,
     return 1.0; /* treat as worst case (indistinguishable) */
   }
   const int cap = info_bits + 64;
-  dt_stream_soft_decoder_out *soft = xmalloc((size_t)cap * sizeof(*soft));
+  dt_soft_bit *soft = xmalloc((size_t)cap * sizeof(*soft));
   int got = sd->decode(sd, soft, (size_t)cap, coded, (size_t)written);
 
   double result = 1.0;

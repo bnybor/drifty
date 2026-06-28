@@ -83,7 +83,7 @@ and `<drifty/stream_soft_decoder.h>`.
 
 ### Soft output
 
-`bcjr` populates the **full** `dt_stream_soft_decoder_out` alphabet. Each field is a
+`bcjr` populates the **full** `dt_soft_bit` alphabet. Each field is a
 graded consistency in `[0, 1]` (not a probability split, so the fields need not
 sum to 1):
 

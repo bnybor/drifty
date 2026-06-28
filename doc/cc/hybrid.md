@@ -80,7 +80,7 @@ so `begin(dec, NULL, 0)` is fine.
 
 ### Soft output
 
-The soft front end reports a `dt_stream_soft_decoder_out` per recovered position — a
+The soft front end reports a `dt_soft_bit` per recovered position — a
 graded consistency in `[0, 1]` for each hypothesis (not a probability split, so
 the fields need not sum to 1):
 

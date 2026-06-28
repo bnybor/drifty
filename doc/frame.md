@@ -15,7 +15,9 @@ verbatim. Three function-pointer vtables over the `dt_bit` alphabet
   [`stream_soft_decoder`](stream.md) and a [`block_soft_decoder`](block.md) — and
   shares the same `get_state()` frame-state machine.
 
-> These interfaces are defined but **not yet implemented** by any codec.
+The frame codecs in [`fc/`](fc/README.md) implement these interfaces:
+[`naive`](fc/naive.md) (fixed-length frames) and [`marker`](fc/marker.md)
+(variable-length, escape-delimited).
 
 ## Encoder
 
@@ -53,6 +55,8 @@ drain).
 
 ## See also
 
+- [Frame coding (`fc/`)](fc/README.md) — the codecs that implement this interface
+  ([`naive`](fc/naive.md), [`marker`](fc/marker.md)), and a guide to choosing one.
 - [Streaming interface](stream.md) — frames are the streaming interface plus
   delimiters.
 - [Symbols](bit.md) — the `dt_bit` alphabet, including the `DT_ABSENT` that an

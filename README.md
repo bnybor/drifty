@@ -63,6 +63,8 @@ This README is the overview. The full reference lives in [`doc/`](doc/README.md)
   `maxir`, `bcjr`), with a guide to choosing one.
 - [Block coding (`doc/bc/`)](doc/bc/rs251.md) — the `rs251` Reed–Solomon block
   codec, an RS(n, k) code over GF(251).
+- [Frame coding (`doc/fc/`)](doc/fc/README.md) — the frame-delimiting codecs
+  (`naive` fixed-length, `marker` escape-delimited), with a guide to choosing one.
 
 ## Choosing a codec
 
@@ -231,14 +233,21 @@ a small vtable interface whose operations return `dt_result` status codes
 - **Block** — fixed-size `(k, n)` blocks: `<drifty/block_encoder.h>`,
   `<drifty/block_decoder.h>`, and a soft-input `<drifty/block_soft_decoder.h>`.
 - **Frame** — a stream split into delimited frames with uncoded passthrough
-  between them: `<drifty/frame_encoder.h>`, `<drifty/frame_decoder.h>`.
+  between them: `<drifty/frame_encoder.h>`, `<drifty/frame_decoder.h>`, and a
+  soft-input `<drifty/frame_soft_decoder.h>`.
 
 The implemented block codec is **[`rs251`](doc/bc/rs251.md)**
 (`<drifty/bc/rs251.h>`, `dt_bc_rs251_block_*`): a systematic Reed–Solomon RS(n, k)
 code over GF(251) that corrects errors and erasures while
-`2·errors + erasures ≤ n − k`. As an outer block code it pairs naturally with the
-convolutional inner codecs. The frame interfaces and the soft-input block
-interface are defined but not yet implemented.
+`2·errors + erasures ≤ n − k`, with both a hard and a soft-input decoder. As an
+outer block code it pairs naturally with the convolutional inner codecs.
+
+The frame interfaces are implemented by the **[`fc/`](doc/fc/README.md)** codecs
+(`<drifty/fc/...>`, `dt_fc_*`), which delimit frames but carry no error correction
+of their own — frame them around an inner `cc/` or outer `bc/` codec:
+**[`naive`](doc/fc/naive.md)** (fixed-length frames) and
+**[`marker`](doc/fc/marker.md)** (variable-length frames delimited by escape
+sequences), each with a hard and a soft decoder.
 
 ## Build
 

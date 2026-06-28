@@ -24,12 +24,15 @@ codecs that implement them.
   implements it.
 - **[Frame interface](frame.md)** — `dt_frame_encoder` / `_decoder` /
   `_soft_decoder`: a stream split into delimited frames with uncoded passthrough.
-  Defined but not yet implemented.
+  The [`fc/`](fc/README.md) codecs implement it.
 - **[Convolutional coding (`cc/`)](cc/README.md)** — the convolutional codecs: the
   shared encoder and the five decoders (`viterbi`, `vindel`, `hybrid`, `maxir`,
   `bcjr`), with per-codec references and a guide to choosing one.
 - **[Block coding (`bc/`)](bc/rs251.md)** — block-code implementations; currently
   `rs251`, a Reed–Solomon RS(n, k) code over GF(251) (hard and soft decoders).
+- **[Frame coding (`fc/`)](fc/README.md)** — frame-delimiting codecs that carry no
+  error correction of their own: `naive` (fixed-length frames) and `marker`
+  (variable-length, escape-delimited), each with a hard and a soft decoder.
 
 Operations that can fail return the shared `dt_result` codes from
 [`result.h`](../include/drifty/result.h).
@@ -41,5 +44,7 @@ Operations that can fail return the shared `dt_result` codes from
 | `include/drifty/` | top-level public headers: the `dt_bit` alphabet (`bit.h`) and soft bit (`soft_bit.h`), shared result codes (`result.h`), and the streaming / block / frame codec interfaces |
 | `include/drifty/cc/` | convolutional codec API (`ccode.h`, `encoder.h`, `viterbi.h`, `vindel.h`, `hybrid.h`, `maxir.h`, `bcjr.h`) |
 | `include/drifty/bc/` | block-code API (`rs251.h` — Reed–Solomon over GF(251)) |
+| `include/drifty/fc/` | frame-code API (`naive.h` — fixed-length frames; `marker.h` — escape-delimited frames) |
 | `src/cc/` | convolutional implementations — the shared `encoder/`, the `ccode` descriptor, and each codec's decode engine |
 | `src/bc/` | the `rs251` block-codec adapter over the bundled `contrib/rs251` Reed–Solomon library |
+| `src/fc/` | frame-codec implementations (`naive`, `marker`) |

@@ -48,7 +48,8 @@ extern "C" {
  *
  * Buffer layout (dt_bit, one symbol per byte; see the block interfaces):
  *   - The decoded buffer is a whole number of bytes, each 8 dt_bit MSB-first; its
- *     length is the bytes that fit in k GF(251) symbols, times 8.
+ *     length is the bytes that fit in k GF(251) symbols, times 8. A k-symbol
+ *     message holds k - 1 whole bytes, so the decoded buffer is (k - 1) * 8 bits.
  *   - The encoded buffer is the n codeword symbols, each one GF(251) value as 8
  *     dt_bit MSB-first, so its length is 8 * n.
  * On decode, a received symbol whose 8 bits are not all DT_TRUE / DT_FALSE (i.e.

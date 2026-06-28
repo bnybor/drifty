@@ -9,6 +9,12 @@ sync; drifty's drift-tolerant codecs stay aligned through them.
 It works on a continuous stream: feed received bits in, read corrected bits out at
 a fixed delay, with no message lengths or frame boundaries to manage.
 
+drifty is **freestanding** and built for **embedded targets**: the core depends on
+no C standard library, pulls in no headers beyond `<stdint.h>` / `<stddef.h>`, and
+reaches the few libc facilities it needs through `dt_*` proxies you supply — so you
+choose the allocator (a static pool is fine) and the math. See
+[Freestanding & embedded](#freestanding--embedded).
+
 ## Concepts
 
 A **code** (`dt_cc_code`) is the redundancy scheme — pick a ready-made one or define
@@ -249,6 +255,43 @@ of their own — frame them around an inner `cc/` or outer `bc/` codec:
 **[`naive`](doc/fc/naive.md)** (fixed-length frames) and
 **[`marker`](doc/fc/marker.md)** (variable-length frames delimited by escape
 sequences), each with a hard and a soft decoder.
+
+## Freestanding & embedded
+
+drifty's core is **freestanding** — it makes no use of the C standard library and
+is suitable for bare-metal and embedded targets. It is built `-ffreestanding
+-fno-builtin` as plain C11, includes only headers guaranteed in a freestanding
+environment (`<stdint.h>`, `<stddef.h>`, `<stdbool.h>`), does no I/O, and carries
+one symbol per byte (`dt_bit`) rather than packed bitfields.
+
+The handful of libc facilities the core needs — allocation, `mem*`, and two `float`
+math calls — are reached only through `dt_*` proxies, the single explicit boundary
+where libc is touched:
+
+```c
+void *dt_malloc(size_t);  void *dt_calloc(size_t, size_t);
+void *dt_realloc(void *, size_t);  void  dt_free(void *);
+void *dt_memcpy(void *, const void *, size_t);
+void *dt_memmove(void *, const void *, size_t);
+void *dt_memset(void *, int, size_t);
+int   dt_abs(int);  float dt_log(float);  float dt_exp(float);
+```
+
+This gives you two ways to link (see [Build](#build)):
+
+- **`libdrifty_bare.a`** — the freestanding core with the `dt_*` proxies left
+  **undefined**, for you to provide. Back `dt_malloc` with a static arena, route
+  `dt_log` / `dt_exp` to your platform's math, and the core never touches a heap or
+  a libc you didn't choose.
+- **`libdrifty.a`** — the same core with a small default proxy implementation
+  bundled in (backed by the host libc), for hosted builds where that is fine.
+
+To drop the unwind tables and compiler `.ident` string for a smaller archive,
+configure a size-optimized build with `-DCMAKE_BUILD_TYPE=MinSizeRel`.
+
+For the full treatment — a porting guide for the proxies, a bare-metal arena
+example, and the size-build details — see
+[Freestanding & embedded](doc/freestanding.md).
 
 ## Build
 

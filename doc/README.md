@@ -33,6 +33,9 @@ codecs that implement them.
 - **[Frame coding (`fc/`)](fc/README.md)** — frame-delimiting codecs that carry no
   error correction of their own: `naive` (fixed-length frames) and `marker`
   (variable-length, escape-delimited), each with a hard and a soft decoder.
+- **[Freestanding & embedded](freestanding.md)** — running the core without a
+  hosted C library: the `dt_*` proxy boundary, the bare vs full archives, and how
+  to port the proxies (allocation, math) to a bare-metal target.
 
 Operations that can fail return the shared `dt_result` codes from
 [`result.h`](../include/drifty/result.h).

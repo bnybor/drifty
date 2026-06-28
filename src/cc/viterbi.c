@@ -44,11 +44,11 @@
 
 /* -- decoder --------------------------------------------------------------- */
 
-static int viterbi_decoder_begin(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int viterbi_decoder_begin(dt_stream_decoder *dec, const dt_bit *src, size_t src_len) {
   (void)dec;
-  (void)dst;
-  (void)dst_len;
-  return 0; /* no preamble to emit */
+  (void)src;
+  (void)src_len;
+  return 0; /* no preamble to consume */
 }
 
 static int viterbi_decoder_decode(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len,

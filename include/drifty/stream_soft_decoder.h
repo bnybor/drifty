@@ -44,16 +44,17 @@ extern "C" {
  * call that returns exactly `dst_len` records has more buffered, so call again
  * with no new input (src_len 0) to drain before feeding more.
  *
- * `begin` writes any preamble into `dst`; the hybrid codec emits none, so
- * begin(dec, NULL, 0) is fine. `src` is the received transmit-domain stream
- * (DT_TRUE / DT_FALSE / DT_ERASURE / DT_INVALID); `data` is private state - do
- * not touch it. Build one with dt_cc_hybrid_soft_decoder_create() and free it with
- * the matching _destroy().
+ * `begin` consumes any preamble at the head of `src` (the received hard-bit
+ * stream, as decode() takes); the hybrid codec uses none, so begin(dec, NULL, 0)
+ * is fine. `src` is the received transmit-domain stream (DT_TRUE / DT_FALSE /
+ * DT_ERASURE / DT_INVALID); `data` is private state - do not touch it. Build one
+ * with dt_cc_hybrid_soft_decoder_create() and free it with the matching _destroy().
  */
 typedef struct dt_stream_soft_decoder_t dt_stream_soft_decoder;
 struct dt_stream_soft_decoder_t {
-  // Initialise the decoder and write any preamble. Call once, before decode().
-  int (*begin)(dt_stream_soft_decoder *dec, dt_soft_bit *dst, size_t dst_len);
+  // Initialise the decoder and consume any preamble at the head of `src`. Call
+  // once, before decode(). Returns preamble bits consumed (0 if none).
+  int (*begin)(dt_stream_soft_decoder *dec, const dt_bit *src, size_t src_len);
   // Decode src_len received bits, writing up to dst_len soft records to dst.
   int (*decode)(dt_stream_soft_decoder *dec, dt_soft_bit *dst, size_t dst_len,
                 const dt_bit *src, size_t src_len);

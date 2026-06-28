@@ -46,7 +46,7 @@ standalone encoder in `<drifty/cc/encoder.h>` (`dt_cc_encoder_*`).
 Drive the returned `dt_stream_decoder` through its vtable (see `<drifty/stream_decoder.h>`):
 
 ```c
-dec->begin(dec, dst, dst_len);                       // once, first
+dec->begin(dec, src, src_len);                       // once, first: consume any preamble
 dec->decode(dec, dst, dst_len, src, src_len);        // any number of times
 dec->finalize(dec, dst, dst_len);                    // once, last
 ```

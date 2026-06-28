@@ -25,7 +25,7 @@ Drive each instance through three phases:
 
 | Phase | Encoder | Decoder |
 |-------|---------|---------|
-| `begin` | once, first — write any preamble | once, first — write any preamble |
+| `begin` | once, first — write any preamble | once, first — consume any preamble |
 | `encode` / `decode` | any number of times — append coded bits for `src` | any number of times — feed received bits, out come recovered bits |
 | `finalize` | once, last — flush the terminating tail | once, last — drain bits still in flight |
 

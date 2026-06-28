@@ -51,7 +51,8 @@ extern "C" {
  * Drive one instance through three phases, and read its frame state from
  * get_state() (OUTSIDE -> BEGIN -> INSIDE -> END; see dt_frame_decoder_state):
  *
- *   begin    - once, first: initialise and write any preamble.
+ *   begin    - once, first: initialise and consume any preamble at the head of
+ *              the received soft-bit stream.
  *   decode   - any number of times: feed received soft bits, out come recovered
  *              soft bits.
  *   finalize - once, last: drain the records still in flight at end of stream.
@@ -73,8 +74,9 @@ extern "C" {
  */
 typedef struct dt_frame_soft_decoder_t dt_frame_soft_decoder;
 struct dt_frame_soft_decoder_t {
-  // Initialise the decoder and write any preamble. Call once, before decode().
-  int (*begin)(dt_frame_soft_decoder *dec, dt_soft_bit *dst, size_t dst_len);
+  // Initialise the decoder and consume any preamble at the head of `src`. Call
+  // once, before decode(). Returns preamble records consumed (0 if none).
+  int (*begin)(dt_frame_soft_decoder *dec, const dt_soft_bit *src, size_t src_len);
 
   // The decoder's current frame state. Check after each decode() call.
   dt_frame_decoder_state (*get_state)(dt_frame_soft_decoder *dec);

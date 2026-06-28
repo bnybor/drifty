@@ -40,11 +40,11 @@
 
 /* -- decoder --------------------------------------------------------------- */
 
-static int hybrid_decoder_begin(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len) {
+static int hybrid_decoder_begin(dt_stream_decoder *dec, const dt_bit *src, size_t src_len) {
   (void)dec;
-  (void)dst;
-  (void)dst_len;
-  return 0; /* the stream decoder self-acquires; no preamble to emit */
+  (void)src;
+  (void)src_len;
+  return 0; /* the stream decoder self-acquires; no preamble to consume */
 }
 
 static int hybrid_decoder_decode(dt_stream_decoder *dec, dt_bit *dst, size_t dst_len,
@@ -108,11 +108,11 @@ static void details_to_soft(const dt_cc_decode_details *d,
  * so decode/finalize need no allocation. */
 #define HYBRID_SOFT_CHUNK 64
 
-static int hybrid_soft_begin(dt_stream_soft_decoder *dec, dt_soft_bit *dst, size_t dst_len) {
+static int hybrid_soft_begin(dt_stream_soft_decoder *dec, const dt_bit *src, size_t src_len) {
   (void)dec;
-  (void)dst;
-  (void)dst_len;
-  return 0; /* the stream decoder self-acquires; no preamble to emit */
+  (void)src;
+  (void)src_len;
+  return 0; /* the stream decoder self-acquires; no preamble to consume */
 }
 
 static int hybrid_soft_decode(dt_stream_soft_decoder *dec, dt_soft_bit *dst,

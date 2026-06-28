@@ -336,7 +336,7 @@ static trial_result run_one_trial(const dt_cc_code *code, axis channel_axis,
     fprintf(stderr, "dt_viterbi_metrics: decoder create failed\n");
     exit(1);
   }
-  int n_decoded = dec->begin(dec, decoded, (size_t)decoded_cap);
+  int n_decoded = dec->begin(dec, NULL, 0);
   for (int read_pos = 0; read_pos < coded_len && n_decoded < decoded_cap;) {
     int chunk = coded_len - read_pos < 64 ? coded_len - read_pos : 64;
     int w =

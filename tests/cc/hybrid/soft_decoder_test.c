@@ -80,7 +80,7 @@ static int soft_decode_all(dt_stream_soft_decoder *sd, const uint8_t *rx, int rl
 /* Hard-decode the same way (same feed chunking), for the soft/hard cross-check. */
 static int hard_decode_all(dt_stream_decoder *dec, const uint8_t *rx, int rl,
                            uint8_t *out, int cap) {
-  int got = dec->begin(dec, out, cap);
+  int got = dec->begin(dec, NULL, 0);   /* no preamble to consume */
   for (int pos = 0; pos < rl;) {
     int chunk = (rl - pos < 41) ? (rl - pos) : 41;
     int w = dec->decode(dec, out + got, cap - got, rx + pos, chunk);

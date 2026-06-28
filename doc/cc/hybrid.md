@@ -75,7 +75,7 @@ fine — only their relative sizes matter.
 
 Hard and soft front ends are driven the same way — `begin` → `decode` (repeat) →
 `finalize` — and share the same warm-up delay and buffering rule (see
-`<drifty/stream_decoder.h>` and `<drifty/stream_soft_decoder.h>`). `hybrid` emits no preamble,
+`<drifty/stream_decoder.h>` and `<drifty/stream_soft_decoder.h>`). `hybrid` uses no preamble,
 so `begin(dec, NULL, 0)` is fine.
 
 ### Soft output

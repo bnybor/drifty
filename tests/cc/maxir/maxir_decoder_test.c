@@ -547,7 +547,7 @@ static void test_decoder_vtable(void) {
 
   dt_stream_decoder *dec = dt_cc_maxir_decoder_create(code, &p);
   REQUIRE("decoder created", dec != NULL);
-  REQUIRE("vtable begin ok", dec->begin(dec, out, info_bits + K + 8) >= 0);
+  REQUIRE("vtable begin ok", dec->begin(dec, NULL, 0) >= 0);
   int total = 0;
   int got = dec->decode(dec, out + total, (size_t)(info_bits + K + 8 - total),
                         coded, (size_t)clen);

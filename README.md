@@ -136,8 +136,8 @@ dt_stream_decoder *dec = dt_cc_hybrid_decoder_create(code, &(dt_cc_hybrid_stream
     .p_flip = 0.01, .p_ins_true = 0.005, .p_ins_false = 0.005, .p_del = 0.01,
 });
 dt_bit out[OUT];
-int n  = dec->begin(dec, out, OUT);
-n     += dec->decode(dec, out + n, OUT - n, received, n_received);
+dec->begin(dec, NULL, 0);            /* consume a preamble if any; none here */
+int n  = dec->decode(dec, out, OUT, received, n_received);
 /* ... call decode again as more bits arrive ... */
 n     += dec->finalize(dec, out + n, OUT - n);   /* drain the tail at end-of-stream */
 dt_cc_hybrid_decoder_destroy(dec);
@@ -206,7 +206,7 @@ a bit-aligned channel, `hybrid` and `maxir` when you also need drift tolerance.
 ```c
 dt_stream_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &params);
 dt_soft_bit soft[OUT];
-int n  = sd->begin(sd, NULL, 0);     /* the hybrid codec emits no preamble */
+int n  = sd->begin(sd, NULL, 0);     /* the hybrid codec uses no preamble */
 n     += sd->decode(sd, soft + n, OUT - n, received, n_received);
 n     += sd->finalize(sd, soft + n, OUT - n);
 /* soft[i].c_true / c_false - consistency the bit was true / false

@@ -90,6 +90,11 @@ static inline int vin_bp_state(vin_backpointer b) { return (int)(b >> 16); }
 #define VIN_BP_MAX_STATE 0xFFFF
 #define VIN_BP_MAX_DRIFT 0x7FFF
 
+/* Re-acquisition lock floor: a lock estimate below this for reacquire_after
+ * consecutive steps, after a prior lock, re-seeds the trellis so the decoder
+ * re-acquires sync downstream from a sustained loss. */
+#define VIN_LOCK_MIN 0.5f
+
 /* ------------------------------------------------------------------------- */
 /* Streaming (sliding-window) decoder                                        */
 /* ------------------------------------------------------------------------- */
@@ -151,6 +156,9 @@ struct dt_cc_vindel_stream_decoder {
   float *next_metric;           /* [num_states*drift_width] scratch         */
   vin_backpointer *backpointers; /* [decision_depth*num_states*drift_width]  */
   float smoothed_cost;          /* EWMA of best-path per-step cost          */
+  int reacquire_after;          /* sustained-unlock steps before a re-seed  */
+  int unlock_run;               /* consecutive low-lock steps (reacquire)   */
+  int locked_once;              /* set after first lock; gates reacquire    */
 
   /* The code's distinct output patterns. Each edge emits an n-bit output row,
    * but many edges share a row (at most 2^n distinct rows over 2*num_states
@@ -548,6 +556,11 @@ static void forward_pass_nodrift(dt_cc_vindel_stream_decoder *d) {
   d->next_metric = temp;
 }
 
+/* Forward declarations: decode_step re-seeds the trellis (init_metric) and reads
+ * the lock estimate on a sustained loss; both are defined further below. */
+static void init_metric(dt_cc_vindel_stream_decoder *d);
+static float lock_estimate(const dt_cc_vindel_stream_decoder *d);
+
 /* Advance one step: decide and apply this step's re-anchor sigma (folded into
  * the window and the read cursor), then run the forward pass. With no drift
  * window and indels disabled the alignment is forced diagonal; a dedicated
@@ -567,6 +580,23 @@ static void decode_step(dt_cc_vindel_stream_decoder *d) {
   } else {
     align_precompute(d);
     forward_pass(d);
+  }
+
+  /* Re-acquisition: after a prior lock, a sustained low-lock run (the decoder is
+   * tracking garbage - e.g. a long corruption burst or drift it could not follow)
+   * re-seeds the trellis at the current read position, so it re-acquires sync
+   * downstream instead of staying stuck on a wrong path. (Hard-decision output
+   * carries no DT_ABSENT marker, so the unlocked stretch reads as ordinary bits.) */
+  if (lock_estimate(d) >= VIN_LOCK_MIN) {
+    d->locked_once = 1;
+    d->unlock_run = 0;
+  } else if (d->locked_once) {
+    if (++d->unlock_run >= d->reacquire_after) {
+      init_metric(d);
+      d->smoothed_cost = d->expected_unlock;
+      d->unlock_run = 0;
+      d->locked_once = 0;
+    }
   }
 
   d->steps++;
@@ -791,6 +821,9 @@ static int decoder_init(dt_cc_vindel_stream_decoder *d,
   d->received_capacity =
       (d->decision_depth + 2) * d->n + 8 * d->max_drift + 64;
   d->smoothed_cost = d->expected_unlock; /* assume unlocked until proven */
+  d->reacquire_after = 2 * d->decision_depth;
+  d->unlock_run = 0;
+  d->locked_once = 0;
 
   const int max_consume = d->n + 2 * d->max_drift;
   const int window = d->n + 4 * d->max_drift;

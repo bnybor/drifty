@@ -31,6 +31,7 @@ state dimension.
 | Erasure (`DT_ERASURE` received) | ✅ yes (`p_erase`) |
 | Insertion / deletion (drift) | ❌ no — assumes a fixed, known grid |
 | Overwrite to a fixed value | ❌ not modelled |
+| Re-acquisition after sustained loss of lock | ✅ yes — re-seeds and re-locks downstream; the unlocked stretch reads `DT_ABSENT` |
 
 If your channel inserts or drops bits, use [`maxir`](maxir.md) (same
 soft-output style, drift-tolerant) or [`vindel`](vindel.md) /

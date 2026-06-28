@@ -27,6 +27,7 @@ hard symbol.
 | Value-biased insertion | ✅ yes (`p_ins_true` / `p_ins_false` / `p_ins_erase`) |
 | Overwrite to fixed value | ✅ yes (`p_ovr_true` / `p_ovr_false` / `p_ovr_erase`) |
 | `DT_INVALID` poison round-trip | ➖ not surfaced — soft output leaves `c_invalid` / `c_absent` at 0; use [`maxir`](maxir.md) for the full alphabet |
+| Re-acquisition after sustained loss of lock | ✅ yes — re-seeds and re-locks downstream (hard output is `TRUE`/`FALSE`/`ERASURE`, so no `DT_ABSENT` marker over the gap) |
 
 ## API
 
@@ -97,6 +98,6 @@ The hard symbol is the argmax projection over the alphabet (recoverability-first
 
 Pick `hybrid` for a drifting channel that also **overwrites** bits, when you want
 a hard decision and/or soft consistencies and do **not** need `DT_INVALID`
-round-tripping or sync re-acquisition. For the full output alphabet (poison and
-absent consistencies) and re-acquisition after a sustained loss of lock, use
-[`maxir`](maxir.md).
+round-tripping or the full soft alphabet. For the full output alphabet (poison
+and absent consistencies), use [`maxir`](maxir.md). (Like the other lock-tracking
+decoders, `hybrid` re-acquires sync after a sustained loss of lock.)

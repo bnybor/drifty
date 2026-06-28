@@ -5,9 +5,11 @@ The most capable cc decoder: a **drift-tolerant max-log-MAP**
 **soft-output** front ends. Where [`viterbi`](viterbi.md) finds the single most
 likely path, `maxir` computes a per-bit a-posteriori *weight* for each
 information bit. It corrects flips and erasures, tracks drift, models the same
-rich channel as [`hybrid`](hybrid.md), surfaces the full output alphabet
-(including `DT_INVALID` poison and `DT_ABSENT`), and **re-acquires sync** after a
-sustained loss of lock.
+rich channel as [`hybrid`](hybrid.md), and surfaces the full output alphabet
+(including `DT_INVALID` poison and `DT_ABSENT`). Like every blind-acquisition
+decoder in the family ([`bcjr`](bcjr.md), [`vindel`](vindel.md),
+[`hybrid`](hybrid.md)), it also **re-acquires sync** after a sustained loss of
+lock.
 
 For the symbol alphabet and what each interface means, see
 [Data-flow semantics](../data_flow_semantics.md).

@@ -601,6 +601,84 @@ static void test_soft_decoder_vtable(void) {
   dt_cc_code_destroy(code);
 }
 
+/* Count mismatches of out[lo, hi) against msg[off + (i-lo)], over the available
+ * output. Returns the comparison count via *counted. */
+static int region_errors(const uint8_t *out, int got, const uint8_t *msg, int lo,
+                         int hi, int off, int *counted) {
+  int err = 0, n = 0;
+  for (int i = lo; i < hi && i < got; ++i) {
+    ++n;
+    if (out[i] != msg[off + (i - lo)]) {
+      ++err;
+    }
+  }
+  *counted = n;
+  return err;
+}
+
+/* Re-acquisition after a sustained loss: a long mid-stream burst of substitution
+ * noise wrecks decoding over its span; the decoder loses lock and re-seeds the
+ * trellis, recovering the post-burst message downstream. The channel is
+ * synchronous (no drift), so the recovered run returns at the same output index,
+ * and the unlocked stretch reads DT_ABSENT via the finalize cascade. */
+static void test_decoder_reacquire(void) {
+  uint64_t rng = 0x9EACFEu;
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
+  const int info_bits = 1000, depth = 40, warmup = depth + 4 * K;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + K) * (size_t)n);
+  int clen = bcjr_encode_all(code, msg, info_bits, coded);
+
+  /* Overwrite a 160-group stretch with random noise (>> 2*decision_depth). */
+  const int burst_lo = 400, burst_hi = 560;
+  uint8_t *rx = malloc((size_t)clen);
+  memcpy(rx, coded, (size_t)clen);
+  for (int i = burst_lo * n; i < burst_hi * n; ++i) {
+    rx[i] = bit_sym((unsigned int)rng_next(&rng));
+  }
+
+  const int outc = info_bits + K + 8;
+  uint8_t *out = malloc((size_t)outc);
+  dt_cc_bcjr_stream_params p = {
+      .decision_depth = depth, .p_flip = 0.02f, .p_erase = 0.01f};
+  int got = bcjr_decode_all(code, &p, rx, clen, out, NULL, outc);
+
+  /* Pre-burst recovers exactly (stop a look-ahead short of the burst). */
+  int pre_n = 0;
+  int pre_err =
+      region_errors(out, got, msg, warmup, burst_lo - depth, warmup, &pre_n);
+  check("re-acquire: pre-burst region clean", pre_n > 100 && pre_err == 0);
+
+  /* The burst wrecks decoding over its span (straight against the message). */
+  int burst_err = 0, burst_n = 0;
+  for (int i = burst_lo + 20; i < burst_hi - 20 && i < got; ++i) {
+    ++burst_n;
+    if (out[i] != msg[i]) ++burst_err;
+  }
+  check("re-acquire: burst disrupts decoding",
+        burst_n > 50 && burst_err > burst_n / 4);
+
+  /* After the burst the decoder re-locks: a 200-bit run of the post-burst
+   * message (msg[700, 900)) reappears at the same output index. */
+  int reacq_err = 0, reacq_n = 0;
+  for (int i = 700; i < 900 && i < got; ++i) {
+    ++reacq_n;
+    if (out[i] != msg[i]) ++reacq_err;
+  }
+  check("re-acquire: re-locks and recovers after the burst",
+        reacq_n > 150 && reacq_err <= 4);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(out);
+  dt_cc_code_destroy(code);
+}
+
 int main(void) {
   printf("bcjr encoder:\n");
   test_encode_length_and_chunked();
@@ -612,6 +690,7 @@ int main(void) {
   test_decoder_soft_invariants();
   test_decoder_invalid_and_erasure();
   test_decoder_blind_acquisition();
+  test_decoder_reacquire();
   test_decoder_vtable();
   test_soft_decoder_vtable();
   return test_summary("bcjr");

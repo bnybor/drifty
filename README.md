@@ -77,6 +77,7 @@ simplest and fastest.
 | Flips & erasures      |     ✓     |   ✓    |    ✓     |    ✓     |    ✓    |
 | Drift (insert / drop) |     —     |   —    |    ✓     |    ✓     |    ✓    |
 | Blind acquisition     |     —     |   ✓    |    ✓     |    ✓     |    ✓    |
+| Re-acquisition        |     —     |   ✓    |    ✓     |    ✓     |    ✓    |
 | Soft output           |     —     | ✓ full |    —     |    ✓     | ✓ full  |
 | Channel model         |   none    | rates  |  rates   |   rich   |  rich   |
 

@@ -94,6 +94,7 @@ struct dt_cc_bcjr_stream_decoder {
 
   int n, num_states, decision_depth;
   int batch, ring_len; /* decisions emitted per sweep; ring depth */
+  int reacquire_after; /* sustained-unlock steps before a re-seed     */
 
   /* Branch-metric constants, in cost (negative-log-likelihood) units. */
   float cost_match, cost_miss, cost_erase;
@@ -115,6 +116,8 @@ struct dt_cc_bcjr_stream_decoder {
   float *metric;       /* [num_states] node costs (alpha at the frontier)    */
   float *next_metric;  /* [num_states] scratch                               */
   float smoothed_cost; /* EWMA of best-path per-step cost (lock signal)      */
+  int unlock_run;      /* consecutive low-lock steps (re-acquisition)        */
+  int locked_once;     /* set after the first lock; gates re-acquisition     */
 
   /* Backward sweep working vectors. */
   float *beta_tilde; /* [num_states] beta of the next step                  */
@@ -285,6 +288,11 @@ static void forward_pass(dt_cc_bcjr_stream_decoder *d, int base) {
   d->next_metric = temp;
 }
 
+/* Forward declarations: forward_step re-seeds the trellis (init_metric) and reads
+ * the lock consistency on a sustained loss; both are defined further below. */
+static float lock_from(const dt_cc_bcjr_stream_decoder *d, float smoothed);
+static void init_metric(dt_cc_bcjr_stream_decoder *d);
+
 /* Advance one forward step: snapshot alpha_t (the state metric ENTERING step t)
  * and run the forward pass over step t's group, then snapshot the lock cost. */
 static void forward_step(dt_cc_bcjr_stream_decoder *d) {
@@ -295,6 +303,23 @@ static void forward_step(dt_cc_bcjr_stream_decoder *d) {
 
   forward_pass(d, d->read_base);
   d->lock_ring[slot] = d->smoothed_cost;
+
+  /* Re-acquisition: after a prior lock, a sustained low-lock run (the decoder is
+   * tracking garbage - e.g. a long corruption burst it could not follow) re-seeds
+   * the trellis at the current read position, so it re-acquires sync downstream
+   * instead of staying stuck on a wrong path. The unlocked stretch reads DT_ABSENT
+   * via the finalize cascade. */
+  if (lock_from(d, d->smoothed_cost) >= DT_CC_BCJR_LOCK_MIN) {
+    d->locked_once = 1;
+    d->unlock_run = 0;
+  } else if (d->locked_once) {
+    if (++d->unlock_run >= d->reacquire_after) {
+      init_metric(d);
+      d->smoothed_cost = d->expected_unlock;
+      d->unlock_run = 0;
+      d->locked_once = 0;
+    }
+  }
 
   d->steps++;
   d->read_base += d->n;
@@ -590,6 +615,9 @@ static int decoder_init(dt_cc_bcjr_stream_decoder *d,
   d->received_length = 0;
   d->received_capacity = (decision_depth + d->batch + 4) * d->n + 64;
   d->smoothed_cost = d->expected_unlock; /* assume unlocked until proven */
+  d->reacquire_after = 2 * decision_depth;
+  d->unlock_run = 0;
+  d->locked_once = 0;
   d->fifo_head = 0;
   d->fifo_count = 0;
 

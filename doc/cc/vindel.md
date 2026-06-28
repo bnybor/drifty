@@ -25,6 +25,7 @@ and deletions and emits a clean, fixed grid of information positions.
 | Insertion / deletion (drift) | ✅ yes, up to `max_drift` (`p_ins` / `p_del`) |
 | Overwrite to a fixed value | ❌ not modelled — see [`hybrid`](hybrid.md) / [`maxir`](maxir.md) |
 | `DT_INVALID` poison round-trip | ❌ not modelled — see [`maxir`](maxir.md) |
+| Re-acquisition after sustained loss of lock | ✅ yes — re-seeds and re-locks downstream (hard output, so no `DT_ABSENT` marker over the gap) |
 
 ## API
 
@@ -75,5 +76,6 @@ call again with `src_len == 0` to drain). Deletions surface on output as
 Pick `vindel` for a drifting channel (insertions/deletions plus flips/erasures)
 when a **hard** decision is enough and the channel has no fixed-value overwrites.
 If you need **soft** output, or the channel overwrites bits, use
-[`hybrid`](hybrid.md); if you also need `DT_INVALID` round-tripping or
-re-acquisition after a sustained loss of lock, use [`maxir`](maxir.md).
+[`hybrid`](hybrid.md); if you also need `DT_INVALID` round-tripping or the full
+soft alphabet, use [`maxir`](maxir.md). (Like the other lock-tracking decoders,
+`vindel` re-acquires sync after a sustained loss of lock.)

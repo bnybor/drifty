@@ -38,8 +38,12 @@ consistencies as well as a hard decision, and how rich a channel model they take
 - **Drifting channel, hard decision, no overwrites** → [`vindel`](vindel.md).
 - **Drifting channel with fixed-value overwrites, hard and/or soft** →
   [`hybrid`](hybrid.md).
-- **Strongest: drift + overwrites + `DT_INVALID` round-trip + sync re-acquisition,
-  full soft alphabet** → [`maxir`](maxir.md).
+- **Strongest: drift + overwrites + `DT_INVALID` round-trip + full soft
+  alphabet** → [`maxir`](maxir.md).
+
+All four lock-tracking decoders (`bcjr`, `vindel`, `hybrid`, `maxir`) also
+**re-acquire sync** after a sustained loss of lock — re-seeding the trellis to
+relock downstream; only `viterbi`, which starts from a known state, does not.
 
 > `maxir` and `bcjr` are both forward–backward decoders but are **independent**
 > implementations (drift-tolerant vs flip/erasure-only) — a change to one does not

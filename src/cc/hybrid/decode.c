@@ -51,6 +51,11 @@
 #define DT_ASSERT(cond) ((void)0)
 #endif
 
+/* Re-acquisition lock floor (consistencies are in [0, 1]). A c_lock below this
+ * for reacquire_after consecutive steps, after a prior lock, re-seeds the
+ * trellis so the decoder re-acquires sync downstream from a sustained loss. */
+#define DT_CC_HYBRID_LOCK_MIN 0.5f
+
 /* The streaming decoder's state splits in two: a `dt_cc_decode_ctx` holds the
  * received buffer, the cadence (read_base/steps/decided and the re-anchor
  * history), the channel-derived cost constants, the trellis dimensions, and the
@@ -65,6 +70,7 @@ typedef struct {
    * alpha/branch/shift/smoothed rings must outlast that, so ring_len =
    * 2*decision_depth + slack. */
   int ring_len;
+  int reacquire_after; /* sustained-unlock steps before a re-seed */
   /* Branch-metric constants, in cost (negative-log-likelihood) units.
    * cost_bit[expected][received] is the per-bit match/mismatch cost for an
    * expected 0/1 against a received 0/1 (asymmetric: overwrites bias the two
@@ -124,6 +130,8 @@ typedef struct {
   float *metric;               /* [num_states*drift_width] node costs       */
   float *next_metric;          /* [num_states*drift_width] scratch          */
   float smoothed_cost;         /* EWMA of best-path per-step cost           */
+  int unlock_run;              /* consecutive low-lock steps (reacquire)    */
+  int locked_once;             /* set after first lock; gates reacquire     */
   int *group_of;                /* [2*num_states] (state*2+bit)->pattern idx */
   /* Per-step forward-metric (alpha) snapshots for the BCJR backward pass: the
    * metric fed into each step's forward_pass (post re-anchor), ringed by
@@ -149,6 +157,7 @@ static int dt_cc_decode_feed(dt_cc_decode_ctx *ctx, const uint8_t *in, int n_in)
 static void dt_cc_decode_step(dt_cc_decode_ctx *ctx, dt_cc_trellis *tr);
 static int dt_cc_trellis_frontier(const dt_cc_decode_ctx *ctx, const dt_cc_trellis *tr);
 static float dt_cc_lock_from_cost(const dt_cc_decode_ctx *ctx, float cost);
+static void init_metric(const dt_cc_decode_ctx *ctx, dt_cc_trellis *tr);
 static void dt_cc_trellis_soft_batch(const dt_cc_decode_ctx *ctx, const dt_cc_trellis *tr,
                                   long long base, int n, uint8_t *bits_out,
                                   dt_cc_decode_details *details_out);
@@ -623,6 +632,23 @@ static void dt_cc_decode_step(dt_cc_decode_ctx *ctx, dt_cc_trellis *tr) {
   /* Snapshot the smoothed cost at the new frontier, so a batched decision reads
    * the lock at the bit's own (earlier) decision time. */
   tr->smoothed_ring[ctx->steps % ctx->ring_len] = tr->smoothed_cost;
+
+  /* Re-acquisition: after a prior lock, a sustained low-lock run (the decoder is
+   * tracking garbage - e.g. a long corruption burst or drift it could not follow)
+   * re-seeds the trellis at the current read position, so it re-acquires sync
+   * downstream instead of staying stuck on a wrong path. */
+  if (dt_cc_lock_from_cost(ctx, tr->smoothed_cost) >= DT_CC_HYBRID_LOCK_MIN) {
+    tr->locked_once = 1;
+    tr->unlock_run = 0;
+  } else if (tr->locked_once) {
+    if (++tr->unlock_run >= ctx->reacquire_after) {
+      init_metric(ctx, tr);
+      tr->smoothed_cost = ctx->expected_unlock;
+      tr->unlock_run = 0;
+      tr->locked_once = 0;
+    }
+  }
+
   if (ctx->read_base - ctx->max_drift >= ctx->received_capacity / 2) {
     compact_received(ctx);
   }
@@ -922,6 +948,7 @@ static int dt_cc_decode_ctx_init(dt_cc_decode_ctx *ctx, const dt_cc_hybrid_strea
    * full-look-ahead horizon, so the snapshot rings span 2*decision_depth steps
    * (+ slack so the oldest needed slot is never aliased by the newest). */
   ctx->ring_len = 2 * decision_depth + 2;
+  ctx->reacquire_after = 2 * decision_depth;
 
   /* Channel model: a coded bit is overwritten - with a fixed DT_TRUE, DT_FALSE
    * or DT_ERASURE (probs p_ovr_true / p_ovr_false / p_ovr_erase, regardless of
@@ -1107,6 +1134,8 @@ static int dt_cc_trellis_init(dt_cc_trellis *tr, dt_cc_decode_ctx *ctx, const dt
   tr->code = code;
   tr->smoothed_cost =
       ctx->expected_unlock; /* assume unlocked until the stream proves it */
+  tr->unlock_run = 0;
+  tr->locked_once = 0;
 
   const size_t count = (size_t)ctx->num_states * ctx->drift_width;
   const int edges = ctx->num_states * 2;

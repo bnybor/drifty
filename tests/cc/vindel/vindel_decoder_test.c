@@ -733,6 +733,79 @@ static void test_error_paths(void) {
   dt_cc_code_destroy(code);
 }
 
+/* Re-acquisition after a sustained loss: a long mid-stream burst of substitution
+ * noise wrecks decoding over its span, but the decoder re-locks - via the drift
+ * re-anchoring and trellis forgetting, backed by a trellis re-seed once the lock
+ * fully collapses - and recovers the post-burst message downstream. The burst can
+ * leave a small residual drift, so the recovered run sits at a shifted output
+ * index (found by search). Hard-decision output carries no DT_ABSENT marker, so
+ * the unlocked stretch reads as ordinary (wrong) bits. */
+static void test_decoder_reacquire(void) {
+  printf("test_decoder_reacquire\n");
+  uint64_t rng = 0x9EACFEu;
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_cc_code_n(code), Kc = dt_cc_code_k(code);
+  const int info_bits = 1000, depth = 40;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + Kc) * (size_t)n);
+  int clen = vindel_encode_all(code, msg, info_bits, coded);
+
+  /* Overwrite a 160-group stretch with random noise (>> 2*decision_depth). */
+  const int burst_lo = 400, burst_hi = 560;
+  uint8_t *rx = malloc((size_t)clen);
+  memcpy(rx, coded, (size_t)clen);
+  for (int i = burst_lo * n; i < burst_hi * n; ++i) {
+    rx[i] = bit_sym((unsigned int)rng_next(&rng));
+  }
+
+  const int cap = info_bits + Kc + 64;
+  uint8_t *out = malloc((size_t)cap);
+  dt_cc_vindel_stream_decoder *sd =
+      make_decoder(code, depth, 4, 0.02, 0.01, 0.01, 0.0);
+  REQUIRE("decoder created", sd != NULL);
+  int got = stream_decode_all(sd, rx, clen, out, cap);
+  dt_cc_vindel_stream_decoder_destroy(sd);
+
+  /* Pre-burst recovers (stop a look-ahead short of the burst). */
+  int pre_err = 0, pre_n = 0;
+  for (int i = depth; i < burst_lo - depth && i < got; ++i) {
+    ++pre_n;
+    if (out[i] != msg[i]) ++pre_err;
+  }
+  check("re-acquire: pre-burst region clean", pre_n > 100 && pre_err == 0);
+
+  /* The burst wrecks decoding over its span. */
+  int burst_err = 0, burst_n = 0;
+  for (int i = burst_lo + 20; i < burst_hi - 20 && i < got; ++i) {
+    ++burst_n;
+    if (out[i] != msg[i]) ++burst_err;
+  }
+  check("re-acquire: burst disrupts decoding",
+        burst_n > 50 && burst_err > burst_n / 4);
+
+  /* After the burst the decoder re-locks: a 200-bit run of the post-burst
+   * message (msg[700, 900)) reappears in the output tail, possibly shifted by a
+   * small residual drift. */
+  int reacq_ok = 0;
+  for (int o = burst_hi - 10; o + 200 <= got && !reacq_ok; ++o) {
+    int run_err = 0;
+    for (int k = 0; k < 200; ++k) {
+      if (out[o + k] != msg[700 + k]) ++run_err;
+    }
+    if (run_err <= 8) reacq_ok = 1;
+  }
+  check("re-acquire: re-locks and recovers after the burst", reacq_ok);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(out);
+  dt_cc_code_destroy(code);
+}
+
 int main(void) {
   test_encode_stream();
   test_stream_clean();
@@ -742,6 +815,7 @@ int main(void) {
   test_standard_code();
   test_all_presets();
   test_blind_acquisition();
+  test_decoder_reacquire();
   test_stream_flips_only();
   test_lock_probability();
   test_cross_lock_within_family();

@@ -54,11 +54,15 @@ static dt_cc_hybrid_stream_params clean_params(void) {
 }
 
 /* The hard decision implied by a soft record - mirrors the engine's own rule
- * (the value loses to its agreement c_erasure only on a tie; a tie whose coded
+ * (a position the decoder is not tracking, low lock, reads DT_ABSENT; else the
+ * value loses to its agreement c_erasure only on a tie, where a tie whose coded
  * group was mostly the encoder's DT_INVALID poison abstains as DT_INVALID, else
  * DT_ERASURE). The engine's hard decision is a pure function of these same
  * fields, so this reproduces it exactly. */
 static uint8_t soft_hard(const dt_soft_bit *o) {
+  if (o->c_locked < 0.5f) {
+    return DT_ABSENT;
+  }
   if (o->c_erasure >= o->c_true && o->c_erasure >= o->c_false) {
     return o->c_invalid > 0.5f ? DT_INVALID : DT_ERASURE;
   }

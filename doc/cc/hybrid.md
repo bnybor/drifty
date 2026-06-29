@@ -27,7 +27,7 @@ hard symbol.
 | Value-biased insertion | ✅ yes (`p_ins_true` / `p_ins_false` / `p_ins_erase`) |
 | Overwrite to fixed value | ✅ yes (`p_ovr_true` / `p_ovr_false` / `p_ovr_erase`) |
 | `DT_INVALID` poison round-trip | ✅ yes — a poisoned coded group reads back as `DT_INVALID`, with `c_invalid` reporting the poison fraction (full soft alphabet below) |
-| Re-acquisition after sustained loss of lock | ✅ yes — re-seeds and re-locks downstream. The hard output is `TRUE`/`FALSE`/`ERASURE`/`INVALID` with **no** `DT_ABSENT` marker, so an unlocked gap reads as ordinary (wrong) bits; the soft `c_absent` (= `1 - c_locked`) still flags it. Use [`maxir`](maxir.md) if you need `DT_ABSENT` in the hard decision. |
+| Re-acquisition after sustained loss of lock | ✅ yes — re-seeds and re-locks downstream. While the lock is collapsed the hard output is `DT_ABSENT` (the decoder cannot place those positions); the soft `c_absent` (= `1 - c_locked`) carries the same signal. |
 
 ## API
 
@@ -95,18 +95,16 @@ the fields need not sum to 1):
 
 `hybrid` populates the **full** alphabet — all six consistencies, including
 `c_invalid` and `c_absent`. The hard symbol is a recoverability-first projection of
-these fields: a determinable value wins, else an undeterminable tie abstains as
-`DT_INVALID` (when its group was mostly poison) or `DT_ERASURE`. Unlike
-[`maxir`](maxir.md) / [`bcjr`](bcjr.md), the hard decision never emits `DT_ABSENT`
-(a lost stretch reads as wrong bits); read `c_absent` / `c_locked` for the lock
-state.
+these fields: a position the decoder is not tracking (low lock) reads `DT_ABSENT`;
+otherwise a determinable value wins, else an undeterminable tie abstains as
+`DT_INVALID` (when its group was mostly poison) or `DT_ERASURE`.
 
 ## Choosing `hybrid`
 
 Pick `hybrid` for a drifting channel that also **overwrites** bits, when you want
 a hard decision and/or the full soft alphabet (all six consistencies, including
-`c_invalid` and `c_absent`) and `DT_INVALID` round-tripping. Reach for
-[`maxir`](maxir.md) instead when you need `DT_ABSENT` surfaced in the **hard**
-decision over a lost stretch, or its heavier full-forward-backward soft detail.
-(Like the other lock-tracking decoders, `hybrid` re-acquires sync after a
-sustained loss of lock.)
+`c_invalid` and `c_absent`), `DT_INVALID` round-tripping, and `DT_ABSENT` over a
+lost stretch. Reach for [`maxir`](maxir.md) instead for its heavier
+full-forward-backward per-bit soft detail, which degrades more gracefully on an
+uncertain channel. (Like the other lock-tracking decoders, `hybrid` re-acquires
+sync after a sustained loss of lock.)

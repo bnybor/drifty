@@ -91,8 +91,8 @@ simplest and fastest.
 
 *Full* soft output reports the `c_invalid` and `c_absent` consistencies alongside
 `c_true` / `c_false` / `c_erasure` / `c_locked`; all three soft decoders (`bcjr`,
-`hybrid`, `maxir`) populate the full set. `maxir` additionally surfaces `DT_ABSENT`
-in its **hard** decision (`hybrid` does not) — see [Soft decoding](#soft-decoding).
+`hybrid`, `maxir`) populate the full set, and all emit `DT_ABSENT` / `DT_INVALID`
+in the hard decision too — see [Soft decoding](#soft-decoding).
 
 - Use **`viterbi`** when the received stream stays bit-aligned — the channel only
   flips or erases bits, never inserts or drops them (most wired links, framed
@@ -112,12 +112,12 @@ in its **hard** decision (`hybrid` does not) — see [Soft decoding](#soft-decod
   channel model (asymmetric flips, value-specific insertions, stuck/overwritten
   bits). It is the general-purpose default for a drifting channel; `maxir` goes
   further at more cost.
-- Use **`maxir`** for that same drift tolerance and full soft alphabet when you
-  also want `DT_ABSENT` surfaced in the **hard** decision over a lost stretch
-  (`hybrid` reads such gaps as wrong bits) or its heavier per-bit detail. It is
-  `bcjr`'s max-log-MAP decoder extended to a drifting channel (the same expressive
-  channel model as `hybrid`), running a full forward-backward pass for every bit —
-  the heaviest of the five, so reach for it when that extra detail earns its cost.
+- Use **`maxir`** for that same drift tolerance and full output alphabet when you
+  want its heavier per-bit soft detail, which degrades most gracefully on an
+  uncertain channel. It is `bcjr`'s max-log-MAP decoder extended to a drifting
+  channel (the same expressive channel model as `hybrid`), running a full
+  forward-backward pass for every bit — the heaviest of the five, so reach for it
+  when that extra detail earns its cost.
 
 Drift tolerance is not free: `vindel`, `hybrid`, and `maxir` do proportionally more
 work as their drift window widens, while `viterbi` and `bcjr` run a fixed-width
@@ -231,9 +231,10 @@ dt_cc_hybrid_soft_decoder_destroy(sd);
 `dt_soft_bit` also carries `c_invalid` — the position reads as the
 encoder's deliberate non-value (`DT_INVALID`) — and `c_absent` — the position reads
 as dropped in transit (`DT_ABSENT`). All three soft decoders (`bcjr`, `hybrid`,
-`maxir`) populate the full set. They differ in the **hard** decision: `maxir` and
-`bcjr` emit `DT_ABSENT` when lock collapses, while `hybrid` reads such a gap as
-ordinary (wrong) bits and signals the loss only through `c_absent` / `c_locked`.
+`maxir`) populate the full set, and each hard decoder emits `DT_INVALID` for a
+poisoned slot and `DT_ABSENT` where it loses lock. They differ in soft *detail*:
+`maxir`'s heavier per-bit forward-backward degrades most gracefully on an uncertain
+channel.
 
 ## Block and frame codecs
 

@@ -750,13 +750,20 @@ static float dt_cc_lock_from_cost(const dt_cc_decode_ctx *ctx, float cost) {
  * value is determined, not lost (the winner is 1 and the infeasible side is 0, so
  * the agreement is 0).
  *
- * c_lock is the independent lock consistency (is this the right code at all?).
+ * c_lock is the independent lock consistency (is this the right code at all?). It
+ * does NOT scale the soft value fields - c_lost stays high through a lock collapse
+ * - but it does gate the hard decision below.
  *
  * c_invalid (passed in, the fraction of this step's coded group received as the
  * encoder's DT_INVALID poison) is carried straight through to the soft record and
  * splits an undeterminable tie: a tie whose group was mostly poison is the
  * deliberate non-value, abstaining as DT_INVALID rather than DT_ERASURE. The
- * caller derives c_absent (= 1 - c_lock) from c_lock. */
+ * caller derives c_absent (= 1 - c_lock) from c_lock.
+ *
+ * The hard decision is a value-recoverability-first cascade, a pure function of
+ * the soft record: a position the decoder is not tracking (low lock) is one it
+ * cannot place (DT_ABSENT); otherwise the most consistent of true/false/lost,
+ * where a lost tie whose group was mostly poison abstains as DT_INVALID. */
 static uint8_t finalize_soft(const dt_cc_decode_ctx *ctx, float m0, float m1,
                              float smoothed, float c_invalid,
                              dt_cc_decode_details *out) {
@@ -765,12 +772,18 @@ static uint8_t finalize_soft(const dt_cc_decode_ctx *ctx, float m0, float m1,
   const float c_false = m0 == INFINITY ? 0.0f : dt_exp(mmin - m0);
   const float diff = c_true - c_false;
   const float c_lost = 1.0f - (diff < 0.0f ? -diff : diff);
+  const float c_lock = dt_cc_lock_from_cost(ctx, smoothed);
   if (out) {
     out->c_true = c_true;
     out->c_false = c_false;
     out->c_lost = c_lost;
     out->c_invalid = c_invalid;
-    out->c_lock = dt_cc_lock_from_cost(ctx, smoothed);
+    out->c_lock = c_lock;
+  }
+  /* Not tracking a valid stream of this code: the position is one the decoder
+   * cannot place. */
+  if (c_lock < DT_CC_HYBRID_LOCK_MIN) {
+    return DT_ABSENT;
   }
   /* Most consistent of the three. c_lost is the agreement of the other two, so it
    * only leads on a tie (m0 == m1 - genuinely undeterminable), abstaining. A tie

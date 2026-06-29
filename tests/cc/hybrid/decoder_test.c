@@ -737,9 +737,9 @@ static void test_error_paths(void) {
  * re-anchoring and trellis forgetting, backed by a trellis re-seed once the lock
  * fully collapses - and recovers the post-burst message downstream. The burst can
  * leave a small residual drift, so the recovered run sits at a shifted output
- * index (found by search). The hybrid hard output is TRUE/FALSE/ERASURE/INVALID
- * (no DT_ABSENT) and this stream carries no poison, so the unlocked stretch reads
- * as ordinary (wrong) bits. */
+ * index (found by search). This burst disrupts decoding but its lock stays above
+ * the DT_ABSENT floor, so the stretch reads as ordinary (wrong) bits rather than
+ * DT_ABSENT (see test_decoder_absent for a stream that does collapse the lock). */
 static void test_decoder_reacquire(void) {
   printf("test_decoder_reacquire\n");
   uint64_t rng = 0x9EACFEu;
@@ -808,6 +808,69 @@ static void test_decoder_reacquire(void) {
   dt_cc_code_destroy(code);
 }
 
+/* The hard decision marks positions the decoder is not tracking as DT_ABSENT.
+ * The decoder's own stream locks and reads back as values; a *sibling* stream
+ * (same family, different generators) does not fit this code's codewords, so the
+ * lock never rises and every position reads DT_ABSENT instead of a spurious guess.
+ * (The soft c_absent / c_locked fields carry the same signal; here we assert it
+ * surfaces in the hard symbol.) */
+static void test_decoder_absent(void) {
+  printf("test_decoder_absent\n");
+  const int info = 800, depth = 40;
+  uint8_t *msg = malloc((size_t)info);
+  uint64_t rng = 0x5B5E27u;
+  rand_bits(msg, info, &rng);
+
+  /* `own` and a same-family sibling with different generators (rate-1/5 K5 has the
+   * sharpest code-specific lock, so a sibling stream clearly fails to lock). */
+  dt_cc_code *own = dt_cc_code_create_standard(DT_CC_CODE_K5_RATE_1_5);
+  dt_cc_code *sib = dt_cc_code_create_standard(DT_CC_CODE_K5_RATE_1_5_ALT1);
+  REQUIRE("codes created", own != NULL && sib != NULL);
+  const int n = dt_cc_code_n(own);
+
+  uint8_t *coded = malloc((size_t)(info + 5) * (size_t)n);
+  const int cap = info + 5 + 64;
+  uint8_t *out = malloc((size_t)cap);
+
+  /* (a) own stream: the decoder locks, so no position past warm-up is DT_ABSENT. */
+  int st = 0;
+  unsigned int unk = 0;
+  int clen = dt_cc_encoder_encode(own, msg, info, &st, &unk, coded);
+  clen += dt_cc_encoder_flush(own, &st, &unk, coded + clen);
+  dt_cc_stream_decoder *sd = make_decoder(own, depth, 4, 0.02, 0.01, 0.01, 0.0);
+  REQUIRE("self decoder created", sd != NULL);
+  int got = stream_decode_all(sd, coded, clen, out, cap);
+  dt_cc_stream_decoder_destroy(sd);
+  int self_absent = 0;
+  for (int i = 2 * depth; i < info && i < got; ++i) {
+    if (out[i] == DT_ABSENT) ++self_absent;
+  }
+  check("own stream locks: no DT_ABSENT", self_absent == 0);
+
+  /* (b) sibling stream decoded with `own`: never locks, so it reads DT_ABSENT. */
+  st = 0;
+  unk = 0;
+  clen = dt_cc_encoder_encode(sib, msg, info, &st, &unk, coded);
+  clen += dt_cc_encoder_flush(sib, &st, &unk, coded + clen);
+  sd = make_decoder(own, depth, 4, 0.02, 0.01, 0.01, 0.0);
+  REQUIRE("cross decoder created", sd != NULL);
+  got = stream_decode_all(sd, coded, clen, out, cap);
+  dt_cc_stream_decoder_destroy(sd);
+  int cross_absent = 0;
+  for (int i = 0; i < got; ++i) {
+    if (out[i] == DT_ABSENT) ++cross_absent;
+  }
+  printf("  sibling stream: %d/%d read DT_ABSENT\n", cross_absent, got);
+  check("untracked (wrong-code) stream reads DT_ABSENT",
+        got > 100 && cross_absent > got / 2);
+
+  free(msg);
+  free(coded);
+  free(out);
+  dt_cc_code_destroy(own);
+  dt_cc_code_destroy(sib);
+}
+
 int main(void) {
   test_encode_stream();
   test_stream_clean();
@@ -818,6 +881,7 @@ int main(void) {
   test_all_presets();
   test_blind_acquisition();
   test_decoder_reacquire();
+  test_decoder_absent();
   test_stream_flips_only();
   test_lock_probability();
   test_cross_lock_within_family();

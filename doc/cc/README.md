@@ -23,7 +23,7 @@ The symbol alphabet these components speak is defined in
 | **[bcjr](bcjr.md)** | BCJR (MAP, forward–backward) | — | ✅ full alphabet | `p_flip`, `p_erase` |
 | **[vindel](vindel.md)** | drift-tolerant Viterbi | ✅ | — | `p_sub`, `p_ins`/`p_del`, `p_erase` |
 | **[hybrid](hybrid.md)** | drift-tolerant, hard + soft | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
-| **[maxir](maxir.md)** | drift-tolerant max-log-MAP | ✅ | ✅ full alphabet (+ hard `DT_ABSENT`) | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
+| **[maxir](maxir.md)** | drift-tolerant max-log-MAP | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
 
 All five correct substitutions (flipped bits) and erasures. They differ in whether
 they track **drift** (inserted/dropped bits), whether they emit **soft** per-bit
@@ -37,9 +37,11 @@ consistencies as well as a hard decision, and how rich a channel model they take
   viterbi, but per-bit a-posteriori soft information.
 - **Drifting channel, hard decision, no overwrites** → [`vindel`](vindel.md).
 - **Drifting channel with fixed-value overwrites, hard and/or soft, with
-  `DT_INVALID` round-trip and the full soft alphabet** → [`hybrid`](hybrid.md).
-- **Strongest: all of the above plus `DT_ABSENT` surfaced in the hard decision and
-  the heavier full-forward-backward soft detail** → [`maxir`](maxir.md).
+  `DT_INVALID` round-trip and the full output alphabet (including `DT_ABSENT`)** →
+  [`hybrid`](hybrid.md).
+- **Strongest: all of the above with the heavier full-forward-backward per-bit
+  soft detail, which degrades most gracefully on an uncertain channel** →
+  [`maxir`](maxir.md).
 
 All four lock-tracking decoders (`bcjr`, `vindel`, `hybrid`, `maxir`) also
 **re-acquire sync** after a sustained loss of lock — re-seeding the trellis to

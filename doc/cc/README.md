@@ -13,8 +13,8 @@ The symbol alphabet these components speak is defined in
 
 - **[ccode](ccode.md)** — `dt_cc_code` and `dt_cc_code_*`. The convolutional code
   every codec shares: the ready-made catalogue, the custom-code generator format,
-  and the `dt_cc_code_n` / `dt_cc_code_k` accessors. The encoder and all five
-  decoders are built over one of these.
+  and the `dt_cc_code_n` / `dt_cc_code_k` accessors. The encoder and every decoder
+  are built over one of these.
 
 ## Encoder
 
@@ -31,10 +31,16 @@ The symbol alphabet these components speak is defined in
 | **[vindel](vindel.md)** | drift-tolerant Viterbi | ✅ | — | `p_sub`, `p_ins`/`p_del`, `p_erase` |
 | **[hybrid](hybrid.md)** | drift-tolerant, hard + soft | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
 | **[maxir](maxir.md)** | drift-tolerant max-log-MAP | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
+| **[detect](detect.md)** | blind code-presence detector (GF(2) rank) | — | ✅ `c_lost`/`c_absent` | none |
 
-All five correct substitutions (flipped bits) and erasures. They differ in whether
-they track **drift** (inserted/dropped bits), whether they emit **soft** per-bit
-consistencies as well as a hard decision, and how rich a channel model they take.
+The first five correct substitutions (flipped bits) and erasures. They differ in
+whether they track **drift** (inserted/dropped bits), whether they emit **soft**
+per-bit consistencies as well as a hard decision, and how rich a channel model they
+take. **`detect`** is the odd one out — a parameterless **meta-codec** that does not
+decode at all: it blindly detects whether a convolutional code is present in an
+arbitrary stream (no code/rate/alignment known) and reports a per-position
+code-present (`c_lost`, surfaced in `c_erasure`) vs no-code (`c_absent`) confidence.
+It works in the clean / very-low-noise regime; see [its page](detect.md).
 
 ## Choosing a decoder
 

@@ -14,7 +14,8 @@ set(DRIFTY_EXAMPLES
     07_block_rs251
     08_frames_naive
     09_frames_marker
-    10_concatenated)
+    10_concatenated
+    11_detect)
 
 foreach(ex ${DRIFTY_EXAMPLES})
   add_executable(${ex} ${ex}/main.c)

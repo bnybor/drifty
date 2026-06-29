@@ -27,8 +27,9 @@ codecs that implement them.
   The [`fc/`](fc/README.md) codecs implement it.
 - **[Convolutional coding (`cc/`)](cc/README.md)** — the convolutional codecs: the
   [shared code](cc/ccode.md), the shared encoder, and the five decoders
-  (`viterbi`, `vindel`, `hybrid`, `maxir`, `bcjr`), with per-codec references and
-  a guide to choosing one.
+  (`viterbi`, `vindel`, `hybrid`, `maxir`, `bcjr`) plus the `detect` meta-codec
+  (blind code-presence detection), with per-codec references and a guide to
+  choosing one.
 - **[Block coding (`bc/`)](bc/rs251.md)** — block-code implementations; currently
   `rs251`, a Reed–Solomon RS(n, k) code over GF(251) (hard and soft decoders).
 - **[Frame coding (`fc/`)](fc/README.md)** — frame-delimiting codecs that carry no
@@ -53,7 +54,7 @@ Operations that can fail return the shared `dt_result` codes from
 | Path | What |
 |------|------|
 | `include/drifty/` | top-level public headers: the `dt_bit` alphabet (`bit.h`) and soft bit (`soft_bit.h`), shared result codes (`result.h`), and the streaming / block / frame codec interfaces |
-| `include/drifty/cc/` | convolutional codec API (`ccode.h`, `encoder.h`, `viterbi.h`, `vindel.h`, `hybrid.h`, `maxir.h`, `bcjr.h`) |
+| `include/drifty/cc/` | convolutional codec API (`ccode.h`, `encoder.h`, `viterbi.h`, `vindel.h`, `hybrid.h`, `maxir.h`, `bcjr.h`, `detect.h`) |
 | `include/drifty/bc/` | block-code API (`rs251.h` — Reed–Solomon over GF(251)) |
 | `include/drifty/fc/` | frame-code API (`naive.h` — fixed-length frames; `marker.h` — escape-delimited frames) |
 | `src/cc/` | convolutional implementations — the shared `encoder/`, the `ccode` descriptor, and each codec's decode engine |

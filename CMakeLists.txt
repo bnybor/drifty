@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(drifty
-    VERSION 1.0.0
+    VERSION 1.1.0
     DESCRIPTION "Drift-tolerance convolutional coding"
     LANGUAGES C)
 
@@ -56,6 +56,8 @@ add_library(drifty_bare_obj OBJECT
     src/cc/bcjr.c
     src/cc/maxir/decode.c
     src/cc/maxir.c
+    src/cc/detect/decode.c
+    src/cc/detect.c
     src/cc/encoder/encode.c
     src/cc/encoder/encoder.c
     src/bc/rs251.c
@@ -99,10 +101,12 @@ set_source_files_properties(contrib/rs251/src/rs251.c PROPERTIES
 # (cc/ccode.h, implemented in src/cc/ccode.c), the standalone encoder
 # (cc/encoder.h, dt_cc_encoder_*) that every codec encodes through, plus the
 # per-codec decoder factories dt_cc_hybrid_* / dt_cc_vindel_* / dt_cc_viterbi_* /
-# dt_cc_bcjr_* / dt_cc_maxir_* (cc/hybrid.h, cc/vindel.h, cc/viterbi.h, cc/bcjr.h,
-# cc/maxir.h). The encoder (src/cc/encoder/) is the only encoder
+# dt_cc_bcjr_* / dt_cc_maxir_* / dt_cc_detect_* (cc/hybrid.h, cc/vindel.h,
+# cc/viterbi.h, cc/bcjr.h, cc/maxir.h, cc/detect.h - detect is soft-only). The
+# encoder (src/cc/encoder/) is the only encoder
 # implementation; each codec's decode engine (dt_cc_stream_* / dt_cc_vindel_stream_* /
-# dt_cc_viterbi_stream_* / dt_cc_bcjr_stream_* / dt_cc_maxir_stream_*) and the encoder's
+# dt_cc_viterbi_stream_* / dt_cc_bcjr_stream_* / dt_cc_maxir_stream_* /
+# dt_cc_detect_stream_*) and the encoder's
 # one-shot helpers (dt_cc_encoder_encode/_flush) are private - their headers live
 # under src/cc/ - so they are localized, not exported.
 set(_dt_public_symbols
@@ -116,6 +120,7 @@ set(_dt_public_symbols
     dt_cc_bcjr_soft_decoder_create dt_cc_bcjr_soft_decoder_destroy
     dt_cc_maxir_decoder_create dt_cc_maxir_decoder_destroy
     dt_cc_maxir_soft_decoder_create dt_cc_maxir_soft_decoder_destroy
+    dt_cc_detect_soft_decoder_create dt_cc_detect_soft_decoder_destroy
     dt_cc_encoder_create dt_cc_encoder_destroy
     dt_bc_rs251_block_encoder_create dt_bc_rs251_block_encoder_destroy
     dt_bc_rs251_block_decoder_create dt_bc_rs251_block_decoder_destroy

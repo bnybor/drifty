@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-29
+
+### Added
+
+- **`detect`** — a new parameterless, soft-only **meta-codec** that blindly detects
+  whether a convolutional code is present in an arbitrary bit stream, with no prior
+  knowledge or coordination (no code, rate, generators, or alignment). It reports,
+  per position, `c_lost` (in `c_erasure`) = confidence a code is present and
+  `c_absent` = confidence it is not, via GF(2) strided-window rank deficiency.
+  Soft-output only (`dt_cc_detect_soft_decoder_create`, no parameters); targets the
+  clean / very-low-noise regime (see `doc/cc/detect.md`). Includes an
+  `examples/11_detect` demo that localizes a coded segment hidden in random noise.
+
 ## [1.0.0] - 2026-06-28
 
 First stable release. drifty is a small, freestanding C library for forward error
@@ -66,5 +79,6 @@ aligned through inserted and dropped bits.
 - A complete set of runnable [example programs](examples/) and reference
   [documentation](doc/).
 
-[Unreleased]: https://github.com/bnybor/drifty/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/bnybor/drifty/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/bnybor/drifty/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/bnybor/drifty/releases/tag/v1.0.0

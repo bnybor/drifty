@@ -16,6 +16,7 @@ endif()
 
 option(DRIFTY_BUILD_TESTS "Build the drifty tests" ${PROJECT_IS_TOP_LEVEL})
 option(DRIFTY_BUILD_BENCH "Build the drifty metrics and code-search harnesses" OFF)
+option(DRIFTY_BUILD_EXAMPLES "Build the drifty example programs" ${PROJECT_IS_TOP_LEVEL})
 option(DRIFTY_NATIVE "Tune the core for the building host's CPU (-march=native; not portable)" OFF)
 
 # Size-focused flags for the MinSizeRel config (applied to the core and stdlib
@@ -179,6 +180,10 @@ endif()
 if(DRIFTY_BUILD_BENCH)
     add_subdirectory(metrics)
     add_subdirectory(bench)
+endif()
+
+if(DRIFTY_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()
 
 include(GNUInstallDirs)

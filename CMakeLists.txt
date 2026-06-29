@@ -205,6 +205,9 @@ install(TARGETS drifty drifty_bare drifty_interface
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# The dt_* proxy declarations (drifty/stdlib.h) live under stdlib/include and must
+# ship too: a consumer of the freestanding drifty::drifty_bare implements these.
+install(DIRECTORY stdlib/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # Generate and install the exported targets file (drifty::drifty,
 # drifty::drifty_bare) under the standard package location.

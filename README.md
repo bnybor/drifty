@@ -36,8 +36,10 @@ differing in what channel damage they correct and how much you pay for it:
   ability to lock onto a stream you join mid-flight. Hard or soft output.
 - **`vindel`** — adds drift tolerance: it stays aligned even when bits are
   inserted or dropped. Hard decision; a small channel model to set.
-- **`hybrid`** — drift-tolerant like `vindel`, and additionally offers a **soft
-  decoder** (per-bit consistencies) and the expressive channel model below.
+- **`hybrid`** — drift-tolerant like `vindel`, and additionally offers a **full
+  soft decoder** (per-bit consistencies over the whole output alphabet, including
+  `c_invalid` and `c_absent`), `DT_INVALID` round-tripping, and the expressive
+  channel model below.
 - **`maxir`** — `bcjr`'s drift-tolerant sibling: the same max-log-MAP decoder and
   **full** soft output, extended to stay aligned through inserted and dropped
   bits. The most detailed soft output of the five, and the heaviest decoder.
@@ -84,12 +86,13 @@ simplest and fastest.
 | Drift (insert / drop) |     —     |   —    |    ✓     |    ✓     |    ✓    |
 | Blind acquisition     |     —     |   ✓    |    ✓     |    ✓     |    ✓    |
 | Re-acquisition        |     —     |   ✓    |    ✓     |    ✓     |    ✓    |
-| Soft output           |     —     | ✓ full |    —     |    ✓     | ✓ full  |
+| Soft output           |     —     | ✓ full |    —     |  ✓ full  | ✓ full  |
 | Channel model         |   none    | rates  |  rates   |   rich   |  rich   |
 
-*Full* soft output (the max-log-MAP codecs `bcjr` and `maxir`) additionally reports
-the `c_invalid` and `c_absent` consistencies that `hybrid` leaves at 0 — see
-[Soft decoding](#soft-decoding).
+*Full* soft output reports the `c_invalid` and `c_absent` consistencies alongside
+`c_true` / `c_false` / `c_erasure` / `c_locked`; all three soft decoders (`bcjr`,
+`hybrid`, `maxir`) populate the full set. `maxir` additionally surfaces `DT_ABSENT`
+in its **hard** decision (`hybrid` does not) — see [Soft decoding](#soft-decoding).
 
 - Use **`viterbi`** when the received stream stays bit-aligned — the channel only
   flips or erases bits, never inserts or drops them (most wired links, framed
@@ -103,17 +106,18 @@ the `c_invalid` and `c_absent` consistencies that `hybrid` leaves at 0 — see
 - Use **`vindel`** when the stream can lose sync — bits get inserted or dropped,
   so position drifts — and a hard 0/1 per bit is all you need. It tracks the
   drift and re-anchors; you tell it roughly how often each impairment happens.
-- Use **`hybrid`** when you also need **soft** output — per-bit consistencies to
-  feed an outer code or a downstream decision — or an expressive channel model
-  (asymmetric flips, value-specific insertions, stuck/overwritten bits). It is the
-  general-purpose default for a drifting channel; `maxir` goes further on
-  soft-output detail at more cost.
-- Use **`maxir`** for that same drift tolerance with the **fullest** soft output:
-  it is `bcjr`'s max-log-MAP decoder extended to a drifting channel (the same
-  expressive channel model as `hybrid`), additionally reporting the `c_invalid` /
-  `c_absent` consistencies `hybrid` leaves at 0. It runs a full forward-backward
-  pass for every bit, so it is the heaviest of the five — reach for it when that
-  extra per-bit detail earns its cost.
+- Use **`hybrid`** when you also need **full soft** output — per-bit consistencies
+  over the whole alphabet (including `c_invalid` and `c_absent`) to feed an outer
+  code or a downstream decision — `DT_INVALID` round-tripping, or an expressive
+  channel model (asymmetric flips, value-specific insertions, stuck/overwritten
+  bits). It is the general-purpose default for a drifting channel; `maxir` goes
+  further at more cost.
+- Use **`maxir`** for that same drift tolerance and full soft alphabet when you
+  also want `DT_ABSENT` surfaced in the **hard** decision over a lost stretch
+  (`hybrid` reads such gaps as wrong bits) or its heavier per-bit detail. It is
+  `bcjr`'s max-log-MAP decoder extended to a drifting channel (the same expressive
+  channel model as `hybrid`), running a full forward-backward pass for every bit —
+  the heaviest of the five, so reach for it when that extra detail earns its cost.
 
 Drift tolerance is not free: `vindel`, `hybrid`, and `maxir` do proportionally more
 work as their drift window widens, while `viterbi` and `bcjr` run a fixed-width
@@ -226,9 +230,10 @@ dt_cc_hybrid_soft_decoder_destroy(sd);
 
 `dt_soft_bit` also carries `c_invalid` — the position reads as the
 encoder's deliberate non-value (`DT_INVALID`) — and `c_absent` — the position reads
-as dropped in transit (`DT_ABSENT`). The hybrid codec does not model those and
-leaves them 0, while the *full* max-log-MAP codecs (`bcjr` and `maxir`) populate
-them.
+as dropped in transit (`DT_ABSENT`). All three soft decoders (`bcjr`, `hybrid`,
+`maxir`) populate the full set. They differ in the **hard** decision: `maxir` and
+`bcjr` emit `DT_ABSENT` when lock collapses, while `hybrid` reads such a gap as
+ordinary (wrong) bits and signals the loss only through `c_absent` / `c_locked`.
 
 ## Block and frame codecs
 

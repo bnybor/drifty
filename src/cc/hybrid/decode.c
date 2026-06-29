@@ -56,6 +56,18 @@
  * trellis so the decoder re-acquires sync downstream from a sustained loss. */
 #define DT_CC_HYBRID_LOCK_MIN 0.5f
 
+/* Hard-decision floor for the deliberate non-value: a value-undeterminable bit
+ * (m0 == m1) whose coded group was mostly received as the encoder's DT_INVALID
+ * poison abstains as DT_INVALID rather than DT_ERASURE. */
+#define DT_CC_HYBRID_INVALID_MIN 0.5f
+
+/* True iff a received symbol is the encoder's DT_INVALID poison marker (a bound,
+ * non-boolean value): present and bound, but carrying no truth value. Kept
+ * distinct from DT_ERASURE, which is unbound. */
+static int is_invalid_sym(uint8_t s) {
+  return (s & DT_BOUND) && !(s & DT_BOOLEAN);
+}
+
 /* The streaming decoder's state splits in two: a `dt_cc_decode_ctx` holds the
  * received buffer, the cadence (read_base/steps/decided and the re-anchor
  * history), the channel-derived cost constants, the trellis dimensions, and the
@@ -119,6 +131,11 @@ typedef struct {
    * n_patterns * drift_width * (n+2*max_drift+1)], allocated in
    * dt_cc_decode_ctx_finalize once n_patterns is known. */
   float *branch_ring;
+  /* Per-step DT_INVALID count [ring_len]: inv_ring[step % ring_len] is how many
+   * of the step's n zero-drift coded bits were received as the encoder's
+   * DT_INVALID poison, snapshotted at forward time. The backward sweep reads it as
+   * the c_invalid consistency (exact when local drift is 0). */
+  int *inv_ring;
   /* Two [num_states*drift_width] scratch buffers for the backward beta pass
    * (only beta[t+1] is needed to form beta[t]). */
   float *beta_a, *beta_b;
@@ -350,6 +367,15 @@ static void fill_match_costs(dt_cc_decode_ctx *ctx) {
         ctx->match_cost0[p] = keep + erase;
         ctx->match_cost1[p] = keep + erase;
         ctx->ins_cost[p] = ctx->cost_ins_e;
+      } else if (is_invalid_sym(received_bit)) {
+        /* The encoder's deliberate-non-value poison: value-FREE (cost_keep only,
+         * the same on both expected values), so a poisoned group stays a value-
+         * symmetric tie and the bit reads DT_INVALID. Deliberately NOT folded into
+         * the erasure branch, which is +inf when p_ovr_erase == 0 and would make a
+         * poisoned group unalignable. */
+        ctx->match_cost0[p] = keep;
+        ctx->match_cost1[p] = keep;
+        ctx->ins_cost[p] = ctx->cost_ins_e;
       } else {
         const int rv = DT_BIT(received_bit);
         ctx->match_cost0[p] = keep + ctx->cost_bit[0][rv];
@@ -536,9 +562,13 @@ static void forward_pass_nodrift(dt_cc_decode_ctx *ctx, dt_cc_trellis *tr) {
         branch_cost = keep_total;
         for (int j = 0; j < n; ++j) {
           const uint8_t received_bit = ctx->received[base + j];
-          branch_cost += received_bit == DT_ERASURE
-                             ? ctx->cost_erase
-                             : ctx->cost_bit[expected[j]][DT_BIT(received_bit)];
+          if (received_bit == DT_ERASURE) {
+            branch_cost += ctx->cost_erase;
+          } else if (is_invalid_sym(received_bit)) {
+            /* value-free: cost_keep only (already in keep_total) */
+          } else {
+            branch_cost += ctx->cost_bit[expected[j]][DT_BIT(received_bit)];
+          }
         }
       }
       if (branch_cost == INFINITY) {
@@ -577,6 +607,17 @@ static void snapshot_step(dt_cc_decode_ctx *ctx, dt_cc_trellis *tr, int nodrift)
 
   dt_memcpy(tr->alpha_ring + slot * count, tr->metric, count * sizeof(float));
 
+  /* Count the DT_INVALID poison in this step's zero-drift coded group, so the
+   * backward sweep can report c_invalid for the bit decided here. */
+  int inv = 0;
+  for (int j = 0; j < ctx->n; ++j) {
+    const int p = ctx->read_base + j;
+    if (p >= 0 && p < ctx->received_length && is_invalid_sym(ctx->received[p])) {
+      ++inv;
+    }
+  }
+  ctx->inv_ring[slot] = inv;
+
   float *bslot = ctx->branch_ring + slot * shared;
   if (nodrift) {
     /* drift_width == 1, stride == n + 1; branch for pattern p sits at row p's
@@ -591,8 +632,13 @@ static void snapshot_step(dt_cc_decode_ctx *ctx, dt_cc_trellis *tr, int nodrift)
         branch = keep_total;
         for (int jj = 0; jj < nn; ++jj) {
           const uint8_t rb = ctx->received[base + jj];
-          branch += rb == DT_ERASURE ? ctx->cost_erase
-                                     : ctx->cost_bit[pat[jj]][DT_BIT(rb)];
+          if (rb == DT_ERASURE) {
+            branch += ctx->cost_erase;
+          } else if (is_invalid_sym(rb)) {
+            /* value-free: cost_keep only (already in keep_total) */
+          } else {
+            branch += ctx->cost_bit[pat[jj]][DT_BIT(rb)];
+          }
         }
       }
       bslot[(size_t)p * stride + nn] = branch;
@@ -704,9 +750,16 @@ static float dt_cc_lock_from_cost(const dt_cc_decode_ctx *ctx, float cost) {
  * value is determined, not lost (the winner is 1 and the infeasible side is 0, so
  * the agreement is 0).
  *
- * c_lock is the independent lock consistency (is this the right code at all?). */
+ * c_lock is the independent lock consistency (is this the right code at all?).
+ *
+ * c_invalid (passed in, the fraction of this step's coded group received as the
+ * encoder's DT_INVALID poison) is carried straight through to the soft record and
+ * splits an undeterminable tie: a tie whose group was mostly poison is the
+ * deliberate non-value, abstaining as DT_INVALID rather than DT_ERASURE. The
+ * caller derives c_absent (= 1 - c_lock) from c_lock. */
 static uint8_t finalize_soft(const dt_cc_decode_ctx *ctx, float m0, float m1,
-                             float smoothed, dt_cc_decode_details *out) {
+                             float smoothed, float c_invalid,
+                             dt_cc_decode_details *out) {
   const float mmin = m0 < m1 ? m0 : m1;
   const float c_true = m1 == INFINITY ? 0.0f : dt_exp(mmin - m1);
   const float c_false = m0 == INFINITY ? 0.0f : dt_exp(mmin - m0);
@@ -716,12 +769,15 @@ static uint8_t finalize_soft(const dt_cc_decode_ctx *ctx, float m0, float m1,
     out->c_true = c_true;
     out->c_false = c_false;
     out->c_lost = c_lost;
+    out->c_invalid = c_invalid;
     out->c_lock = dt_cc_lock_from_cost(ctx, smoothed);
   }
   /* Most consistent of the three. c_lost is the agreement of the other two, so it
-   * only leads on a tie (m0 == m1 - genuinely undeterminable), abstaining. */
+   * only leads on a tie (m0 == m1 - genuinely undeterminable), abstaining. A tie
+   * whose coded group was mostly the encoder's DT_INVALID poison abstains as
+   * DT_INVALID (the deliberate non-value round-tripping); else DT_ERASURE. */
   if (c_lost >= c_true && c_lost >= c_false) {
-    return DT_ERASURE;
+    return c_invalid > DT_CC_HYBRID_INVALID_MIN ? DT_INVALID : DT_ERASURE;
   }
   return c_true >= c_false ? DT_TRUE : DT_FALSE;
 }
@@ -824,8 +880,10 @@ static void dt_cc_trellis_soft_batch(const dt_cc_decode_ctx *ctx, const dt_cc_tr
        * clamped to the current frontier for the reduced-depth flush tail. */
       long long s = t + dd;
       if (s > ctx->steps) s = ctx->steps;
+      /* Fraction of step t's coded group received as DT_INVALID poison. */
+      const float c_invalid = (float)ctx->inv_ring[t % rl] / (float)nn;
       const uint8_t bit = finalize_soft(
-          ctx, m0, m1, tr->smoothed_ring[s % rl],
+          ctx, m0, m1, tr->smoothed_ring[s % rl], c_invalid,
           details_out ? &details_out[k] : NULL);
       if (bits_out) bits_out[k] = bit;
     }
@@ -1018,6 +1076,7 @@ static int dt_cc_decode_ctx_init(dt_cc_decode_ctx *ctx, const dt_cc_hybrid_strea
 
   const size_t node_count = (size_t)ctx->num_states * ctx->drift_width;
   ctx->shift = dt_malloc((size_t)ctx->ring_len * sizeof(int));
+  ctx->inv_ring = dt_malloc((size_t)ctx->ring_len * sizeof(int));
   ctx->received = dt_malloc((size_t)ctx->received_capacity);
   ctx->pattern_bits = dt_malloc((size_t)ctx->pattern_cap * ctx->n);
   ctx->alignment =
@@ -1028,9 +1087,9 @@ static int dt_cc_decode_ctx_init(dt_cc_decode_ctx *ctx, const dt_cc_hybrid_strea
   ctx->in_range = dt_malloc((size_t)window * sizeof(signed char));
   ctx->beta_a = dt_malloc(node_count * sizeof(float));
   ctx->beta_b = dt_malloc(node_count * sizeof(float));
-  if (!ctx->shift || !ctx->received || !ctx->pattern_bits || !ctx->alignment ||
-      !ctx->match_cost0 || !ctx->match_cost1 || !ctx->ins_cost ||
-      !ctx->in_range || !ctx->beta_a || !ctx->beta_b) {
+  if (!ctx->shift || !ctx->inv_ring || !ctx->received || !ctx->pattern_bits ||
+      !ctx->alignment || !ctx->match_cost0 || !ctx->match_cost1 ||
+      !ctx->ins_cost || !ctx->in_range || !ctx->beta_a || !ctx->beta_b) {
     dt_cc_decode_ctx_free(ctx);
     return DT_ERR_ALLOC;
   }
@@ -1060,6 +1119,7 @@ static void dt_cc_decode_ctx_free(dt_cc_decode_ctx *ctx) {
     return;
   }
   dt_free(ctx->shift);
+  dt_free(ctx->inv_ring);
   dt_free(ctx->received);
   dt_free(ctx->pattern_bits);
   dt_free(ctx->alignment);
@@ -1072,6 +1132,7 @@ static void dt_cc_decode_ctx_free(dt_cc_decode_ctx *ctx) {
   dt_free(ctx->beta_a);
   dt_free(ctx->beta_b);
   ctx->shift = NULL;
+  ctx->inv_ring = NULL;
   ctx->received = NULL;
   ctx->pattern_bits = NULL;
   ctx->alignment = NULL;

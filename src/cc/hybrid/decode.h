@@ -105,6 +105,10 @@ typedef struct {
   float c_false;
   // Consistency of the proposition that the encoded bit is unrecoverable
   float c_lost;
+  // Consistency of the proposition that the bit's coded group was the encoder's
+  // deliberate non-value poison (DT_INVALID) - the fraction of the step's
+  // zero-drift coded group received as DT_INVALID.
+  float c_invalid;
   // Consistency of the proposition that the `dt_cc_code` is correct.
   float c_lock;
 } dt_cc_decode_details;

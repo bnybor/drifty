@@ -84,9 +84,10 @@ The fields are **not** a probability split and need not sum to 1.
 
 The hard symbol is the argmax projection of the value fields over the alphabet
 (recoverability-first; see [Data-flow semantics](data_flow_semantics.md)). An
-implementation need not model every hypothesis: the `hybrid` codec leaves
-`c_invalid` and `c_absent` at 0, while the max-log-MAP codecs (`bcjr`, `maxir`)
-populate the full alphabet.
+implementation need not model every hypothesis, but the three soft cc decoders
+(`bcjr`, `hybrid`, `maxir`) all populate the full alphabet — `c_invalid` and
+`c_absent` included. (They differ only in the hard decision: `bcjr`/`maxir` emit
+`DT_ABSENT` when lock collapses; `hybrid` does not.)
 
 The soft interfaces ([streaming](stream.md), [block](block.md)) carry `dt_soft_bit`
 wherever the hard ones carry `dt_bit`.

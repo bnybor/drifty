@@ -26,8 +26,8 @@ hard symbol.
 | Insertion / deletion (drift) | ✅ yes, up to `max_drift` |
 | Value-biased insertion | ✅ yes (`p_ins_true` / `p_ins_false` / `p_ins_erase`) |
 | Overwrite to fixed value | ✅ yes (`p_ovr_true` / `p_ovr_false` / `p_ovr_erase`) |
-| `DT_INVALID` poison round-trip | ➖ not surfaced — soft output leaves `c_invalid` / `c_absent` at 0; use [`maxir`](maxir.md) for the full alphabet |
-| Re-acquisition after sustained loss of lock | ✅ yes — re-seeds and re-locks downstream (hard output is `TRUE`/`FALSE`/`ERASURE`, so no `DT_ABSENT` marker over the gap) |
+| `DT_INVALID` poison round-trip | ✅ yes — a poisoned coded group reads back as `DT_INVALID`, with `c_invalid` reporting the poison fraction (full soft alphabet below) |
+| Re-acquisition after sustained loss of lock | ✅ yes — re-seeds and re-locks downstream. The hard output is `TRUE`/`FALSE`/`ERASURE`/`INVALID` with **no** `DT_ABSENT` marker, so an unlocked gap reads as ordinary (wrong) bits; the soft `c_absent` (= `1 - c_locked`) still flags it. Use [`maxir`](maxir.md) if you need `DT_ABSENT` in the hard decision. |
 
 ## API
 
@@ -89,15 +89,24 @@ the fields need not sum to 1):
 |-------|-----------|
 | `c_false` / `c_true` | the position holds `DT_FALSE` / `DT_TRUE` |
 | `c_erasure` | the value is unrecoverable (`DT_ERASURE`) |
-| `c_invalid`, `c_absent` | left **0** by `hybrid` (use [`maxir`](maxir.md) for these) |
+| `c_invalid` | the bit's coded group was the encoder's deliberate non-value poison (`DT_INVALID`) — the fraction of the group received as `DT_INVALID` |
+| `c_absent` | the position could not be placed (`DT_ABSENT`) — the lock complement, `1 - c_locked` |
 | `c_locked` | the decoder is correctly tracking the stream — low during warm-up or after losing sync |
 
-The hard symbol is the argmax projection over the alphabet (recoverability-first).
+`hybrid` populates the **full** alphabet — all six consistencies, including
+`c_invalid` and `c_absent`. The hard symbol is a recoverability-first projection of
+these fields: a determinable value wins, else an undeterminable tie abstains as
+`DT_INVALID` (when its group was mostly poison) or `DT_ERASURE`. Unlike
+[`maxir`](maxir.md) / [`bcjr`](bcjr.md), the hard decision never emits `DT_ABSENT`
+(a lost stretch reads as wrong bits); read `c_absent` / `c_locked` for the lock
+state.
 
 ## Choosing `hybrid`
 
 Pick `hybrid` for a drifting channel that also **overwrites** bits, when you want
-a hard decision and/or soft consistencies and do **not** need `DT_INVALID`
-round-tripping or the full soft alphabet. For the full output alphabet (poison
-and absent consistencies), use [`maxir`](maxir.md). (Like the other lock-tracking
-decoders, `hybrid` re-acquires sync after a sustained loss of lock.)
+a hard decision and/or the full soft alphabet (all six consistencies, including
+`c_invalid` and `c_absent`) and `DT_INVALID` round-tripping. Reach for
+[`maxir`](maxir.md) instead when you need `DT_ABSENT` surfaced in the **hard**
+decision over a lost stretch, or its heavier full-forward-backward soft detail.
+(Like the other lock-tracking decoders, `hybrid` re-acquires sync after a
+sustained loss of lock.)

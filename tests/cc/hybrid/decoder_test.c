@@ -737,8 +737,9 @@ static void test_error_paths(void) {
  * re-anchoring and trellis forgetting, backed by a trellis re-seed once the lock
  * fully collapses - and recovers the post-burst message downstream. The burst can
  * leave a small residual drift, so the recovered run sits at a shifted output
- * index (found by search). The hybrid hard output is TRUE/FALSE/ERASURE (no
- * DT_ABSENT), so the unlocked stretch reads as ordinary (wrong) bits. */
+ * index (found by search). The hybrid hard output is TRUE/FALSE/ERASURE/INVALID
+ * (no DT_ABSENT) and this stream carries no poison, so the unlocked stretch reads
+ * as ordinary (wrong) bits. */
 static void test_decoder_reacquire(void) {
   printf("test_decoder_reacquire\n");
   uint64_t rng = 0x9EACFEu;

@@ -36,6 +36,8 @@
 
 #include <drifty/cc/hybrid.h>
 
+#include <math.h>
+
 #define CODE DT_CC_CODE_K7_RATE_1_2
 #define WARMUP 40
 
@@ -52,10 +54,13 @@ static dt_cc_hybrid_stream_params clean_params(void) {
 }
 
 /* The hard decision implied by a soft record - mirrors the engine's own rule
- * (erasure wins on a tie, else the more-consistent value). */
+ * (the value loses to its agreement c_erasure only on a tie; a tie whose coded
+ * group was mostly the encoder's DT_INVALID poison abstains as DT_INVALID, else
+ * DT_ERASURE). The engine's hard decision is a pure function of these same
+ * fields, so this reproduces it exactly. */
 static uint8_t soft_hard(const dt_soft_bit *o) {
   if (o->c_erasure >= o->c_true && o->c_erasure >= o->c_false) {
-    return DT_ERASURE;
+    return o->c_invalid > 0.5f ? DT_INVALID : DT_ERASURE;
   }
   return o->c_true >= o->c_false ? DT_TRUE : DT_FALSE;
 }
@@ -114,8 +119,9 @@ static void test_soft_args(void) {
 }
 
 /* A clean stream: the winning consistency matches the message on the settled
- * bits, lock stays high, the consistencies stay in [0, 1], and c_invalid /
- * c_absent (which the hybrid codec does not model) are always 0. */
+ * bits, lock stays high, every consistency stays in [0, 1], no position reads as
+ * poison (c_invalid == 0, none injected), and c_absent is exactly the lock
+ * complement (1 - c_locked). */
 static void test_soft_clean(void) {
   printf("test_soft_clean\n");
   const int N = 300;
@@ -136,19 +142,18 @@ static void test_soft_clean(void) {
   dt_soft_bit *out = malloc((size_t)cap * sizeof(*out));
   int got = soft_decode_all(sd, coded, clen, out, cap);
 
-  int oob = 0, nonzero_ia = 0, errors = 0;
+  int oob = 0, nonzero_invalid = 0, bad_absent = 0, errors = 0;
   double min_lock = 1.0;
   const int hi = (got < N ? got : N) - WARMUP;
   for (int i = 0; i < got; ++i) {
     const dt_soft_bit *o = &out[i];
-    if (o->c_true < 0.0 || o->c_true > 1.0 || o->c_false < 0.0 ||
-        o->c_false > 1.0 || o->c_erasure < 0.0 || o->c_erasure > 1.0 ||
-        o->c_locked < 0.0 || o->c_locked > 1.0) {
-      ++oob;
+    const float f[6] = {o->c_true,    o->c_false, o->c_erasure,
+                        o->c_invalid, o->c_absent, o->c_locked};
+    for (int j = 0; j < 6; ++j) {
+      if (f[j] < 0.0f || f[j] > 1.0f) ++oob;
     }
-    if (o->c_invalid != 0.0 || o->c_absent != 0.0) {
-      ++nonzero_ia;
-    }
+    if (o->c_invalid != 0.0f) ++nonzero_invalid;       /* no poison injected */
+    if (fabsf(o->c_absent - (1.0f - o->c_locked)) > 1e-6f) ++bad_absent;
     if (i >= WARMUP && i < hi) {
       if (soft_hard(o) != msg[i]) ++errors;
       if (o->c_locked < min_lock) min_lock = o->c_locked;
@@ -157,7 +162,8 @@ static void test_soft_clean(void) {
   printf("  decoded %d (msg %d), settled errors=%d, min lock=%.3f\n", got, N,
          errors, min_lock);
   check("clean: all consistencies in [0,1]", oob == 0);
-  check("clean: c_invalid/c_absent always 0", nonzero_ia == 0);
+  check("clean: c_invalid always 0 (no poison)", nonzero_invalid == 0);
+  check("clean: c_absent == 1 - c_locked", bad_absent == 0);
   check("clean: settled bits decode correctly", errors == 0);
   check_gt("clean: settled lock high", min_lock, 0.8);
   check("clean: output length tracks message", got >= N && got <= N + 16);
@@ -276,10 +282,81 @@ static void test_soft_matches_hard(void) {
   dt_cc_code_destroy(code);
 }
 
+/* DT_INVALID round-trips through the full soft output. The encoder marks the
+ * coded bits carrying a non-boolean input. A DT_INVALID input is structural
+ * poison: its coded group is emitted DT_INVALID, the originating slot is a value-
+ * symmetric tie and reads back as DT_INVALID with c_invalid ~ 1, needing no
+ * erasure channel model; clean bits around it still recover. A DT_ERASURE input
+ * is an unbound value deferred to the channel: with an erasure model (p_ovr_erase)
+ * the slot reads back as DT_ERASURE, not poison. */
+static void test_soft_invalid(void) {
+  printf("test_soft_invalid\n");
+  enum { N = 300, KC = 7 };              /* KC == K of CODE (K7_RATE_1_2) */
+  const int warmup = 40 + 4 * KC;        /* depth + left-context slack */
+  const int poison_at = 150;
+  uint8_t *msg = malloc((size_t)N);
+  uint64_t rng = 0x1A2B3Cu;
+  rand_bits(msg, N, &rng);
+
+  int n, k;
+  uint8_t *coded = malloc(MAX_CODED(N));
+  const int cap = N + 64;
+  dt_soft_bit *out = malloc((size_t)cap * sizeof(*out));
+
+  dt_cc_code *code = dt_cc_code_create_standard(CODE);
+  REQUIRE("code created", code != NULL);
+
+  /* (a) DT_INVALID input: structural poison -> a DT_INVALID tie, no erasure
+   * channel model needed. */
+  msg[poison_at] = DT_INVALID;
+  int clen = (int)encode(CODE, msg, N, coded, &n, &k);
+  dt_cc_hybrid_stream_params pa = clean_params();
+  dt_stream_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &pa);
+  REQUIRE("soft decoder created", sd != NULL);
+  int got = soft_decode_all(sd, coded, clen, out, cap);
+  dt_cc_hybrid_soft_decoder_destroy(sd);
+  REQUIRE("decode produced output", got > N);
+
+  check("invalid input decodes DT_INVALID",
+        soft_hard(&out[poison_at]) == DT_INVALID);
+  check_gt("invalid slot c_invalid ~ 1", out[poison_at].c_invalid, 0.99);
+  int around_ok = 1;
+  for (int i = warmup; i < poison_at - 1; ++i) {
+    if (soft_hard(&out[i]) != msg[i]) around_ok = 0;
+  }
+  for (int i = poison_at + KC; i < N; ++i) {
+    if (soft_hard(&out[i]) != msg[i]) around_ok = 0;
+  }
+  check("clean bits around the invalid recover", around_ok);
+
+  /* (b) DT_ERASURE input: an unbound value deferred to the channel. Told to
+   * expect erased coded bits (p_ovr_erase), the decoder reads the slot back as
+   * DT_ERASURE, not poison. */
+  msg[poison_at] = DT_ERASURE;
+  clen = (int)encode(CODE, msg, N, coded, &n, &k);
+  dt_cc_hybrid_stream_params pb = clean_params();
+  pb.p_ovr_erase = 0.05;
+  sd = dt_cc_hybrid_soft_decoder_create(code, &pb);
+  REQUIRE("soft decoder created (erasure)", sd != NULL);
+  got = soft_decode_all(sd, coded, clen, out, cap);
+  dt_cc_hybrid_soft_decoder_destroy(sd);
+  REQUIRE("erasure decode produced output", got > N);
+
+  check("erasure input decodes DT_ERASURE",
+        soft_hard(&out[poison_at]) == DT_ERASURE);
+  check_lt("erasure slot is not poison", out[poison_at].c_invalid, 0.5);
+
+  free(out);
+  free(coded);
+  free(msg);
+  dt_cc_code_destroy(code);
+}
+
 int main(void) {
   test_soft_args();
   test_soft_clean();
   test_soft_feed_only_pump();
   test_soft_matches_hard();
+  test_soft_invalid();
   return test_summary("soft_decoder");
 }

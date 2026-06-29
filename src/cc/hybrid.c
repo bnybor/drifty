@@ -89,18 +89,19 @@ void dt_cc_hybrid_decoder_destroy(dt_stream_decoder *dec) {
 
 /* -- soft decoder ---------------------------------------------------------- */
 
-/* Map the engine's per-bit soft output onto a dt_soft_bit. The engine
- * folds all information loss into c_lost (and decodes the bit as DT_ERASURE when
- * it wins), so c_lost is the "erasure / unknowable value" consistency; it does
- * not separately model a stuck non-truth value or a per-position deletion, so
- * c_invalid and c_absent are left 0. */
+/* Map the engine's per-bit soft output onto a dt_soft_bit (full output). c_lost
+ * is the "unknowable value" consistency (erasure). c_invalid is the engine's
+ * poison fraction - how much of the bit's coded group was the encoder's
+ * deliberate non-value (DT_INVALID). c_absent is the complement of lock: the
+ * less the decoder is tracking this code, the more the position reads as one it
+ * could not place (DT_ABSENT). */
 static void details_to_soft(const dt_cc_decode_details *d,
                             dt_soft_bit *o) {
   o->c_false = d->c_false;
   o->c_true = d->c_true;
   o->c_erasure = d->c_lost;
-  o->c_invalid = 0.0;
-  o->c_absent = 0.0;
+  o->c_invalid = d->c_invalid;
+  o->c_absent = 1.0f - d->c_lock;
   o->c_locked = d->c_lock;
 }
 

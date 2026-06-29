@@ -52,7 +52,6 @@ void *dt_memcpy(void *dest, const void *src, size_t n);
 void *dt_memmove(void *dest, const void *src, size_t n);
 void *dt_memset(void *dest, int value, size_t n);
 
-int dt_abs(int value);
 float dt_log(float x);
 float dt_exp(float x);
 

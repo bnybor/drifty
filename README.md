@@ -280,7 +280,7 @@ void *dt_realloc(void *, size_t);  void  dt_free(void *);
 void *dt_memcpy(void *, const void *, size_t);
 void *dt_memmove(void *, const void *, size_t);
 void *dt_memset(void *, int, size_t);
-int   dt_abs(int);  float dt_log(float);  float dt_exp(float);
+float dt_log(float);  float dt_exp(float);
 ```
 
 This gives you two ways to link (see [Build](#build)):

@@ -45,7 +45,6 @@ void *dt_memset(void *dest, int value, size_t n) {
   return memset(dest, value, n);
 }
 
-int dt_abs(int value) { return abs(value); }
 /* Single-precision logf/expf, not log/exp: on a 32-bit MCU with a single-
  * precision FPU the double versions are software-emulated and far slower. */
 float dt_log(float x) { return logf(x); }

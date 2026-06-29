@@ -49,7 +49,6 @@ is always in scope at the call site:
 | `void *dt_memcpy(void *, const void *, size_t)` | `memcpy` | bulk symbol moves |
 | `void *dt_memmove(void *, const void *, size_t)` | `memmove` | overlapping buffer compaction |
 | `void *dt_memset(void *, int, size_t)` | `memset` | clear buffers / soft-bit records |
-| `int   dt_abs(int)` | `abs` | small integer arithmetic |
 | `float dt_log(float)` | `logf` | branch metrics in the soft/MAP decoders |
 | `float dt_exp(float)` | `expf` | branch metrics in the soft/MAP decoders |
 
@@ -65,7 +64,7 @@ libraries that differ only in whether the proxies are defined:
 
 - **`libdrifty_bare.a`** — the freestanding core with the `dt_*` proxies left
   **undefined**. Your final link must supply them. This is the archive for
-  bare-metal and embedded targets: the core asks for ten symbols and touches
+  bare-metal and embedded targets: the core asks for nine symbols and touches
   nothing else.
 - **`libdrifty.a`** — the same core with a default proxy implementation
   ([`stdlib/src/stdlib.c`](../stdlib/src/stdlib.c)) archived in, backed by the host
@@ -85,7 +84,7 @@ float dt_log(float x) { return logf(x); }
 ## Porting the proxies
 
 To run on a platform without a hosted libc, link `libdrifty_bare.a` and provide
-your own definitions of the ten symbols above. Two are worth a note:
+your own definitions of the nine symbols above. Two are worth a note:
 
 - **Allocation.** Decoders allocate working state at `_create` and may **grow**
   internal buffers with `dt_realloc` as the stream lengthens (the running decoders
@@ -123,7 +122,7 @@ void *dt_calloc(size_t n, size_t s) { /* size *n, then dt_memset 0 */ }
 void *dt_realloc(void *p, size_t s) { /* copy-grow within the arena */ }
 
 /* dt_memcpy / dt_memmove / dt_memset: trivial byte loops, or your platform's */
-/* dt_abs / dt_log / dt_exp: integer abs and your single-precision math       */
+/* dt_log / dt_exp: your single-precision math                                */
 ```
 
 Every `_create` can return `NULL` on allocation failure, so a fixed arena that

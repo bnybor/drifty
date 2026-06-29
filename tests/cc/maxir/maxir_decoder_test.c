@@ -869,6 +869,80 @@ static void test_decoder_reacquire(void) {
   dt_cc_code_destroy(code);
 }
 
+/* c_absent is a per-position deletion marginal (exp(mmin - m_absent)), independent
+ * of c_lock: on a clean drift-capable run it stays ~0, and a single fully-deleted
+ * coded group spikes it at that step while c_lock stays high (a localized deletion
+ * is not a loss of lock) and the neighbouring bits still recover their values. */
+static void test_decoder_absent_marginal(void) {
+  uint64_t rng = 0xAB5E27u;
+  dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
+  REQUIRE("code created", code != NULL);
+  const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
+  const int info_bits = 300, depth = 40, warmup = depth + 4 * K;
+
+  uint8_t *msg = malloc((size_t)info_bits);
+  rand_bits(msg, info_bits, &rng);
+  uint8_t *coded = malloc((size_t)(info_bits + K) * (size_t)n);
+  int clen = maxir_encode_all(code, msg, info_bits, coded);
+
+  const int outc = info_bits + K + 8;
+  uint8_t *sym = malloc((size_t)outc);
+  dt_cc_maxir_decode_details *det = malloc(sizeof(*det) * (size_t)outc);
+  dt_cc_maxir_stream_params p = make_params(depth, 4, 0.01, 0.01, 0.01, 0.0);
+
+  /* (1) Clean drift-capable run: c_absent ~ 0 everywhere settled, and in [0,1]. */
+  int got = maxir_decode_all(code, &p, coded, clen, sym, det, outc);
+  int range_ok = 1, clean_over = 0, cnt = 0;
+  double sum = 0.0;
+  for (int i = 0; i < got; ++i) {
+    if (det[i].c_absent < -1e-5f || det[i].c_absent > 1.0f + 1e-5f) range_ok = 0;
+    if (i >= warmup && i < info_bits) {
+      sum += det[i].c_absent;
+      if (det[i].c_absent > 0.5f) ++clean_over;
+      ++cnt;
+    }
+  }
+  check("c_absent in [0, 1]", range_ok);
+  check("clean run: c_absent ~ 0 (no false deletions)",
+        cnt > 100 && clean_over == 0 && sum / cnt < 0.05);
+
+  /* (2) Delete one info bit's entire n-bit coded group from the received stream. */
+  const int del_at = 150;
+  uint8_t *rx = malloc((size_t)clen);
+  int rl = 0;
+  for (int i = 0; i < clen; ++i) {
+    if (i >= del_at * n && i < (del_at + 1) * n) continue;
+    rx[rl++] = coded[i];
+  }
+  got = maxir_decode_all(code, &p, rx, rl, sym, det, outc);
+
+  /* The deletion spikes c_absent at that step (its alignment may straddle the
+   * boundary, so scan a 1-bit window), without collapsing the lock. */
+  float peak = 0.0f;
+  for (int i = del_at - 1; i <= del_at + 2 && i < got; ++i) {
+    if (det[i].c_absent > peak) peak = det[i].c_absent;
+  }
+  check("deleted group spikes c_absent (> 0.5)", peak > 0.5f);
+  check("deletion keeps lock (c_absent is not 1 - c_lock)",
+        det[del_at].c_lock > 0.5f);
+
+  /* Bits clear of the deletion recover their values with low c_absent. */
+  int far_ok = 1, far_n = 0;
+  for (int i = warmup; i < del_at - 4 && i < got; ++i) {
+    ++far_n;
+    if (sym[i] != msg[i] || det[i].c_absent > 0.5f) far_ok = 0;
+  }
+  check("bits clear of the deletion recover with low c_absent",
+        far_n > 50 && far_ok);
+
+  free(msg);
+  free(coded);
+  free(rx);
+  free(sym);
+  free(det);
+  dt_cc_code_destroy(code);
+}
+
 int main(void) {
   printf("maxir encoder:\n");
   test_encode_length_and_chunked();
@@ -887,6 +961,7 @@ int main(void) {
   test_decoder_midgroup_indel();
   test_decoder_drift_plus_flip();
   test_decoder_blind_acquisition_under_drift();
+  test_decoder_absent_marginal();
   test_decoder_reacquire();
   return test_summary("maxir");
 }

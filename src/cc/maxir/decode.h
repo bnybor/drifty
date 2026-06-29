@@ -85,8 +85,9 @@ typedef struct {
   /* Consistency that the slot's coded group was the encoder's DT_INVALID poison
    * marker - a bound, non-boolean value. */
   float c_invalid;
-  /* Consistency that the slot is not backed by a tracked codeword stream
-   * (1 - c_lock); surfaces as DT_ABSENT. */
+  /* Consistency that this step's coded group was deleted - the best path routes
+   * around it rather than placing a value (a deletion marginal, independent of
+   * c_lock); surfaces as DT_ABSENT. */
   float c_absent;
   /* Consistency that the decoder is tracking a valid stream of this code. */
   float c_lock;

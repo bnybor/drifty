@@ -61,6 +61,10 @@
  * winning value reads 1 and the loser exp(-gap), so c_lost = min(c_true, c_false)
  * is 1 - |c_true - c_false|. The value is recoverable unless m0 == m1 exactly (a
  * true tie - all evidence of this bit's value is missing or symmetric).
+ * Independently, c_absent = exp(mmin - m_absent) is the deletion marginal: m_absent
+ * is the cheapest complete path whose step-t edge maximally deletes this group
+ * (routes around it), so c_absent -> 1 when deleting the group is as cheap as
+ * placing a value here and -> 0 when no deletion is viable.
  *
  * Lock & re-acquisition. A code-specific lock consistency reads the smoothed
  * per-step cost (lock_from); when it stays low for a sustained run after a prior
@@ -540,15 +544,22 @@ static void forward_step(dt_cc_maxir_stream_decoder *d) {
 
 /* -- backward sweep -------------------------------------------------------- */
 
-/* Project the combined costs (m0, m1) for step t into the six-field soft output
- * and the hard symbol, and push them onto the FIFO at this step's slot. */
+/* Project the combined costs (m0, m1, m_absent) for step t into the six-field
+ * soft output and the hard symbol, and push them onto the FIFO at this step's
+ * slot. c_absent is the deletion marginal exp(mmin - m_absent) (see
+ * compute_beta_step); the other fields are the usual max-log projections. */
 static void finalize_emit(dt_cc_maxir_stream_decoder *d, long long t, float m0,
-                          float m1) {
+                          float m1, float m_absent) {
   const int slot = (int)(t % d->ring_len);
   const int idx = (int)(t - d->committed); /* FIFO empty -> linear, in order */
   dt_cc_maxir_decode_details det;
 
   const float mmin = (m0 < m1) ? m0 : m1;
+  /* Lock is sampled at the bit's OWN step (lock_ring[t]); it stays aligned with
+   * this bit's coded evidence. (A decision-time-frontier sample, t+decision_depth
+   * as hybrid uses, shifts the lock ~decision_depth steps in output space and
+   * misplaces DT_ABSENT onto recoverable bits adjacent to a loss - see the
+   * erasure-burst test.) */
   const float c_lock = lock_from(d, d->lock_ring[slot]);
   /* c_invalid: fraction of the step's zero-drift coded group received as
    * DT_INVALID (snapshotted at forward time; exact when local drift is 0). */
@@ -562,7 +573,7 @@ static void finalize_emit(dt_cc_maxir_stream_decoder *d, long long t, float m0,
     det.c_lost = 0.0f;
     det.c_invalid = c_invalid;
     det.c_lock = c_lock;
-    det.c_absent = 1.0f - c_lock;
+    det.c_absent = 1.0f; /* no surviving path: the position cannot be placed */
     d->fifo_sym[idx] = DT_ABSENT;
     d->fifo_det[idx] = det;
     return;
@@ -577,7 +588,10 @@ static void finalize_emit(dt_cc_maxir_stream_decoder *d, long long t, float m0,
   det.c_lost = c_lost;
   det.c_invalid = c_invalid;
   det.c_lock = c_lock;
-  det.c_absent = 1.0f - c_lock;
+  /* c_absent: consistency that the best path routes AROUND this step - deletes
+   * its coded group rather than placing a value here. exp(mmin - m_absent), the
+   * deletion analog of c_true/c_false; 0 when no deletion branch exists. */
+  det.c_absent = (m_absent == INFINITY) ? 0.0f : dt_exp(mmin - m_absent);
 
   /* Hard decision - value-recoverability-first cascade. A RECOVERABLE value is
    * resolved first (DT_TRUE/DT_FALSE); only an unrecoverable slot (an exact
@@ -611,7 +625,7 @@ static void compute_beta_step(dt_cc_maxir_stream_decoder *d, long long t,
   const int stride = n + 2 * d->max_drift + 1;
   const size_t count = (size_t)num_states * drift_width;
   const int emit = (t <= emit_hi);
-  float m0 = INFINITY, m1 = INFINITY;
+  float m0 = INFINITY, m1 = INFINITY, m_absent = INFINITY;
 
   for (size_t i = 0; i < count; ++i) {
     d->beta_cur[i] = INFINITY;
@@ -657,6 +671,15 @@ static void compute_beta_step(dt_cc_maxir_stream_decoder *d, long long t,
             if (total < m0) m0 = total;
           }
         }
+        /* Route-around cost for c_absent: the maximally-deleting branch is the
+         * one consuming the fewest received bits (nd = lo, consumed = n+(lo-di)).
+         * `lo < di` gates it to a genuine deletion (consumed < n); when none
+         * exists (e.g. no drift) m_absent stays INFINITY -> c_absent 0. Captured
+         * outside the vectorized nd loop, on emit steps only - off the hot path. */
+        if (emit && lo < hi && lo < di) {
+          const float tot_del = a + frow[n + (lo - di)] + beta[lo - sigma];
+          if (tot_del < m_absent) m_absent = tot_del;
+        }
       }
       d->beta_cur[(size_t)state * drift_width + di] = beta_src;
     }
@@ -665,7 +688,7 @@ static void compute_beta_step(dt_cc_maxir_stream_decoder *d, long long t,
   normalize(d->beta_cur, count); /* bound beta; never changes a decision */
 
   if (emit) {
-    finalize_emit(d, t, m0, m1);
+    finalize_emit(d, t, m0, m1, m_absent);
   }
 }
 

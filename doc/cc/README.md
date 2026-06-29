@@ -1,13 +1,20 @@
 # drifty — Convolutional coding (`cc`)
 
 The convolutional codecs. Every codec is built over a shared convolutional code
-(`dt_cc_code`, see [`include/drifty/cc/ccode.h`](../../include/drifty/cc/ccode.h)):
-pick a code, encode through the one shared **encoder**, send the coded stream over
+([`dt_cc_code`](ccode.md)): pick a code, encode through the one shared
+**encoder**, send the coded stream over
 the channel, and recover it with the **decoder** whose error model matches your
 channel. The encoder is common to all codecs — the **decoder is what differs**.
 
 The symbol alphabet these components speak is defined in
 [Data-flow semantics](../data_flow_semantics.md); read it first.
+
+## The code
+
+- **[ccode](ccode.md)** — `dt_cc_code` and `dt_cc_code_*`. The convolutional code
+  every codec shares: the ready-made catalogue, the custom-code generator format,
+  and the `dt_cc_code_n` / `dt_cc_code_k` accessors. The encoder and all five
+  decoders are built over one of these.
 
 ## Encoder
 

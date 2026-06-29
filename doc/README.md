@@ -26,8 +26,9 @@ codecs that implement them.
   `_soft_decoder`: a stream split into delimited frames with uncoded passthrough.
   The [`fc/`](fc/README.md) codecs implement it.
 - **[Convolutional coding (`cc/`)](cc/README.md)** — the convolutional codecs: the
-  shared encoder and the five decoders (`viterbi`, `vindel`, `hybrid`, `maxir`,
-  `bcjr`), with per-codec references and a guide to choosing one.
+  [shared code](cc/ccode.md), the shared encoder, and the five decoders
+  (`viterbi`, `vindel`, `hybrid`, `maxir`, `bcjr`), with per-codec references and
+  a guide to choosing one.
 - **[Block coding (`bc/`)](bc/rs251.md)** — block-code implementations; currently
   `rs251`, a Reed–Solomon RS(n, k) code over GF(251) (hard and soft decoders).
 - **[Frame coding (`fc/`)](fc/README.md)** — frame-delimiting codecs that carry no
@@ -36,6 +37,13 @@ codecs that implement them.
 - **[Freestanding & embedded](freestanding.md)** — running the core without a
   hosted C library: the `dt_*` proxy boundary, the bare vs full archives, and how
   to port the proxies (allocation, math) to a bare-metal target.
+- **[Soft decoding](soft_decoding.md)** — the soft front ends (`bcjr`, `hybrid`,
+  `maxir`): what the per-bit consistencies mean, how `c_absent` differs across
+  decoders, and using soft output across the inner→outer boundary.
+- **[Worked example: concatenation](concatenated.md)** — a complete runnable
+  program stacking the layers: `rs251` outer over a `hybrid` soft inner across a
+  drift channel (hard path alongside for contrast), showing the soft front end and
+  the inner→outer erasure bridge end to end.
 
 Operations that can fail return the shared `dt_result` codes from
 [`result.h`](../include/drifty/result.h).

@@ -555,11 +555,15 @@ static void finalize_emit(dt_cc_maxir_stream_decoder *d, long long t, float m0,
   dt_cc_maxir_decode_details det;
 
   const float mmin = (m0 < m1) ? m0 : m1;
-  /* Lock is sampled at the bit's OWN step (lock_ring[t]); it stays aligned with
-   * this bit's coded evidence. (A decision-time-frontier sample, t+decision_depth
-   * as hybrid uses, shifts the lock ~decision_depth steps in output space and
-   * misplaces DT_ABSENT onto recoverable bits adjacent to a loss - see the
-   * erasure-burst test.) */
+  /* Lock is sampled at the bit's OWN step (lock_ring[t]). lock_ring holds the
+   * TRAILING (causal) EWMA of the per-step cost, so lock_ring[s] depends only on
+   * costs up to step s. Reading it ahead (s = t + k) to "compensate" the EWMA's
+   * lag therefore leaks the future into this bit's lock: a loss at t+k pulls the
+   * lock down at t, misplacing DT_ABSENT onto still-recoverable bits BEFORE the
+   * loss (empirically ~k bits lost; full-frontier t+decision_depth as hybrid uses
+   * is worst). The own-step sample stays aligned with this bit's coded evidence;
+   * its only artifact is a benign recovery lag AFTER a loss, where the decoder is
+   * genuinely re-acquiring. */
   const float c_lock = lock_from(d, d->lock_ring[slot]);
   /* c_invalid: fraction of the step's zero-drift coded group received as
    * DT_INVALID (snapshotted at forward time; exact when local drift is 0). */

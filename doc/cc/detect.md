@@ -51,13 +51,48 @@ random stream gives `d = 0` → `c_absent ≈ 1`.
 ```c
 #include <drifty/cc/detect.h>
 
-dt_stream_soft_decoder *dt_cc_detect_soft_decoder_create(void);
+typedef struct {
+  int   decision_depth;
+  int   max_drift;
+  float p_flip;
+  float p_ins_true, p_ins_false, p_ins_erase;
+  float p_del;
+  float p_ovr_true, p_ovr_false, p_ovr_erase;
+} dt_cc_detect_stream_params;
+
+dt_stream_soft_decoder *dt_cc_detect_soft_decoder_create(const dt_cc_detect_stream_params *params);
 void             dt_cc_detect_soft_decoder_destroy(dt_stream_soft_decoder *dec);
 ```
 
-The factory takes nothing and returns NULL only on out of memory. Drive the soft
-decoder through its vtable — `begin → decode` (repeat) `→ finalize` — like any
-[soft decoder](../stream.md); it uses no preamble.
+The factory takes the **same rich channel model as [`hybrid`](hybrid.md) /
+[`maxir`](maxir.md)**, so a channel you already describe for an inner codec can be
+handed to detect unchanged (copied; need not outlive the call). It returns NULL on
+a bad argument or out of memory. Drive the soft decoder through its vtable —
+`begin → decode` (repeat) `→ finalize` — like any [soft decoder](../stream.md); it
+uses no preamble.
+
+### Channel-model parameters
+
+detect's rank method needs **exact** parity to see a code, which any corruption
+breaks — so the channel model is used not to decode but to **calibrate how much a
+null result can be trusted**. The more corruption you tell detect to expect, the
+less a clean-looking stream can be confidently declared code-*free* (a code could
+be present but hidden by the noise), so the **`c_absent` (no-code) confidence is
+scaled down** by a *detectability* factor `(1 − p)^W` where `p` is the expected
+per-bit corruption. The **`c_lost` (code-present) confidence is never affected** —
+parity checks that are actually found are real regardless of expected noise, since
+noise only destroys structure, never creates it.
+
+| Field | Role in detect |
+|-------|----------------|
+| `p_flip` | expected coded-bit flip rate, `0 ≤ p_flip < 1`. `0` = "expect a clean channel" (unlike hybrid/maxir, which require `> 0`). |
+| `p_ovr_true` / `p_ovr_false` / `p_ovr_erase` | overwrite rates (sum `< 1`); all count as corruption. |
+| `p_ins_true` / `p_ins_false` / `p_ins_erase`, `p_del` | insertion / deletion rates (sum `< 1`). Drift breaks the strided-window phase, so it reduces detectability sharply. |
+| `decision_depth` (`≥ 1`), `max_drift` (`≥ 0`) | accepted for interface uniformity with the cc family but **not used** by the rank method (detect has its own block-based delay and does not track drift). Validated only. |
+
+A clean channel (`p_flip = 0`, everything else 0) gives detectability `1`, so
+`c_absent` is undamped — the default behaviour. Rough magnitudes are all that
+matter.
 
 ## Limitations
 

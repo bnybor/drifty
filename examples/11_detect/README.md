@@ -9,7 +9,8 @@ values — it answers "is there a code here?".
 
 ## What it shows
 
-- The parameterless `dt_cc_detect_soft_decoder_create()` driven through the normal
+- `dt_cc_detect_soft_decoder_create(&params)` — it takes the same rich channel
+  model as `hybrid`/`maxir` (here a clean channel) — driven through the normal
   soft-decoder vtable.
 - The repurposed output fields: `c_erasure` = confidence a code **is** present,
   `c_absent` = confidence it is **not** (they need not sum to 1).

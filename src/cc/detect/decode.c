@@ -79,6 +79,11 @@ struct dt_cc_detect_stream_decoder {
   dt_cc_detect_decode_details *out;
   int out_head, out_len, out_cap;
   int finalized; /* the short final block has been processed */
+  /* (1 - expected per-bit corruption)^DET_W, from the channel model: the chance a
+   * width-W window survives the expected noise intact, hence the chance a code
+   * (if present) would still show as rank deficiency. Scales the confidence of a
+   * "no code" verdict - a noisy channel cannot confidently rule a code out. */
+  float detectability;
 };
 
 /* 2^-x for x >= 0, via the freestanding single-precision exp proxy. */
@@ -134,8 +139,11 @@ static int gf2_rank(const unsigned char *bits, int count, int stride, int *nrows
 
 /* Analyse `count` bits (count <= DET_BLOCK) and produce the (c_lost, c_absent)
  * verdict. d = max deficiency over the stride sweep; N_min = fewest rows over the
- * sweep (the weakest-evidence stride), which gauges data sufficiency. */
-static dt_cc_detect_decode_details analyse(const unsigned char *bits, int count) {
+ * sweep (the weakest-evidence stride), which gauges data sufficiency.
+ * `detectability` (channel-derived, in [0, 1]) scales how much a NULL result can
+ * be trusted as "no code". */
+static dt_cc_detect_decode_details analyse(const unsigned char *bits, int count,
+                                           float detectability) {
   dt_cc_detect_decode_details det;
   int d = 0, n_min = 1 << 30;
   for (int s = 2; s <= DET_SMAX; ++s) {
@@ -156,11 +164,17 @@ static dt_cc_detect_decode_details analyse(const unsigned char *bits, int count)
     det.c_absent = 0.0f;
     return det;
   }
-  /* c_lost: strength of the structural evidence (parity checks found). */
+  /* c_lost: strength of the structural evidence (parity checks found). Found
+   * checks are real regardless of expected noise, so detectability never scales
+   * this up. */
   det.c_lost = 1.0f - pow2_neg(d);
   /* c_absent: when no structure is found, confidence grows with how many rows
-   * beyond W ruled a code out; when structure IS found it is the small residual. */
-  det.c_absent = (d == 0) ? (1.0f - pow2_neg(n_min - DET_W)) : pow2_neg(d);
+   * beyond W ruled a code out, but is discounted by `detectability` - if the
+   * channel is noisy enough to hide a code, a clean-looking block cannot
+   * confidently be called code-free. When structure IS found it is the small
+   * residual (independent of expected noise). */
+  det.c_absent = (d == 0) ? (1.0f - pow2_neg(n_min - DET_W)) * detectability
+                          : pow2_neg(d);
   return det;
 }
 
@@ -214,7 +228,7 @@ static int out_reserve(dt_cc_detect_stream_decoder *d, int extra) {
  * carrying the block's verdict; consume those input bits. Returns 0 on OOM. */
 static int emit_block(dt_cc_detect_stream_decoder *d, int count) {
   const dt_cc_detect_decode_details v =
-      analyse(d->in + d->in_head, count);
+      analyse(d->in + d->in_head, count, d->detectability);
   if (!out_reserve(d, count)) {
     return 0;
   }
@@ -243,7 +257,49 @@ static int drain(dt_cc_detect_stream_decoder *d,
 
 /* -- public engine API ----------------------------------------------------- */
 
-dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(void) {
+/* Aggregate per-bit corruption probability the channel model implies: a bit is
+ * "wrong/unknown" if overwritten (any kind) or, failing that, flipped; an
+ * insertion or deletion additionally shifts the strided-window phase. Any of these
+ * breaks a window's exact parity, so they all count toward what could hide a code.
+ * Returns detectability = (1 - p_corrupt)^DET_W in [0, 1]. */
+static float detectability_from(const dt_cc_detect_stream_params *p) {
+  const float p_ovr = p->p_ovr_true + p->p_ovr_false + p->p_ovr_erase;
+  const float p_ins = p->p_ins_true + p->p_ins_false + p->p_ins_erase;
+  float p_corrupt = p_ovr + (1.0f - p_ovr) * p->p_flip + p_ins + p->p_del;
+  if (p_corrupt <= 0.0f) {
+    return 1.0f; /* clean channel: a code would show through fully */
+  }
+  if (p_corrupt > 0.999f) {
+    p_corrupt = 0.999f;
+  }
+  /* (1 - p_corrupt)^DET_W via the freestanding single-precision proxies. */
+  return dt_exp((float)DET_W * dt_log(1.0f - p_corrupt));
+}
+
+dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
+    const dt_cc_detect_stream_params *params) {
+  if (!params) {
+    return NULL;
+  }
+  /* Validate the channel model. p_flip may be 0 (expect a clean channel); the
+   * rates are non-negative and the overwrite / indel families each sum to < 1.
+   * decision_depth and max_drift are accepted for interface uniformity (the rank
+   * method does not use them). */
+  if (params->decision_depth < 1 || params->max_drift < 0) {
+    return NULL;
+  }
+  if (params->p_flip < 0.0f || params->p_flip >= 1.0f || params->p_del < 0.0f ||
+      params->p_ins_true < 0.0f || params->p_ins_false < 0.0f ||
+      params->p_ins_erase < 0.0f || params->p_ovr_true < 0.0f ||
+      params->p_ovr_false < 0.0f || params->p_ovr_erase < 0.0f) {
+    return NULL;
+  }
+  if (!(params->p_ovr_true + params->p_ovr_false + params->p_ovr_erase < 1.0f) ||
+      !(params->p_ins_true + params->p_ins_false + params->p_ins_erase +
+            params->p_del <
+        1.0f)) {
+    return NULL;
+  }
   dt_cc_detect_stream_decoder *d = dt_malloc(sizeof(*d));
   if (!d) {
     return NULL;
@@ -253,6 +309,7 @@ dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(void) {
   d->out = NULL;
   d->out_head = d->out_len = d->out_cap = 0;
   d->finalized = 0;
+  d->detectability = detectability_from(params);
   return d;
 }
 

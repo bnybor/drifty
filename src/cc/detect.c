@@ -28,9 +28,10 @@
  * detect codec: realizes the abstract dt_stream_soft_decoder interface over the
  * detect decode engine (see detect/decode.c for the blind code-presence detector).
  * detect is soft-only and standalone (no hard decoder, no encoder, and no
- * dt_cc_code - it takes no parameters); this file is the vtable plumbing that
- * adapts the engine to the abstract soft interface and maps its per-position
- * verdict onto a dt_soft_bit (details_to_soft below).
+ * dt_cc_code), though it does take the rich dt_cc_detect_stream_params channel
+ * model; this file is the vtable plumbing that adapts the engine to the abstract
+ * soft interface and maps its per-position verdict onto a dt_soft_bit
+ * (details_to_soft below).
  */
 
 #include <drifty/cc/detect.h>
@@ -123,8 +124,12 @@ static int detect_soft_finalize(dt_stream_soft_decoder *dec, dt_soft_bit *dst,
   return (int)written;
 }
 
-dt_stream_soft_decoder *dt_cc_detect_soft_decoder_create(void) {
-  dt_cc_detect_stream_decoder *sd = dt_cc_detect_stream_decoder_create();
+dt_stream_soft_decoder *dt_cc_detect_soft_decoder_create(
+    const dt_cc_detect_stream_params *params) {
+  if (!params) {
+    return NULL;
+  }
+  dt_cc_detect_stream_decoder *sd = dt_cc_detect_stream_decoder_create(params);
   if (!sd) {
     return NULL;
   }

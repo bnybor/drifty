@@ -27,8 +27,10 @@
 #ifndef DRIFTY_DETECT_DECODE_H
 #define DRIFTY_DETECT_DECODE_H
 
-/* The decoder shares the cc result codes. It is standalone - it takes no
- * dt_cc_code and no channel-model parameters. */
+/* The decoder shares the cc result codes. It is standalone (no dt_cc_code) but
+ * takes the dt_cc_detect_stream_params channel model, which lives in
+ * <drifty/cc/detect.h>. */
+#include <drifty/cc/detect.h>
 #include <drifty/result.h>
 
 #include <stdint.h>
@@ -44,7 +46,8 @@ extern "C" {
  * convolutional code vs that it does not. See decode.c for the method (GF(2)
  * strided-window rank deficiency).
  *
- *   dt_cc_detect_stream_decoder *d = dt_cc_detect_stream_decoder_create();
+ *   dt_cc_detect_stream_decoder *d = dt_cc_detect_stream_decoder_create(
+       &(dt_cc_detect_stream_params){ .decision_depth = 40 });
  *   dt_cc_detect_decode_details det[CAP];
  *   int n = dt_cc_detect_stream_decode(d, in, n_in, det, CAP);
  *   while (dt_cc_detect_stream_decode_flush(d, det, CAP) > 0) { }
@@ -67,10 +70,12 @@ typedef struct {
 } dt_cc_detect_decode_details;
 
 /*
- * Make a decoder. Takes no parameters. Returns NULL on out of memory; free it
- * with dt_cc_detect_stream_decoder_destroy().
+ * Make a decoder with the channel model in `params` (copied; need not outlive the
+ * call). Returns NULL on invalid settings or out of memory; free it with
+ * dt_cc_detect_stream_decoder_destroy().
  */
-dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(void);
+dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
+    const dt_cc_detect_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
 void dt_cc_detect_stream_decoder_destroy(dt_cc_detect_stream_decoder *d);

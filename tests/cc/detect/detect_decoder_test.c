@@ -94,9 +94,18 @@ static int encode(dt_cc_standard_code which, int n_info, dt_bit *out, int cap,
   return len;
 }
 
-/* Run detect over rx[] and collect every per-position record. Returns the count. */
-static int detect_all(const dt_bit *rx, int rl, dt_soft_bit *out, int cap) {
-  dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create();
+/* A clean-channel model (p_flip 0): a null detection result is fully trusted. */
+static dt_cc_detect_stream_params clean_params(void) {
+  dt_cc_detect_stream_params p = {0};
+  p.decision_depth = 40;
+  return p;
+}
+
+/* Run detect (with channel model `p`) over rx[] and collect every per-position
+ * record. Returns the count. */
+static int detect_all(const dt_cc_detect_stream_params *p, const dt_bit *rx,
+                      int rl, dt_soft_bit *out, int cap) {
+  dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(p);
   int got = sd->begin(sd, NULL, 0);
   got += sd->decode(sd, out + got, cap - got, rx, rl);
   for (;;) {
@@ -111,12 +120,28 @@ static int detect_all(const dt_bit *rx, int rl, dt_soft_bit *out, int cap) {
   return got;
 }
 
-/* The factory takes no parameters; destroy(NULL) is safe. */
+/* Argument validation at the factory, and destroy(NULL) safety. */
 static void test_create(void) {
   printf("detect create:\n");
-  dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create();
-  check("create succeeds", sd != NULL);
+  dt_cc_detect_stream_params p = clean_params();
+  dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&p);
+  check("create succeeds with valid params", sd != NULL);
   dt_cc_detect_soft_decoder_destroy(sd);
+
+  check("rejects NULL params", dt_cc_detect_soft_decoder_create(NULL) == NULL);
+  dt_cc_detect_stream_params bad = clean_params();
+  bad.decision_depth = 0;
+  check("rejects decision_depth < 1",
+        dt_cc_detect_soft_decoder_create(&bad) == NULL);
+  bad = clean_params();
+  bad.p_flip = 1.0f;
+  check("rejects p_flip >= 1", dt_cc_detect_soft_decoder_create(&bad) == NULL);
+  bad = clean_params();
+  bad.p_ovr_true = 0.6f;
+  bad.p_ovr_false = 0.6f; /* overwrite family sums to >= 1 */
+  check("rejects overwrite sum >= 1",
+        dt_cc_detect_soft_decoder_create(&bad) == NULL);
+
   dt_cc_detect_soft_decoder_destroy(NULL);
   check("destroy(NULL) is safe", 1);
 }
@@ -130,8 +155,9 @@ static void test_detects_code(void) {
   dt_bit *coded = malloc(CAP);
   int clen = encode(DT_CC_CODE_K7_RATE_1_2, NINFO, coded, CAP, &rng);
 
+  dt_cc_detect_stream_params p = clean_params();
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
-  int got = detect_all(coded, clen, out, CAP);
+  int got = detect_all(&p, coded, clen, out, CAP);
 
   double lost = 0, absent = 0;
   int other_nonzero = 0, range_ok = 1;
@@ -168,8 +194,9 @@ static void test_rejects_random(void) {
   for (int i = 0; i < RL; ++i) {
     rx[i] = (rng_next(&rng) & 1) ? DT_TRUE : DT_FALSE;
   }
+  dt_cc_detect_stream_params p = clean_params();
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
-  int got = detect_all(rx, RL, out, CAP);
+  int got = detect_all(&p, rx, RL, out, CAP);
 
   double lost = 0, absent = 0;
   for (int i = 0; i < got; ++i) {
@@ -184,10 +211,52 @@ static void test_rejects_random(void) {
   free(out);
 }
 
+/* The channel model calibrates a NULL result: telling detect to expect heavy noise
+ * lowers the confidence of a "no code" verdict on a random stream (a code could be
+ * hidden by that much noise), while the code-present confidence on coded data is
+ * unaffected (found parity checks are real regardless of expected noise). */
+static void test_noise_calibration(void) {
+  printf("detect channel-model calibration of the no-code verdict:\n");
+  enum { RL = 4000, CAP = RL + 256 };
+  uint64_t rng = 0x5151FFu;
+  dt_bit *rx = malloc(CAP);
+  for (int i = 0; i < RL; ++i) {
+    rx[i] = (rng_next(&rng) & 1) ? DT_TRUE : DT_FALSE;
+  }
+  dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
+
+  dt_cc_detect_stream_params clean = clean_params();
+  dt_cc_detect_stream_params noisy = clean_params();
+  noisy.p_flip = 0.05f; /* expect 5% flips: a code could hide under that */
+
+  int gc = detect_all(&clean, rx, RL, out, CAP);
+  double abs_clean = 0;
+  for (int i = 0; i < gc; ++i) {
+    abs_clean += out[i].c_absent;
+  }
+  abs_clean /= gc;
+  int gn = detect_all(&noisy, rx, RL, out, CAP);
+  double abs_noisy = 0;
+  for (int i = 0; i < gn; ++i) {
+    abs_noisy += out[i].c_absent;
+  }
+  abs_noisy /= gn;
+
+  printf("  random stream: c_absent clean=%.3f vs noisy-model=%.3f\n", abs_clean,
+         abs_noisy);
+  check_gt("clean model: no-code confidence high", abs_clean, 0.8);
+  check_lt("noisy model: no-code confidence damped", abs_noisy, 0.5);
+  check("noisy model lowers the no-code confidence", abs_noisy < abs_clean);
+
+  free(rx);
+  free(out);
+}
+
 int main(void) {
   test_create();
   test_detects_code();
   test_rejects_random();
+  test_noise_calibration();
   printf("%s (%d failure%s)\n", g_failures ? "FAILED" : "OK", g_failures,
          g_failures == 1 ? "" : "s");
   return g_failures ? 1 : 0;

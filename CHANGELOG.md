@@ -11,12 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`detect`** — a new parameterless, soft-only **meta-codec** that blindly detects
-  whether a convolutional code is present in an arbitrary bit stream, with no prior
-  knowledge or coordination (no code, rate, generators, or alignment). It reports,
-  per position, `c_lost` (in `c_erasure`) = confidence a code is present and
-  `c_absent` = confidence it is not, via GF(2) strided-window rank deficiency.
-  Soft-output only (`dt_cc_detect_soft_decoder_create`, no parameters); targets the
+- **`detect`** — a new soft-only **meta-codec** that blindly detects whether a
+  convolutional code is present in an arbitrary bit stream, with no prior knowledge
+  or coordination (no code, rate, generators, or alignment). It reports, per
+  position, `c_lost` (in `c_erasure`) = confidence a code is present and `c_absent`
+  = confidence it is not, via GF(2) strided-window rank deficiency. Its factory
+  (`dt_cc_detect_soft_decoder_create`) takes the same rich channel model as
+  `hybrid` / `maxir`, used to calibrate how much a null result is trusted (expected
+  noise damps the no-code confidence — a code could be hidden by it). Targets the
   clean / very-low-noise regime (see `doc/cc/detect.md`). Includes an
   `examples/11_detect` demo that localizes a coded segment hidden in random noise.
 

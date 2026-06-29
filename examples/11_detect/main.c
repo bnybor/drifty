@@ -60,6 +60,13 @@ int main(void) {
   }
   const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
 
+  /* detect takes the same rich channel model as hybrid/maxir. We expect a clean
+   * channel here (p_flip 0), so a "no code" verdict is fully trusted; telling it
+   * to expect noise would damp the no-code confidence (a code could hide under
+   * the noise). decision_depth is required (>= 1) but unused by the detector. */
+  dt_cc_detect_stream_params dp = {0};
+  dp.decision_depth = 40;
+
   /* ---- Part A: pure coded vs pure random ---- */
   printf("Part A - a whole stream, coded vs random:\n");
   enum { NINFO = 2000 };
@@ -71,7 +78,7 @@ int main(void) {
   ex_rand_bits(msg, NINFO, &rng);
   int clen = ex_encode(code, msg, NINFO, coded, cap);
   {
-    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create();
+    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
     int got = ex_decode_soft(sd, coded, clen, out, cap);
     dt_cc_detect_soft_decoder_destroy(sd);
     printf("  coded  (%d bits): code-present ", clen);
@@ -83,7 +90,7 @@ int main(void) {
     for (int i = 0; i < clen; ++i) {
       r[i] = (ex_rng_next(&rng) & 1) ? DT_TRUE : DT_FALSE;
     }
-    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create();
+    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
     int got = ex_decode_soft(sd, r, clen, out, cap);
     dt_cc_detect_soft_decoder_destroy(sd);
     printf("  random (%d bits): code-present ", clen);
@@ -112,7 +119,7 @@ int main(void) {
   }
 
   dt_soft_bit *sout = malloc((size_t)SCAP * sizeof *sout);
-  dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create();
+  dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
   int got = ex_decode_soft(sd, stream, len, sout, SCAP);
   dt_cc_detect_soft_decoder_destroy(sd);
 

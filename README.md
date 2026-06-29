@@ -363,8 +363,18 @@ decoder for indel recovery:
 cmake --install build --prefix /your/prefix
 ```
 
-Installs `libdrifty.a`, `libdrifty_bare.a`, and the public headers under
-`include/drifty/`.
+Installs `libdrifty.a`, `libdrifty_bare.a`, the public headers under
+`include/drifty/`, and a CMake package config. Consumers then just:
+
+```cmake
+find_package(drifty REQUIRED)
+target_link_libraries(your_app PRIVATE drifty::drifty)
+```
+
+`drifty::drifty` is the self-contained archive (core + stdlib shims + libm);
+`drifty::drifty_bare` is the freestanding core with the `dt_*` proxies left for you
+to supply (see [Freestanding & embedded](doc/freestanding.md)). Point CMake at the
+prefix with `-DCMAKE_PREFIX_PATH=/your/prefix` if it is not a default location.
 
 ## License
 

@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+# drifty is a static library. Two archives are exported:
+#   drifty::drifty       - the public library: core + bundled stdlib shims, pulls
+#                          in libm. Link this for an ordinary hosted build.
+#   drifty::drifty_bare  - the freestanding core only; the dt_* proxies are left
+#                          undefined for the consumer to supply (see the README's
+#                          "Freestanding & embedded" section).
+include("${CMAKE_CURRENT_LIST_DIR}/drifty-targets.cmake")
+
+check_required_components(drifty)

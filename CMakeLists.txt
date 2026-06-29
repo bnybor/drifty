@@ -31,8 +31,15 @@ add_compile_options($<$<CONFIG:MinSizeRel>:-fno-asynchronous-unwind-tables>
 
 add_subdirectory(stdlib)
 
+include(GNUInstallDirs)
+
 add_library(drifty_interface INTERFACE)
-target_include_directories(drifty_interface INTERFACE include)
+# Build-tree consumers see the in-source include/; installed consumers see the
+# installed headers. The generator expressions keep the exported package
+# relocatable (a bare `include` path would point back into the build tree).
+target_include_directories(drifty_interface INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 # The freestanding core, compiled once as an OBJECT library so the same objects
 # can be archived into both libraries below (the bare core, and the public core +
@@ -186,12 +193,38 @@ if(DRIFTY_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-include(GNUInstallDirs)
+# -- install + CMake package config (find_package(drifty) -> drifty::drifty) --
 
-install(TARGETS drifty drifty_bare
+# Install the archives and the INTERFACE target that carries the include dirs.
+# drifty_interface must be in the export set because drifty/drifty_bare link it
+# PUBLIC - omitting it makes install(EXPORT) fail.
+install(TARGETS drifty drifty_bare drifty_interface
     EXPORT drifty-targets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# Generate and install the exported targets file (drifty::drifty,
+# drifty::drifty_bare) under the standard package location.
+set(DRIFTY_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/drifty)
+install(EXPORT drifty-targets
+    FILE drifty-targets.cmake
+    NAMESPACE drifty::
+    DESTINATION ${DRIFTY_CMAKEDIR})
+
+# The package config + a version file, so `find_package(drifty)` resolves.
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/drifty-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/drifty-config.cmake
+    INSTALL_DESTINATION ${DRIFTY_CMAKEDIR})
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/drifty-config-version.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/drifty-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/drifty-config-version.cmake
+    DESTINATION ${DRIFTY_CMAKEDIR})

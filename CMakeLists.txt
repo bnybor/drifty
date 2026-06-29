@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(drifty
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Drift-tolerance convolutional coding"
     LANGUAGES C)
 

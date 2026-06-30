@@ -25,11 +25,11 @@
 /* clang-format on */
 
 /*
- * dt_detect_lean_metrics - Monte-Carlo measurement of the detect_lean blind
- * code-presence detector (exact GF(2) sliding-window rank deficiency) as a function
- * of the channel's flip / insert / delete / erase rates, for each standard code.
+ * dt_detect_noisy_metrics - Monte-Carlo measurement of the detect_noisy blind
+ * code-presence detector (parity-check bias scored by a Walsh-Hadamard transform)
+ * as a function of the channel's flip / insert / delete / erase rates, per code.
  *
- * detect_lean does not recover bits - it answers "is a convolutional code present?".
+ * detect_noisy does not recover bits - it answers "is a convolutional code present?".
  * So for one point we run TWO streams through the channel: a CODED one (a random
  * message encoded with the code) and a pure RANDOM one of the same length. Each is
  * detected, and we report the mean of the detector's two soft confidences over the
@@ -59,12 +59,12 @@
  *
  * Output is CSV on stdout (see header row); feed it to plot_metrics.py.
  *
- * Usage: dt_detect_lean_metrics [trials] [info_bits] [seed] [variation] [grids]
+ * Usage: dt_detect_noisy_metrics [trials] [info_bits] [seed] [variation] [grids]
  */
 
 #include <drifty/bit.h>
 #include <drifty/cc/ccode.h>
-#include <drifty/cc/detect_lean.h>
+#include <drifty/cc/detect_noisy.h>
 #include <drifty/cc/encoder.h>
 #include <drifty/soft_bit.h>
 #include <drifty/stream_encoder.h>
@@ -80,8 +80,8 @@
 #endif
 
 /* Head/tail abstain transient trimmed from each stream before averaging: at least
- * detect_lean's longest analysis window (~332 bits). */
-#define DET_TRIM 400
+ * detect_noisy's longest analysis window (~1200 bits). */
+#define DET_TRIM 1300
 
 /* -- deterministic PRNG (splitmix64) --------------------------------------- */
 
@@ -108,7 +108,7 @@ static uint64_t derive_seed(uint64_t base, int index) {
 static void *xmalloc(size_t size) {
   void *ptr = malloc(size);
   if (!ptr) {
-    fprintf(stderr, "dt_detect_lean_metrics: out of memory\n");
+    fprintf(stderr, "dt_detect_noisy_metrics: out of memory\n");
     exit(1);
   }
   return ptr;
@@ -163,7 +163,7 @@ static int name_index(const char *name, const char *const *names, int n) {
 static int load_grids(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) {
-    fprintf(stderr, "dt_detect_lean_metrics: cannot open rate-grid file '%s'\n",
+    fprintf(stderr, "dt_detect_noisy_metrics: cannot open rate-grid file '%s'\n",
             path);
     return -1;
   }
@@ -177,7 +177,7 @@ static int load_grids(const char *path) {
     if (!first) continue;
     int a = name_index(first, AXIS_NAME, N_AXES);
     if (a < 0) {
-      fprintf(stderr, "dt_detect_lean_metrics: %s:%d: unknown axis '%s'\n", path,
+      fprintf(stderr, "dt_detect_noisy_metrics: %s:%d: unknown axis '%s'\n", path,
               lineno, first);
       ok = 0;
       break;
@@ -188,7 +188,7 @@ static int load_grids(const char *path) {
       char *end;
       double value = strtod(t, &end);
       if (*end != '\0') {
-        fprintf(stderr, "dt_detect_lean_metrics: %s:%d: bad rate '%s'\n", path,
+        fprintf(stderr, "dt_detect_noisy_metrics: %s:%d: bad rate '%s'\n", path,
                 lineno, t);
         ok = 0;
         break;
@@ -197,14 +197,14 @@ static int load_grids(const char *path) {
         cap *= 2;
         rates = realloc(rates, (size_t)cap * sizeof(double));
         if (!rates) {
-          fprintf(stderr, "dt_detect_lean_metrics: out of memory\n");
+          fprintf(stderr, "dt_detect_noisy_metrics: out of memory\n");
           exit(1);
         }
       }
       rates[n++] = value;
     }
     if (ok && n == 0) {
-      fprintf(stderr, "dt_detect_lean_metrics: %s:%d: grid has no rates\n", path,
+      fprintf(stderr, "dt_detect_noisy_metrics: %s:%d: grid has no rates\n", path,
               lineno);
       ok = 0;
     }
@@ -226,7 +226,7 @@ static int encode_stream(const dt_cc_code *code, const uint8_t *msg, int info_bi
                          uint8_t *out, int cap) {
   dt_stream_encoder *enc = dt_cc_encoder_create(code);
   if (!enc) {
-    fprintf(stderr, "dt_detect_lean_metrics: encoder create failed\n");
+    fprintf(stderr, "dt_detect_noisy_metrics: encoder create failed\n");
     exit(1);
   }
   int len = enc->begin(enc, out, (size_t)cap);
@@ -251,7 +251,7 @@ static int apply_channel(const uint8_t *src, int len, double p_flip, double p_in
       cap *= 2;
       rx = realloc(rx, (size_t)cap);
       if (!rx) {
-        fprintf(stderr, "dt_detect_lean_metrics: out of memory\n");
+        fprintf(stderr, "dt_detect_noisy_metrics: out of memory\n");
         exit(1);
       }
     }
@@ -276,7 +276,7 @@ static int apply_channel(const uint8_t *src, int len, double p_flip, double p_in
 
 /* The detector's channel model for one point, fixed by axis/rate/variation. */
 typedef struct {
-  dt_cc_detect_lean_stream_params params;
+  dt_cc_detect_noisy_stream_params params;
   int code_n, K;
 } point_model;
 
@@ -293,8 +293,8 @@ static point_model make_model(const dt_cc_code *code, axis a, double rate,
     else if (a == AXIS_DELETE) p_del = clamp_double(rate, 0.0, 0.95);
     else /* AXIS_ERASE */ p_erase = clamp_double(rate, 0.0, 0.999);
   }
-  dt_cc_detect_lean_stream_params p = {0};
-  p.decision_depth = 8 * m.K; /* required >= 1 but unused by the rank method */
+  dt_cc_detect_noisy_stream_params p = {0};
+  p.decision_depth = 8 * m.K; /* required >= 1 but unused by the bias method */
   p.max_drift = 8;            /* required >= 0 but unused */
   p.p_flip = (float)p_flip;
   p.p_ins_true = (float)(p_ins * 0.5);
@@ -305,14 +305,14 @@ static point_model make_model(const dt_cc_code *code, axis a, double rate,
   return m;
 }
 
-/* Run detect_lean over rx[0..rlen) and average code-present (c_erasure) and no-code
+/* Run detect_noisy over rx[0..rlen) and average code-present (c_erasure) and no-code
  * (c_absent) over the interior [DET_TRIM, n-DET_TRIM). */
-static void run_detect(const dt_cc_detect_lean_stream_params *params,
+static void run_detect(const dt_cc_detect_noisy_stream_params *params,
                        const uint8_t *rx, int rlen, double *present,
                        double *absent) {
-  dt_stream_soft_decoder *sd = dt_cc_detect_lean_soft_decoder_create(params);
+  dt_stream_soft_decoder *sd = dt_cc_detect_noisy_soft_decoder_create(params);
   if (!sd) {
-    fprintf(stderr, "dt_detect_lean_metrics: detector create failed\n");
+    fprintf(stderr, "dt_detect_noisy_metrics: detector create failed\n");
     exit(1);
   }
   dt_soft_bit *out = xmalloc((size_t)(rlen + 64) * sizeof(*out));
@@ -327,9 +327,9 @@ static void run_detect(const dt_cc_detect_lean_stream_params *params,
     got += w;
   }
   if (got >= 0) got += sd->finalize(sd, out + got, (size_t)(rlen + 64 - got));
-  dt_cc_detect_lean_soft_decoder_destroy(sd);
+  dt_cc_detect_noisy_soft_decoder_destroy(sd);
   if (got < 0) {
-    fprintf(stderr, "dt_detect_lean_metrics: decode error %d\n", got);
+    fprintf(stderr, "dt_detect_noisy_metrics: decode error %d\n", got);
     exit(1);
   }
   int lo = DET_TRIM, hi = got - DET_TRIM;
@@ -423,7 +423,7 @@ int main(int argc, char **argv) {
   if (argc > 4) {
     int parsed = parse_variation(argv[4]);
     if (parsed < 0) {
-      fprintf(stderr, "dt_detect_lean_metrics: unknown variation '%s' "
+      fprintf(stderr, "dt_detect_noisy_metrics: unknown variation '%s' "
                       "(use pegged|matched)\n",
               argv[4]);
       return 2;
@@ -431,7 +431,7 @@ int main(int argc, char **argv) {
     var = (variation)parsed;
   }
   const char *grids_path =
-      argc > 5 ? argv[5] : "metrics/detect_lean/rate_grids.txt";
+      argc > 5 ? argv[5] : "metrics/detect_noisy/rate_grids.txt";
   if (trials < 1 || info_bits < 1000) {
     fprintf(stderr, "usage: %s [trials>=1] [info_bits>=1000] [seed] "
                     "[variation=pegged|matched] [rate_grids_file]\n",
@@ -446,7 +446,7 @@ int main(int argc, char **argv) {
   for (int c = 0; c < N_CODES; ++c) {
     codes[c] = dt_cc_code_create_standard(CODES[c].which);
     if (!codes[c]) {
-      fprintf(stderr, "dt_detect_lean_metrics: code create failed\n");
+      fprintf(stderr, "dt_detect_noisy_metrics: code create failed\n");
       return 1;
     }
   }
@@ -454,7 +454,7 @@ int main(int argc, char **argv) {
   int n_points = 0;
   for (int a = 0; a < N_AXES; ++a) {
     if (g_grids[a].count == 0) {
-      fprintf(stderr, "dt_detect_lean_metrics: %s: no grid for axis %s\n",
+      fprintf(stderr, "dt_detect_noisy_metrics: %s: no grid for axis %s\n",
               grids_path, AXIS_NAME[a]);
       return 2;
     }
@@ -475,11 +475,11 @@ int main(int argc, char **argv) {
 
   const char *var_name = var == VAR_MATCHED ? "matched" : "pegged";
 #ifdef _OPENMP
-  fprintf(stderr, "detect_lean: %d points x %d trials (%s) on %d threads ...\n",
+  fprintf(stderr, "detect_noisy: %d points x %d trials (%s) on %d threads ...\n",
           n_points, trials, var_name, omp_get_max_threads());
 #else
   fprintf(stderr,
-          "detect_lean: %d points x %d trials (%s, single-threaded) ...\n",
+          "detect_noisy: %d points x %d trials (%s, single-threaded) ...\n",
           n_points, trials, var_name);
 #endif
 

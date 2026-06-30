@@ -49,7 +49,7 @@ Read them roughly in order — each builds on the vocabulary of the last.
 | 08 | **[frames_naive](08_frames_naive)** | The **frame** interface with fixed-length (`naive`) frames and the `OUTSIDE → BEGIN → INSIDE → END` boundary state machine. |
 | 09 | **[frames_marker](09_frames_marker)** | Variable-length (`marker`) frames, escape-sequence transparency (any payload survives), hard and soft frame decoders. |
 | 10 | **[concatenated](10_concatenated)** | The full stack: an `rs251` outer code over a `hybrid` **soft** inner code across a drifting channel, with the hard path alongside for contrast. The worked example from [doc/concatenated.md](../doc/concatenated.md). |
-| 11 | **[detect](11_detect)** | The `detect_lean` / `detect_full` meta-codecs: blind detection of whether a convolutional code is present in an arbitrary stream (no code/alignment known) — lean localizes a coded segment hidden in random noise, full holds on through bit flips and combined flip+drift where lean collapses. |
+| 11 | **[detect](11_detect)** | The `detect_clean` / `detect_noisy` meta-codecs: blind detection of whether a convolutional code is present in an arbitrary stream (no code/alignment known) — lean localizes a coded segment hidden in random noise, full holds on through bit flips and combined flip+drift where lean collapses. |
 
 ## Capability coverage
 
@@ -61,6 +61,6 @@ alphabet (`DT_TRUE` / `DT_FALSE` / `DT_ERASURE` / `DT_INVALID` / `DT_ABSENT`),
 lock / blind acquisition, the [`rs251` block code](../doc/bc/rs251.md) (hard and
 soft), the [frame codecs](../doc/fc/README.md) (`naive` and `marker`, hard and
 soft), the [concatenated stack](../doc/concatenated.md), and the
-[`detect_lean`](../doc/cc/detect_lean.md) / [`detect_full`](../doc/cc/detect_full.md)
+[`detect_clean`](../doc/cc/detect_clean.md) / [`detect_noisy`](../doc/cc/detect_noisy.md)
 meta-codecs (blind code-presence detection). See [`doc/`](../doc/README.md) for the
 reference behind each.

@@ -2,7 +2,7 @@
 # MIT License - Copyright (c) 2026 Robyn Kirkman
 """Plot blind code-presence detection metrics vs channel rate.
 
-Reads the CSV produced by a dt_detect_{lean,full}_metrics harness and renders, for
+Reads the CSV produced by a dt_detect_{clean,noisy}_metrics harness and renders, for
 each channel axis (flip / insert / delete / erase), two figures - one per soft
 confidence the detector emits:
 
@@ -20,10 +20,10 @@ The CSV is a single variation (pegged or matched); run the plotter once per
 variation CSV into that variation's plots/ directory.
 
 Usage:
-    build/metrics/detect_lean/dt_detect_lean_metrics 16 4000 0xC0FFEE matched \
-        > metrics/detect_lean/tuned/metrics.csv
-    python3 metrics/detect_lean/plot_metrics.py metrics/detect_lean/tuned/metrics.csv \
-        -o metrics/detect_lean/tuned/plots/
+    build/metrics/detect_clean/dt_detect_clean_metrics 16 4000 0xC0FFEE matched \
+        > metrics/detect_clean/tuned/metrics.csv
+    python3 metrics/detect_clean/plot_metrics.py metrics/detect_clean/tuned/metrics.csv \
+        -o metrics/detect_clean/tuned/plots/
 """
 import argparse
 import csv
@@ -94,8 +94,8 @@ def plot_axis_metric(axis, by_code, outdir, metric, variation):
     var = f" [{variation}]" if variation else ""
     ax.set_title(f"{title} vs {axis} rate{var}")
     ax.set_ylim(-0.02, 1.02)
-    # Pin the origin at 0; the grids are kept identical between detect_lean and
-    # detect_full, so corresponding plots end up with the same x-range too.
+    # Pin the origin at 0; the grids are kept identical between detect_clean and
+    # detect_noisy, so corresponding plots end up with the same x-range too.
     ax.set_xlim(left=0)
     ax.grid(True, which="both", alpha=0.3)
     ax.legend()

@@ -1,12 +1,12 @@
-# detect_full metrics
+# detect_noisy metrics
 
-`metrics/detect_full/dt_detect_full_metrics.c` measures the **detect_full** blind
-code-presence detector ([doc](../../doc/cc/detect_full.md)) — parity-check **bias**
+`metrics/detect_noisy/dt_detect_noisy_metrics.c` measures the **detect_noisy** blind
+code-presence detector ([doc](../../doc/cc/detect_noisy.md)) — parity-check **bias**
 scored by a fast Walsh–Hadamard transform — across the four channel impairments, for
 each standard code. It shares the framework and CLI of the FEC harnesses, but
-detect_full does not recover bits, so the metrics are detection confidence rather
+detect_noisy does not recover bits, so the metrics are detection confidence rather
 than edit distance. It is the noise-tolerant sibling of
-[detect_lean](../detect_lean/METRICS.md): same metrics and plots, knees pushed
+[detect_clean](../detect_clean/METRICS.md): same metrics and plots, knees pushed
 substantially further out at a ~64 KB / heavier-compute cost.
 
 > [!NOTE]
@@ -16,7 +16,7 @@ substantially further out at a ~64 KB / heavier-compute cost.
 
 ## What is measured
 
-detect_full answers "is a convolutional code present?". For each point we run **two**
+detect_noisy answers "is a convolutional code present?". For each point we run **two**
 streams through the channel — a **coded** one and a same-length **pure random** one —
 and average each of the detector's two soft confidences over the stream interior
 (the head/tail abstain transient is trimmed):
@@ -40,7 +40,7 @@ axis**:
 - **matched** (`tuned/`) — the swept impairment's model rate tracks the channel; the
   others stay at the 1% floor.
 
-The model only calibrates **`c_absent`**: detect_full damps its no-code confidence by
+The model only calibrates **`c_absent`**: detect_noisy damps its no-code confidence by
 a detectability factor `(1 − 2p)^W_ref` when it expects flips/overwrites (heavy
 expected flips could have pushed a real code's bias down into the random floor). So
 **matched FLIP and ERASE** sweeps pull the `c_absent` random baseline down as the
@@ -53,20 +53,20 @@ is real regardless of what you expected) and the **INSERT/DELETE** axes barely m
 ```sh
 # Build the harness (off by default).
 cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
-cmake --build build --target dt_detect_full_metrics
+cmake --build build --target dt_detect_noisy_metrics
 
 # Coarse pass (fast - what is committed):
-build/metrics/detect_full/dt_detect_full_metrics 4 2500 0xC0FFEE pegged  > metrics/detect_full/untuned/metrics.csv
-build/metrics/detect_full/dt_detect_full_metrics 4 2500 0xC0FFEE matched > metrics/detect_full/tuned/metrics.csv
+build/metrics/detect_noisy/dt_detect_noisy_metrics 4 2500 0xC0FFEE pegged  > metrics/detect_noisy/untuned/metrics.csv
+build/metrics/detect_noisy/dt_detect_noisy_metrics 4 2500 0xC0FFEE matched > metrics/detect_noisy/tuned/metrics.csv
 
 # Full sweep (more trials / bits; run when done iterating):
-build/metrics/detect_full/dt_detect_full_metrics 40 6000 0xC0FFEE pegged  > metrics/detect_full/untuned/metrics.csv
-build/metrics/detect_full/dt_detect_full_metrics 40 6000 0xC0FFEE matched > metrics/detect_full/tuned/metrics.csv
+build/metrics/detect_noisy/dt_detect_noisy_metrics 40 6000 0xC0FFEE pegged  > metrics/detect_noisy/untuned/metrics.csv
+build/metrics/detect_noisy/dt_detect_noisy_metrics 40 6000 0xC0FFEE matched > metrics/detect_noisy/tuned/metrics.csv
 
 # Plot both confidences (with the random baseline) into each variation's plots/.
 python3 -m venv .venv && .venv/bin/pip install matplotlib   # once
-.venv/bin/python metrics/detect_full/plot_metrics.py metrics/detect_full/untuned/metrics.csv -o metrics/detect_full/untuned/plots/
-.venv/bin/python metrics/detect_full/plot_metrics.py metrics/detect_full/tuned/metrics.csv   -o metrics/detect_full/tuned/plots/
+.venv/bin/python metrics/detect_noisy/plot_metrics.py metrics/detect_noisy/untuned/metrics.csv -o metrics/detect_noisy/untuned/plots/
+.venv/bin/python metrics/detect_noisy/plot_metrics.py metrics/detect_noisy/tuned/metrics.csv   -o metrics/detect_noisy/tuned/plots/
 ```
 
 Every run is reproducible from its `seed` (each point owns a derived PRNG stream, so
@@ -79,10 +79,10 @@ random_absent` (the `dec_*` columns record the model each point ran with).
 ## Reading the plots
 
 One figure per (metric, axis): a solid curve per code (the coded value) and a dashed
-**random baseline**. Unlike detect_lean, the random `present` baseline sits at a
+**random baseline**. Unlike detect_clean, the random `present` baseline sits at a
 small positive floor (~0.03–0.05 — the max bias over `2^14` candidates on random
 data), so the coded curves clear it by less at the clean end but stay separated far
-longer: full holds to ~5–8 % flips, ~2–3 % indels, ~16 % erasures.
+longer: detect_noisy holds to ~5–8 % flips, ~2–3 % indels, ~16 % erasures.
 
 ### Code-present confidence (`c_erasure`)
 
@@ -113,7 +113,7 @@ declared code-free. Insert/delete baselines stay flat in both (indels don't damp
 
 ## Iterating
 
-The engine constants worth sweeping live in `src/cc/detect_full/decode.c`
+The engine constants worth sweeping live in `src/cc/detect_noisy/decode.c`
 (`DET_LC` — transform order / histogram size, `DET_L` — window, `DET_STEP`,
 `DET_K_LOST` — the c_erasure calibration, `DET_WREF` — the c_absent detectability
 weight). Edit, rebuild the target, re-run — the `present` curves move with

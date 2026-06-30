@@ -25,18 +25,18 @@
 /* clang-format on */
 
 /*
- * Tests for the detect_full codec - a blind, NOISE-tolerant detector of
+ * Tests for the detect_noisy codec - a blind, NOISE-tolerant detector of
  * convolutional-code structure (parity-check bias scored by a Walsh-Hadamard
  * transform). It outputs, per position, c_erasure = confidence a code IS present
  * (engine c_lost) and c_absent = confidence a code is NOT present, all other soft
  * fields 0. Beyond the basics (coded reads code-present, random reads no-code,
  * only the two fields populated, lifecycle sound, channel model calibrates the null
- * verdict), these confirm detect_full's reason for being over detect_lean: it holds
+ * verdict), these confirm detect_noisy's reason for being over detect_clean: it holds
  * through FLIPS, through indels, and through light COMBINATIONS of the two.
  */
 
 #include <drifty/cc/ccode.h>
-#include <drifty/cc/detect_full.h>
+#include <drifty/cc/detect_noisy.h>
 #include <drifty/cc/encoder.h>
 #include <drifty/bit.h>
 #include <drifty/soft_bit.h>
@@ -130,17 +130,17 @@ static int delete_channel(const dt_bit *in, int len, double p, uint64_t *rng,
 }
 
 /* A clean-channel model (p_flip 0): a null detection result is fully trusted. */
-static dt_cc_detect_full_stream_params clean_params(void) {
-  dt_cc_detect_full_stream_params p = {0};
+static dt_cc_detect_noisy_stream_params clean_params(void) {
+  dt_cc_detect_noisy_stream_params p = {0};
   p.decision_depth = 40;
   return p;
 }
 
 /* Run detect (with channel model `p`) over rx[] and collect every per-position
  * record. Returns the count. */
-static int detect_all(const dt_cc_detect_full_stream_params *p, const dt_bit *rx,
+static int detect_all(const dt_cc_detect_noisy_stream_params *p, const dt_bit *rx,
                       int rl, dt_soft_bit *out, int cap) {
-  dt_stream_soft_decoder *sd = dt_cc_detect_full_soft_decoder_create(p);
+  dt_stream_soft_decoder *sd = dt_cc_detect_noisy_soft_decoder_create(p);
   int got = sd->begin(sd, NULL, 0);
   got += sd->decode(sd, out + got, cap - got, rx, rl);
   for (;;) {
@@ -151,7 +151,7 @@ static int detect_all(const dt_cc_detect_full_stream_params *p, const dt_bit *rx
     got += w;
   }
   got += sd->finalize(sd, out + got, cap - got);
-  dt_cc_detect_full_soft_decoder_destroy(sd);
+  dt_cc_detect_noisy_soft_decoder_destroy(sd);
   return got;
 }
 
@@ -169,26 +169,26 @@ static void means(const dt_soft_bit *out, int got, double *lost, double *absent)
 /* Argument validation at the factory, and destroy(NULL) safety. */
 static void test_create(void) {
   printf("detect create:\n");
-  dt_cc_detect_full_stream_params p = clean_params();
-  dt_stream_soft_decoder *sd = dt_cc_detect_full_soft_decoder_create(&p);
+  dt_cc_detect_noisy_stream_params p = clean_params();
+  dt_stream_soft_decoder *sd = dt_cc_detect_noisy_soft_decoder_create(&p);
   check("create succeeds with valid params", sd != NULL);
-  dt_cc_detect_full_soft_decoder_destroy(sd);
+  dt_cc_detect_noisy_soft_decoder_destroy(sd);
 
-  check("rejects NULL params", dt_cc_detect_full_soft_decoder_create(NULL) == NULL);
-  dt_cc_detect_full_stream_params bad = clean_params();
+  check("rejects NULL params", dt_cc_detect_noisy_soft_decoder_create(NULL) == NULL);
+  dt_cc_detect_noisy_stream_params bad = clean_params();
   bad.decision_depth = 0;
   check("rejects decision_depth < 1",
-        dt_cc_detect_full_soft_decoder_create(&bad) == NULL);
+        dt_cc_detect_noisy_soft_decoder_create(&bad) == NULL);
   bad = clean_params();
   bad.p_flip = 1.0f;
-  check("rejects p_flip >= 1", dt_cc_detect_full_soft_decoder_create(&bad) == NULL);
+  check("rejects p_flip >= 1", dt_cc_detect_noisy_soft_decoder_create(&bad) == NULL);
   bad = clean_params();
   bad.p_ovr_true = 0.6f;
   bad.p_ovr_false = 0.6f; /* overwrite family sums to >= 1 */
   check("rejects overwrite sum >= 1",
-        dt_cc_detect_full_soft_decoder_create(&bad) == NULL);
+        dt_cc_detect_noisy_soft_decoder_create(&bad) == NULL);
 
-  dt_cc_detect_full_soft_decoder_destroy(NULL);
+  dt_cc_detect_noisy_soft_decoder_destroy(NULL);
   check("destroy(NULL) is safe", 1);
 }
 
@@ -201,7 +201,7 @@ static void test_detects_code(void) {
   dt_bit *coded = malloc(CAP);
   int clen = encode(DT_CC_CODE_K7_RATE_1_2, NINFO, coded, CAP, &rng);
 
-  dt_cc_detect_full_stream_params p = clean_params();
+  dt_cc_detect_noisy_stream_params p = clean_params();
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
   int got = detect_all(&p, coded, clen, out, CAP);
 
@@ -238,7 +238,7 @@ static void test_rejects_random(void) {
   uint64_t rng = 0x9A9A9Au;
   dt_bit *rx = malloc(CAP);
   fill_random(rx, RL, &rng);
-  dt_cc_detect_full_stream_params p = clean_params();
+  dt_cc_detect_noisy_stream_params p = clean_params();
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
   int got = detect_all(&p, rx, RL, out, CAP);
 
@@ -265,8 +265,8 @@ static void test_noise_calibration(void) {
   fill_random(rx, RL, &rng);
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
 
-  dt_cc_detect_full_stream_params clean = clean_params();
-  dt_cc_detect_full_stream_params noisy = clean_params();
+  dt_cc_detect_noisy_stream_params clean = clean_params();
+  dt_cc_detect_noisy_stream_params noisy = clean_params();
   noisy.p_flip = 0.05f; /* expect 5% flips: a code's bias could hide under that */
 
   double lost, abs_clean, abs_noisy;
@@ -285,7 +285,7 @@ static void test_noise_calibration(void) {
   free(out);
 }
 
-/* detect_full's headline over detect_lean: it holds through FLIPS. A coded stream
+/* detect_noisy's headline over detect_clean: it holds through FLIPS. A coded stream
  * through a 3% bit-flip channel still reads code-present (the parity bias only
  * shrinks, it is not destroyed), while a random stream through the same channel
  * still reads no-code. */
@@ -293,7 +293,7 @@ static void test_flip_tolerance(void) {
   printf("detect flip tolerance (coded stream through a 3%% bit-flip channel):\n");
   enum { NINFO = 3000, CAP = NINFO * 5 + 256 };
   uint64_t rng = 0xF11Fu;
-  dt_cc_detect_full_stream_params p = clean_params();
+  dt_cc_detect_noisy_stream_params p = clean_params();
   dt_bit *coded = malloc(CAP);
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
 
@@ -318,7 +318,7 @@ static void test_flip_tolerance(void) {
   free(out);
 }
 
-/* detect_full tolerates sparse indels: a coded stream through a ~1.5% deletion
+/* detect_noisy tolerates sparse indels: a coded stream through a ~1.5% deletion
  * channel still reads code-present (rows after a slip just stop biasing; the aligned
  * rows still bias), while a random stream through the same channel still reads
  * no-code. */
@@ -326,7 +326,7 @@ static void test_indel_tolerance(void) {
   printf("detect indel tolerance (coded stream through a ~1.5%% deletion channel):\n");
   enum { NINFO = 3000, CAP = NINFO * 5 + 256 };
   uint64_t rng = 0x1DEC0DEu;
-  dt_cc_detect_full_stream_params p = clean_params();
+  dt_cc_detect_noisy_stream_params p = clean_params();
   dt_bit *coded = malloc(CAP);
   dt_bit *rx = malloc(CAP);
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
@@ -352,7 +352,7 @@ static void test_indel_tolerance(void) {
   free(out);
 }
 
-/* The reason both noise types live in one codec: detect_full survives a COMBINATION
+/* The reason both noise types live in one codec: detect_noisy survives a COMBINATION
  * of flips and indels. Under a combined 3% flip + 0.5% deletion channel - harsher
  * than either alone - a coded stream still carries clearly more code-present
  * evidence than a random stream through the same channel (the detector keeps them
@@ -362,7 +362,7 @@ static void test_combined_tolerance(void) {
   printf("detect combined flip+indel tolerance (3%% flip + 0.5%% deletion):\n");
   enum { NINFO = 3500, CAP = NINFO * 5 + 256 };
   uint64_t rng = 0xC0FFEEu;
-  dt_cc_detect_full_stream_params p = clean_params();
+  dt_cc_detect_noisy_stream_params p = clean_params();
   dt_bit *src = malloc(CAP);
   dt_bit *rx = malloc(CAP);
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));

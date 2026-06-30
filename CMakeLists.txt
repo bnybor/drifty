@@ -56,10 +56,10 @@ add_library(drifty_bare_obj OBJECT
     src/cc/bcjr.c
     src/cc/maxir/decode.c
     src/cc/maxir.c
-    src/cc/detect_lean/decode.c
-    src/cc/detect_lean.c
-    src/cc/detect_full/decode.c
-    src/cc/detect_full.c
+    src/cc/detect_clean/decode.c
+    src/cc/detect_clean.c
+    src/cc/detect_noisy/decode.c
+    src/cc/detect_noisy.c
     src/cc/encoder/encode.c
     src/cc/encoder/encoder.c
     src/bc/rs251.c
@@ -103,13 +103,13 @@ set_source_files_properties(contrib/rs251/src/rs251.c PROPERTIES
 # (cc/ccode.h, implemented in src/cc/ccode.c), the standalone encoder
 # (cc/encoder.h, dt_cc_encoder_*) that every codec encodes through, plus the
 # per-codec decoder factories dt_cc_hybrid_* / dt_cc_vindel_* / dt_cc_viterbi_* /
-# dt_cc_bcjr_* / dt_cc_maxir_* / dt_cc_detect_lean_* / dt_cc_detect_full_*
-# (cc/hybrid.h, cc/vindel.h, cc/viterbi.h, cc/bcjr.h, cc/maxir.h, cc/detect_lean.h,
-# cc/detect_full.h - the two detect meta-codecs are soft-only). The
+# dt_cc_bcjr_* / dt_cc_maxir_* / dt_cc_detect_clean_* / dt_cc_detect_noisy_*
+# (cc/hybrid.h, cc/vindel.h, cc/viterbi.h, cc/bcjr.h, cc/maxir.h, cc/detect_clean.h,
+# cc/detect_noisy.h - the two detect meta-codecs are soft-only). The
 # encoder (src/cc/encoder/) is the only encoder
 # implementation; each codec's decode engine (dt_cc_stream_* / dt_cc_vindel_stream_* /
 # dt_cc_viterbi_stream_* / dt_cc_bcjr_stream_* / dt_cc_maxir_stream_* /
-# dt_cc_detect_lean_stream_* / dt_cc_detect_full_stream_*) and the encoder's
+# dt_cc_detect_clean_stream_* / dt_cc_detect_noisy_stream_*) and the encoder's
 # one-shot helpers (dt_cc_encoder_encode/_flush) are private - their headers live
 # under src/cc/ - so they are localized, not exported.
 set(_dt_public_symbols
@@ -123,8 +123,8 @@ set(_dt_public_symbols
     dt_cc_bcjr_soft_decoder_create dt_cc_bcjr_soft_decoder_destroy
     dt_cc_maxir_decoder_create dt_cc_maxir_decoder_destroy
     dt_cc_maxir_soft_decoder_create dt_cc_maxir_soft_decoder_destroy
-    dt_cc_detect_lean_soft_decoder_create dt_cc_detect_lean_soft_decoder_destroy
-    dt_cc_detect_full_soft_decoder_create dt_cc_detect_full_soft_decoder_destroy
+    dt_cc_detect_clean_soft_decoder_create dt_cc_detect_clean_soft_decoder_destroy
+    dt_cc_detect_noisy_soft_decoder_create dt_cc_detect_noisy_soft_decoder_destroy
     dt_cc_encoder_create dt_cc_encoder_destroy
     dt_bc_rs251_block_encoder_create dt_bc_rs251_block_encoder_destroy
     dt_bc_rs251_block_decoder_create dt_bc_rs251_block_decoder_destroy

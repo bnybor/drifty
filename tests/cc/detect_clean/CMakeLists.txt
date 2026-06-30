@@ -1,7 +1,7 @@
-# The detect_lean tests use only the public API (dt_cc_detect_lean_soft_*), so they
+# The detect_clean tests use only the public API (dt_cc_detect_clean_soft_*), so they
 # need no private -Isrc headers; they link the engine objects (drifty_bare_obj)
 # plus the freestanding shims (drifty_stdlib).
-foreach(t detect_lean_decoder_test)
+foreach(t detect_clean_decoder_test)
     add_executable(${t} ${t}.c)
     target_link_libraries(${t} PRIVATE drifty_bare_obj drifty_stdlib)
     add_test(NAME ${t} COMMAND ${t})

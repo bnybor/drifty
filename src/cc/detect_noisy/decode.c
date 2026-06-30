@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * detect_full decode engine - blind detection of convolutional-code structure in an
+ * detect_noisy decode engine - blind detection of convolutional-code structure in an
  * arbitrary bit stream, with no prior knowledge or coordination (no code, rate,
  * generators, or alignment), tolerant of flips, indels, and combinations of them.
  *
@@ -37,7 +37,7 @@
  *   beta(c) = | E[ (-1)^(c . row) ] |  ~=  (1 - 2p)^w  >  0,
  * while for random data every c gives beta ~= 0. The detector's statistic is the
  * MAX bias over all candidate checks c. Crucially, a flip only SHRINKS (1-2p)^w
- * rather than destroying the check (contrast detect_lean's exact GF(2) rank, which
+ * rather than destroying the check (contrast detect_clean's exact GF(2) rank, which
  * a single flip breaks) - so the bias degrades GRACEFULLY with flips, with indels
  * (rows after a slip fall out of phase and merely stop contributing bias, the
  * aligned rows still bias), and with combinations of the two.
@@ -62,19 +62,19 @@
  * One record is produced per input position; output trails input by up to one
  * window (DET_L).
  *
- * LIMITATIONS (see also doc/cc/detect_full.md):
+ * LIMITATIONS (see also doc/cc/detect_noisy.md):
  *  - Noise envelope: graceful but bounded. Reliable to ~5% flips (marginal to ~8%)
  *    and ~2-3% indels, plus light-moderate COMBINATIONS; heavy simultaneous
  *    flips+indels stay out of reach (fundamental to the underlying LPN + sync
  *    problem). For a clean / very-low-noise channel where footprint matters, the
- *    cheaper detect_lean is preferable.
+ *    cheaper detect_clean is preferable.
  *  - Scope: parity-check bias senses LINEAR structure in general - a block linear
  *    code or an LFSR scrambler would also register. For the intended use (a stream
  *    is either uncoded/random or convolutionally coded) this is the right proxy.
  *  - Reach: checks longer than L_c bits, or codes with block size n > DET_SMAX, are
  *    not covered (this caps the detectable constraint length / rate).
  *  - Cost: one 2^L_c-entry histogram (~64 KB) and a Walsh-Hadamard transform per
- *    window-stride - roughly one to two orders more work per bit than detect_lean.
+ *    window-stride - roughly one to two orders more work per bit than detect_clean.
  */
 
 #include "decode.h"
@@ -85,7 +85,7 @@
 /* Detector geometry. L_c is the parity-check span in bits (>= ~2*K for the standard
  * K<=7 rate-1/2 codes); the transform histogram has 2^L_c entries. Strides 2..SMAX
  * are the candidate block sizes n. Windows of DET_L bits slide by DET_STEP; the tail
- * is scored down to DET_MINL. Validated empirically (see doc/cc/detect_full.md). */
+ * is scored down to DET_MINL. Validated empirically (see doc/cc/detect_noisy.md). */
 #define DET_LC 14    /* parity-check span / transform order, bits (2^14 histogram) */
 #define DET_SMAX 6   /* sweep strides 2..DET_SMAX (block sizes n in 2..6)          */
 #define DET_L 1200   /* analysis window length, bits                              */
@@ -99,7 +99,7 @@
 #define DET_FLOOR_C (2.0f * (float)DET_LC * DET_LN2) /* numerator of f0^2 * N      */
 #define DET_UNCOVERED (-1.0e30f) /* per-position sentinel: no window scored it yet */
 
-struct dt_cc_detect_full_stream_decoder {
+struct dt_cc_detect_noisy_stream_decoder {
   /* Input bit FIFO (0/1 values) and a parallel per-position best-excess-so-far
    * (float; DET_UNCOVERED = not yet covered by any window). Both share head/len/cap;
    * in[head + k] is absolute position `base + k`. */
@@ -109,7 +109,7 @@ struct dt_cc_detect_full_stream_decoder {
   long long base;       /* absolute index of in[head]              */
   long long next_start; /* absolute index of next window start (multiple of STEP) */
   /* Pending output FIFO of per-position records, drained from the front. */
-  dt_cc_detect_full_decode_details *out;
+  dt_cc_detect_noisy_decode_details *out;
   int out_head, out_len, out_cap;
   int finalized; /* the final tail has been processed */
   /* 2^DET_LC-entry Walsh-Hadamard histogram, allocated once and reused across every
@@ -151,7 +151,7 @@ static void fwht(int32_t *acc) {
  * transform, and return the largest |coefficient| over c != 0 divided by the row
  * count - i.e. max over all 2^DET_LC checks c of |E[(-1)^(c . row)]|. Writes the row
  * count to *nrows. Uses (and clobbers) d->acc. */
-static float window_max_bias(dt_cc_detect_full_stream_decoder *d,
+static float window_max_bias(dt_cc_detect_noisy_stream_decoder *d,
                              const unsigned char *win, int span, int stride,
                              int *nrows) {
   dt_memset(d->acc, 0, (size_t)DET_M * sizeof(*d->acc));
@@ -182,7 +182,7 @@ static float window_max_bias(dt_cc_detect_full_stream_decoder *d,
 /* Evidence that the window win[0 .. span) carries a code: the MAX over candidate
  * strides s = 2..SMAX of the bias excess over that stride's random floor,
  * excess = beta / f0(n_s) - 1 (~= 0 for random, large for an aligned code). */
-static float window_excess(dt_cc_detect_full_stream_decoder *d,
+static float window_excess(dt_cc_detect_noisy_stream_decoder *d,
                            const unsigned char *win, int span) {
   float best = DET_UNCOVERED;
   for (int s = 2; s <= DET_SMAX; ++s) {
@@ -201,9 +201,9 @@ static float window_excess(dt_cc_detect_full_stream_decoder *d,
 
 /* Map a position's max excess (or DET_UNCOVERED if no window scored it) to its
  * (c_lost, c_absent) verdict. */
-static dt_cc_detect_full_decode_details verdict_from(float excess,
+static dt_cc_detect_noisy_decode_details verdict_from(float excess,
                                                      float detectability) {
-  dt_cc_detect_full_decode_details det;
+  dt_cc_detect_noisy_decode_details det;
   if (excess <= DET_UNCOVERED * 0.5f) {
     /* Never scored by a window (the stream's leading/trailing tail): not enough
      * data to judge. Abstain. */
@@ -228,7 +228,7 @@ static dt_cc_detect_full_decode_details verdict_from(float excess,
 /* -- growable buffers ------------------------------------------------------ */
 
 /* Grow the input/emax FIFO to hold `extra` more positions, compacting first. */
-static int buf_reserve(dt_cc_detect_full_stream_decoder *d, int extra) {
+static int buf_reserve(dt_cc_detect_noisy_stream_decoder *d, int extra) {
   if (d->head > 0 && d->len + extra > d->cap) {
     dt_memmove(d->in, d->in + d->head, (size_t)(d->len - d->head));
     dt_memmove(d->emax, d->emax + d->head,
@@ -256,7 +256,7 @@ static int buf_reserve(dt_cc_detect_full_stream_decoder *d, int extra) {
   return 1;
 }
 
-static int out_reserve(dt_cc_detect_full_stream_decoder *d, int extra) {
+static int out_reserve(dt_cc_detect_noisy_stream_decoder *d, int extra) {
   if (d->out_head > 0 && d->out_len + extra > d->out_cap) {
     dt_memmove(d->out, d->out + d->out_head,
                (size_t)(d->out_len - d->out_head) * sizeof(*d->out));
@@ -268,7 +268,7 @@ static int out_reserve(dt_cc_detect_full_stream_decoder *d, int extra) {
     while (nc < d->out_len + extra) {
       nc *= 2;
     }
-    dt_cc_detect_full_decode_details *nb =
+    dt_cc_detect_noisy_decode_details *nb =
         dt_realloc(d->out, (size_t)nc * sizeof(*nb));
     if (!nb) {
       return 0;
@@ -285,7 +285,7 @@ static int out_reserve(dt_cc_detect_full_stream_decoder *d, int extra) {
  * evidence (max bias excess) into emax over the positions it covers. A window
  * straddling an indel or a code/random boundary loses phase alignment over part of
  * its rows, so its bias - and excess - falls, which keeps localization reasonable. */
-static void process_start(dt_cc_detect_full_stream_decoder *d, long long start,
+static void process_start(dt_cc_detect_noisy_stream_decoder *d, long long start,
                           int span) {
   const int lo = d->head + (int)(start - d->base);
   const float ex = window_excess(d, d->in + lo, span);
@@ -298,7 +298,7 @@ static void process_start(dt_cc_detect_full_stream_decoder *d, long long start,
 
 /* Emit (finalize) every position in [base, upto): its emax is settled because all
  * window starts <= position have been processed. */
-static int emit_upto(dt_cc_detect_full_stream_decoder *d, long long upto) {
+static int emit_upto(dt_cc_detect_noisy_stream_decoder *d, long long upto) {
   int count = (int)(upto - d->base);
   if (count <= 0) {
     return 1;
@@ -314,8 +314,8 @@ static int emit_upto(dt_cc_detect_full_stream_decoder *d, long long upto) {
   return 1;
 }
 
-static int drain(dt_cc_detect_full_stream_decoder *d,
-                 dt_cc_detect_full_decode_details *details, int max_out) {
+static int drain(dt_cc_detect_noisy_stream_decoder *d,
+                 dt_cc_detect_noisy_decode_details *details, int max_out) {
   int w = 0;
   while (w < max_out && d->out_head < d->out_len) {
     if (details) {
@@ -337,7 +337,7 @@ static int drain(dt_cc_detect_full_stream_decoder *d,
  * the sliding method tolerates them, so they must not discount the no-code
  * confidence. p >= 0.5 erases all bias -> detectability 0 (a code cannot be ruled
  * out at all). */
-static float detectability_from(const dt_cc_detect_full_stream_params *p) {
+static float detectability_from(const dt_cc_detect_noisy_stream_params *p) {
   const float p_ovr = p->p_ovr_true + p->p_ovr_false + p->p_ovr_erase;
   float p_corrupt = p_ovr + (1.0f - p_ovr) * p->p_flip;
   const float one_minus_2p = 1.0f - 2.0f * p_corrupt;
@@ -350,8 +350,8 @@ static float detectability_from(const dt_cc_detect_full_stream_params *p) {
   return dt_exp((float)DET_WREF * dt_log(one_minus_2p));
 }
 
-dt_cc_detect_full_stream_decoder *dt_cc_detect_full_stream_decoder_create(
-    const dt_cc_detect_full_stream_params *params) {
+dt_cc_detect_noisy_stream_decoder *dt_cc_detect_noisy_stream_decoder_create(
+    const dt_cc_detect_noisy_stream_params *params) {
   if (!params) {
     return NULL;
   }
@@ -374,7 +374,7 @@ dt_cc_detect_full_stream_decoder *dt_cc_detect_full_stream_decoder_create(
         1.0f)) {
     return NULL;
   }
-  dt_cc_detect_full_stream_decoder *d = dt_malloc(sizeof(*d));
+  dt_cc_detect_noisy_stream_decoder *d = dt_malloc(sizeof(*d));
   if (!d) {
     return NULL;
   }
@@ -395,7 +395,7 @@ dt_cc_detect_full_stream_decoder *dt_cc_detect_full_stream_decoder_create(
   return d;
 }
 
-void dt_cc_detect_full_stream_decoder_destroy(dt_cc_detect_full_stream_decoder *d) {
+void dt_cc_detect_noisy_stream_decoder_destroy(dt_cc_detect_noisy_stream_decoder *d) {
   if (!d) {
     return;
   }
@@ -406,8 +406,8 @@ void dt_cc_detect_full_stream_decoder_destroy(dt_cc_detect_full_stream_decoder *
   dt_free(d);
 }
 
-int dt_cc_detect_full_stream_decode(dt_cc_detect_full_stream_decoder *d, const uint8_t *in,
-                            int n_in, dt_cc_detect_full_decode_details *details,
+int dt_cc_detect_noisy_stream_decode(dt_cc_detect_noisy_stream_decoder *d, const uint8_t *in,
+                            int n_in, dt_cc_detect_noisy_decode_details *details,
                             int max_out) {
   if (!d || (n_in > 0 && !in) || n_in < 0 || max_out < 0) {
     return DT_ERR_ARG;
@@ -435,8 +435,8 @@ int dt_cc_detect_full_stream_decode(dt_cc_detect_full_stream_decoder *d, const u
   return drain(d, details, max_out);
 }
 
-int dt_cc_detect_full_stream_decode_flush(dt_cc_detect_full_stream_decoder *d,
-                                 dt_cc_detect_full_decode_details *details,
+int dt_cc_detect_noisy_stream_decode_flush(dt_cc_detect_noisy_stream_decoder *d,
+                                 dt_cc_detect_noisy_decode_details *details,
                                  int max_out) {
   if (!d || max_out < 0) {
     return DT_ERR_ARG;

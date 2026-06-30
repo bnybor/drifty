@@ -11,29 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`detect_lean`** and **`detect_full`** — two new soft-only **meta-codecs** that
+- **`detect_clean`** and **`detect_noisy`** — two new soft-only **meta-codecs** that
   blindly detect whether a convolutional code is present in an arbitrary bit stream,
   with no prior knowledge or coordination (no code, rate, generators, or alignment).
   Each reports, per position, `c_lost` (in `c_erasure`) = confidence a code is
   present and `c_absent` = confidence it is not. They share one API and output and
   differ only in footprint vs noise tolerance:
-  - **`detect_lean`** (`dt_cc_detect_lean_soft_decoder_create`) — exact GF(2)
+  - **`detect_clean`** (`dt_cc_detect_clean_soft_decoder_create`) — exact GF(2)
     **sliding** strided-window rank deficiency. A few KB of state and no transform;
     **indel-tolerant** (the sliding windows only need a locally indel-free aligned
     run) and sharply localizing, holding to ~1 % flips and ~2–3 % indels. The
-    embeddable default for clean / very-low-noise streams. See `doc/cc/detect_lean.md`.
-  - **`detect_full`** (`dt_cc_detect_full_soft_decoder_create`) — parity-check
+    embeddable default for clean / very-low-noise streams. See `doc/cc/detect_clean.md`.
+  - **`detect_noisy`** (`dt_cc_detect_noisy_soft_decoder_create`) — parity-check
     **bias** scored by a fast Walsh–Hadamard transform, which degrades gracefully
     with noise: it tolerates flips (~5–8 %), indels (~2–3 %), and light–moderate
     combinations of the two, at the cost of a ~64 KB transform histogram and roughly
-    one to two orders more compute per bit. See `doc/cc/detect_full.md`.
+    one to two orders more compute per bit. See `doc/cc/detect_noisy.md`.
 
   Both factories take the same rich channel model as `hybrid` / `maxir`, used to
   calibrate how much a null result is trusted (expected flip noise damps the no-code
   confidence — a code could be hidden by it; indels, being tolerated, do not).
   Includes an `examples/11_detect` demo that localizes a coded segment in random
-  noise with `detect_lean`, then contrasts the two through a bit-flip and a combined
-  flip+drift channel (where `detect_lean` collapses and `detect_full` holds on).
+  noise with `detect_clean`, then contrasts the two through a bit-flip and a combined
+  flip+drift channel (where `detect_clean` collapses and `detect_noisy` holds on).
 
 ## [1.0.0] - 2026-06-28
 

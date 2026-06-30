@@ -87,12 +87,21 @@
 
 #define DET_LN2 0.69314718055994531f
 
+/* Sentinel stored in `in[]` for a non-bit (erasure / invalid / absent) position:
+ * any value > 1, so it can never be mistaken for a 0/1 payload. A window row that
+ * contains one is a don't-know and is dropped from the rank matrix rather than
+ * silently coerced to 0 (which would fake the all-zeros maximally-deficient row). */
+#define DET_NOTBIT 2u
+
 struct dt_cc_detect_clean_stream_decoder {
-  /* Input bit FIFO (0/1 values) and a parallel per-position best-deficiency-so-far
-   * (signed char: -1 = position not yet covered by any window, else 0..DET_W).
-   * Both share head/len/cap; in[head + k] is absolute position `base + k`. */
+  /* Input bit FIFO (0/1 values, or DET_NOTBIT for a non-bit position) and two
+   * parallel per-position pools: dmax = best structural deficiency so far, cmax =
+   * largest usable row count of any covering window (for the fill margin). Both
+   * signed char: -1 = position not yet covered by any window with a usable row.
+   * All share head/len/cap; in[head + k] is absolute position `base + k`. */
   unsigned char *in;
   signed char *dmax;
+  signed char *cmax;
   int head, len, cap;
   long long base;       /* absolute index of in[head]              */
   long long next_start; /* absolute index of next window start (multiple of STEP) */
@@ -132,18 +141,30 @@ static int msb64(uint64_t x) {
 
 /* GF(2) rank of the matrix whose rows are the DET_W-bit windows of win[0..count)
  * taken at offsets 0, stride, 2*stride, ... (online Gaussian elimination against
- * an MSB-indexed pivot table). */
-static int gf2_rank(const unsigned char *win, int count, int stride) {
+ * an MSB-indexed pivot table). A row containing a non-bit (DET_NOTBIT, e.g. an
+ * erasure) is a don't-know: it is dropped rather than constraining the space, and
+ * the count of usable (dropped-free) rows is returned via *nrows. */
+static int gf2_rank(const unsigned char *win, int count, int stride, int *nrows) {
   uint64_t pivot[DET_W];
   for (int i = 0; i < DET_W; ++i) {
     pivot[i] = 0;
   }
-  int rank = 0;
+  int rank = 0, used = 0;
   for (int start = 0; start + DET_W <= count; start += stride) {
     uint64_t v = 0;
+    int ok = 1;
     for (int j = 0; j < DET_W; ++j) {
-      v = (v << 1) | (uint64_t)(win[start + j] & 1u);
+      const unsigned char b = win[start + j];
+      if (b > 1u) { /* non-bit: this row is a don't-know, skip it */
+        ok = 0;
+        break;
+      }
+      v = (v << 1) | (uint64_t)b;
     }
+    if (!ok) {
+      continue;
+    }
+    ++used;
     while (v) {
       const int b = msb64(v);
       if (pivot[b]) {
@@ -155,30 +176,51 @@ static int gf2_rank(const unsigned char *win, int count, int stride) {
       }
     }
   }
+  *nrows = used;
   return rank;
 }
 
-/* Map a position's max deficiency (d, or -1 if no window ever covered it) to its
- * (c_lost, c_absent) verdict. */
-static dt_cc_detect_clean_decode_details verdict_from(int d, float detectability) {
+/* Map a position's pooled evidence to TWO INDEPENDENT consistencies (not a split):
+ *   c_lost   = consistency with "a code IS present"  (rides out as c_erasure)
+ *   c_absent = consistency with "no code / random"
+ * Each is a goodness-of-fit - how well the data fails to contradict that hypothesis
+ * - so they need NOT sum to 1, and the no-evidence state is (1, 1), not (0, 0):
+ * with nothing to judge, both hypotheses remain un-contradicted.
+ *   d   = pooled structural deficiency min(n_eff, W) - rank (>= 0), or -1 if the
+ *         position was never covered by a window with a usable row.
+ *   cov = largest usable row count of any covering window (sets the fill margin).
+ * A structural deficiency contradicts random (lowers c_absent) and is real whatever
+ * the channel. A genuinely full rank contradicts a code (lowers c_lost) - but only
+ * insofar as the fill is confirmed (margin) and the channel is clean enough that a
+ * real code's parity could not have been flipped into full rank (detectability). */
+static dt_cc_detect_clean_decode_details verdict_from(int d, int cov,
+                                                      float detectability) {
   dt_cc_detect_clean_decode_details det;
   if (d < 0) {
-    /* Never covered by a full window (the stream's leading/trailing tail): not
-     * enough data to judge. Abstain. */
-    det.c_lost = 0.0f;
-    det.c_absent = 0.0f;
+    /* No usable window ever covered this position (leading/trailing tail, or an
+     * all-non-bit run such as a stream of erasures): nothing discriminates the two
+     * hypotheses, so both stay fully consistent. */
+    det.c_lost = 1.0f;
+    det.c_absent = 1.0f;
     return det;
   }
-  /* c_lost: strength of the structural evidence (parity checks found). Found
-   * checks are real regardless of expected noise, so detectability never scales
-   * this up. */
-  det.c_lost = 1.0f - pow2_neg(d);
-  /* c_absent: no structure here -> confidence grows with the rows beyond W that
-   * ruled a code out (N - W = DET_MARGIN + 1), discounted by detectability (a
-   * flip-noisy channel cannot confidently call a clean-looking run code-free).
-   * Where structure IS found it is the small residual. */
-  det.c_absent = (d == 0) ? (1.0f - pow2_neg(DET_MARGIN + 1)) * detectability
-                          : pow2_neg(d);
+  if (d >= 1) {
+    /* Structure found: a code fits (c_lost = 1); random would need a fluke of
+     * ~2^-d to produce this deficiency, and that is true regardless of expected
+     * noise (noise erodes structure, it never manufactures it). */
+    det.c_lost = 1.0f;
+    det.c_absent = pow2_neg(d);
+    return det;
+  }
+  /* d == 0: no structure. The absence of structure never contradicts random, so
+   * c_absent stays 1. A code is ruled out only to the extent the space was surely
+   * filled (margin rows beyond W) AND a flip-noisy channel could not have filled it
+   * by breaking a real code's parity (detectability). A thinly covered window
+   * (margin < 0) confirms no fill, so it rules nothing out: c_lost stays 1. */
+  const int margin = cov - DET_W;
+  const float fillconf = (margin >= 0) ? (1.0f - pow2_neg(margin + 1)) : 0.0f;
+  det.c_lost = 1.0f - detectability * fillconf;
+  det.c_absent = 1.0f;
   return det;
 }
 
@@ -189,6 +231,7 @@ static int buf_reserve(dt_cc_detect_clean_stream_decoder *d, int extra) {
   if (d->head > 0 && d->len + extra > d->cap) {
     dt_memmove(d->in, d->in + d->head, (size_t)(d->len - d->head));
     dt_memmove(d->dmax, d->dmax + d->head, (size_t)(d->len - d->head));
+    dt_memmove(d->cmax, d->cmax + d->head, (size_t)(d->len - d->head));
     d->len -= d->head;
     d->head = 0;
   }
@@ -207,6 +250,11 @@ static int buf_reserve(dt_cc_detect_clean_stream_decoder *d, int extra) {
       return 0;
     }
     d->dmax = nd;
+    signed char *ncm = dt_realloc(d->cmax, (size_t)nc);
+    if (!ncm) {
+      return 0;
+    }
+    d->cmax = ncm;
     d->cap = nc;
   }
   return 1;
@@ -250,13 +298,22 @@ static void process_start(dt_cc_detect_clean_stream_decoder *d, long long start)
     if (start + L > bend) {
       continue; /* this stride's window does not fit the buffer */
     }
-    int def = DET_W - gf2_rank(d->in + lo, L, s);
+    int n_eff = 0;
+    const int rank = gf2_rank(d->in + lo, L, s, &n_eff);
+    if (n_eff <= 0) {
+      continue; /* every row was a don't-know (e.g. erasures): no evidence to fold */
+    }
+    const int fill = (n_eff < DET_W) ? n_eff : DET_W; /* max attainable rank */
+    int def = fill - rank;                            /* structural deficiency */
     if (def < 0) {
       def = 0;
     }
-    for (int j = 0; j < L; ++j) { /* d>=0 also marks "covered" (-1 -> 0) */
+    for (int j = 0; j < L; ++j) { /* def>=0 / n_eff>=1 also mark "covered" (-1 -> .) */
       if ((int)d->dmax[lo + j] < def) {
         d->dmax[lo + j] = (signed char)def;
+      }
+      if ((int)d->cmax[lo + j] < n_eff) {
+        d->cmax[lo + j] = (signed char)n_eff;
       }
     }
   }
@@ -273,7 +330,8 @@ static int emit_upto(dt_cc_detect_clean_stream_decoder *d, long long upto) {
     return 0;
   }
   for (int i = 0; i < count; ++i) {
-    d->out[d->out_len++] = verdict_from((int)d->dmax[d->head], d->detectability);
+    d->out[d->out_len++] = verdict_from((int)d->dmax[d->head],
+                                        (int)d->cmax[d->head], d->detectability);
     ++d->head;
     ++d->base;
   }
@@ -343,6 +401,7 @@ dt_cc_detect_clean_stream_decoder *dt_cc_detect_clean_stream_decoder_create(
   }
   d->in = NULL;
   d->dmax = NULL;
+  d->cmax = NULL;
   d->head = d->len = d->cap = 0;
   d->base = 0;
   d->next_start = 0;
@@ -359,6 +418,7 @@ void dt_cc_detect_clean_stream_decoder_destroy(dt_cc_detect_clean_stream_decoder
   }
   dt_free(d->in);
   dt_free(d->dmax);
+  dt_free(d->cmax);
   dt_free(d->out);
   dt_free(d);
 }
@@ -374,8 +434,10 @@ int dt_cc_detect_clean_stream_decode(dt_cc_detect_clean_stream_decoder *d, const
       return DT_ERR_ALLOC;
     }
     for (int i = 0; i < n_in; ++i) {
-      d->in[d->len] = (unsigned char)DT_BIT(in[i]); /* non-bits -> 0 */
-      d->dmax[d->len] = -1;                         /* not yet covered */
+      d->in[d->len] =
+          DT_IS_BIT(in[i]) ? (unsigned char)DT_BIT(in[i]) : DET_NOTBIT;
+      d->dmax[d->len] = -1; /* not yet covered */
+      d->cmax[d->len] = -1;
       ++d->len;
     }
   }

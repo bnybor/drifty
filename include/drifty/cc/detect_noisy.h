@@ -56,8 +56,16 @@ extern "C" {
  * position, two confidences on the output dt_soft_bit (each in [0, 1], and they
  * need NOT sum to 1):
  *
- *   c_erasure = confidence a convolutional code IS encoded onto the stream
- *   c_absent  = confidence a convolutional code is NOT encoded onto the stream
+ *   c_erasure = consistency with "a convolutional code IS present"
+ *   c_absent  = consistency with "no code is present / the stream is random"
+ *
+ * These are two INDEPENDENT goodness-of-fit reads, not a probability split: each
+ * answers "does the data fail to contradict this hypothesis?", so they need not
+ * sum to 1. Both near 1 means no discriminating evidence - an all-erasure (or
+ * otherwise all-non-bit) run, or the warm-up/flush tail - since nothing observed
+ * contradicts either hypothesis. (high, low) reads as a code, (low, high) as
+ * random; (low, low) is not reachable from the single bias statistic and is
+ * reserved for a future catalogue-mismatch signal.
  *
  * All other dt_soft_bit fields are 0. (The coded-presence confidence rides in
  * c_erasure by the engine-c_lost -> soft-c_erasure convention; detect repurposes
@@ -76,26 +84,30 @@ extern "C" {
  * designated initializers; any field left out is 0.
  *
  * detect_noisy's bias method tolerates flips, so flips are NOT what damages it; the
- * flip rates instead calibrate how much a NULL result (no structure found) can be
- * trusted: the more flip noise you tell detect_noisy to expect, the less a
- * random-looking stream can be confidently declared code-FREE (a true code's parity
- * bias decays as (1 - 2*p_flip)^w, so heavy expected flips could push a real code's
- * bias down into the random floor). It lowers c_absent accordingly; it never
- * inflates c_lost (an observed bias is real regardless of expected noise - noise
- * only erodes bias, never manufactures it). Indels are likewise TOLERATED (rows
- * after a slip merely stop contributing bias), so p_ins/p_del do not lower c_absent.
+ * flip rates instead calibrate how strongly a no-peak window (no structure found)
+ * is allowed to rule a code OUT: the more flip noise you tell detect_noisy to
+ * expect, the more a random-looking window could still be a real code whose parity
+ * bias the flips eroded into the floor (the bias decays as (1 - 2*p_flip)^w), so
+ * c_erasure (consistency with a code) stays elevated rather than collapsing to 0.
+ * The flip rates damp that ruling-out on the PRESENT axis (c_erasure); they do NOT
+ * scale c_absent, which is a positive fit to the random model - the absence of a
+ * bias peak is consistent with random whatever the channel, and an observed peak
+ * contradicts random regardless of noise (noise only erodes bias, never
+ * manufactures it). Indels are likewise TOLERATED (rows after a slip merely stop
+ * contributing bias), so p_ins/p_del affect neither axis.
  *
  *   p_flip                            : how often a coded bit is flipped, 0 <=
  *                                       p_flip < 1. 0 means "expect a clean
  *                                       channel" (unlike hybrid/maxir, which
- *                                       require p_flip > 0). Damps c_absent.
+ *                                       require p_flip > 0). Keeps c_erasure up on
+ *                                       no-peak windows.
  *   p_ovr_true / p_ovr_false /        : how often a coded bit is overwritten with
  *   p_ovr_erase                         a fixed value / erasure (the three sum to
- *                                       < 1). Flip-like; damp c_absent.
+ *                                       < 1). Flip-like; keep c_erasure up.
  *   p_ins_true / p_ins_false /        : insertion rates, and p_del the deletion
  *   p_ins_erase, p_del                  rate (their sum < 1) - the drift detect is
- *                                       built to tolerate. They do NOT damp
- *                                       c_absent (the sliding windows recover from
+ *                                       built to tolerate. They affect neither
+ *                                       axis (the sliding windows recover from
  *                                       indels by finding clean runs).
  *   decision_depth (>= 1), max_drift  : accepted for interface uniformity with the
  *   (>= 0)                              cc family but NOT used by the bias method

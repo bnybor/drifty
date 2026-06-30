@@ -99,6 +99,12 @@
 #define DET_FLOOR_C (2.0f * (float)DET_LC * DET_LN2) /* numerator of f0^2 * N      */
 #define DET_UNCOVERED (-1.0e30f) /* per-position sentinel: no window scored it yet */
 
+/* Sentinel stored in `in[]` for a non-bit (erasure / invalid / absent) position:
+ * any value > 1. A transform slice that contains one is a don't-know and is
+ * skipped rather than coerced to 0 (which would fake the all-zeros delta whose
+ * Walsh transform is flat and so reads as maximal bias on every check). */
+#define DET_NOTBIT 2u
+
 struct dt_cc_detect_noisy_stream_decoder {
   /* Input bit FIFO (0/1 values) and a parallel per-position best-excess-so-far
    * (float; DET_UNCOVERED = not yet covered by any window). Both share head/len/cap;
@@ -158,8 +164,17 @@ static float window_max_bias(dt_cc_detect_noisy_stream_decoder *d,
   int n = 0;
   for (int t = 0; t + DET_LC <= span; t += stride) {
     uint32_t v = 0;
+    int ok = 1;
     for (int j = 0; j < DET_LC; ++j) {
-      v = (v << 1) | (uint32_t)(win[t + j] & 1u);
+      const unsigned char b = win[t + j];
+      if (b > 1u) { /* non-bit: this slice is a don't-know, skip it */
+        ok = 0;
+        break;
+      }
+      v = (v << 1) | (uint32_t)b;
+    }
+    if (!ok) {
+      continue;
     }
     ++d->acc[v];
     ++n;
@@ -199,29 +214,37 @@ static float window_excess(dt_cc_detect_noisy_stream_decoder *d,
   return best;
 }
 
-/* Map a position's max excess (or DET_UNCOVERED if no window scored it) to its
- * (c_lost, c_absent) verdict. */
+/* Map a position's pooled max excess to TWO INDEPENDENT consistencies (not a
+ * split): c_lost = consistency with "a code IS present" (rides out as c_erasure),
+ * c_absent = consistency with "no code / random". Each is a goodness-of-fit, so
+ * they need NOT sum to 1, and the no-evidence state is (1, 1): with nothing to
+ * judge, both hypotheses remain un-contradicted. */
 static dt_cc_detect_noisy_decode_details verdict_from(float excess,
                                                      float detectability) {
   dt_cc_detect_noisy_decode_details det;
   if (excess <= DET_UNCOVERED * 0.5f) {
-    /* Never scored by a window (the stream's leading/trailing tail): not enough
-     * data to judge. Abstain. */
-    det.c_lost = 0.0f;
-    det.c_absent = 0.0f;
+    /* No window scored this position (leading/trailing tail, or every row was a
+     * don't-know such as a stream of erasures): nothing discriminates the two
+     * hypotheses, so both stay fully consistent. */
+    det.c_lost = 1.0f;
+    det.c_absent = 1.0f;
     return det;
   }
-  /* c_lost: strength of the bias evidence. An observed bias is real regardless of
-   * expected noise, so detectability never scales this up. */
-  float cl = excess / DET_K_LOST;
-  cl = cl < 0.0f ? 0.0f : (cl > 1.0f ? 1.0f : cl);
-  det.c_lost = cl;
-  /* c_absent: little excess bias here -> confidence none is present, discounted by
-   * detectability (expected flips could have eroded a real code's bias into the
-   * floor, so a noisy channel cannot confidently call a stream code-free). */
+  /* present-evidence: how far the peak bias clears the random floor. */
+  float p_ev = excess / DET_K_LOST;
+  p_ev = p_ev < 0.0f ? 0.0f : (p_ev > 1.0f ? 1.0f : p_ev);
+  /* c_lost = consistency with a code: a clear peak fits one outright; the absence
+   * of a peak rules a code out only insofar as the channel is clean enough that a
+   * real code's bias would have survived - a flip-noisy channel could have eroded
+   * it into the floor (1 - detectability stays plausible). */
+  det.c_lost = 1.0f - detectability * (1.0f - p_ev);
+  /* c_absent = consistency with random: a peak contradicts random; its absence
+   * never does. An observed peak is real whatever the channel, so detectability
+   * does NOT scale this (contrast the old (1 - excess) * detectability, which
+   * damped the wrong axis and coupled the two). */
   float ca = 1.0f - excess;
   ca = ca < 0.0f ? 0.0f : (ca > 1.0f ? 1.0f : ca);
-  det.c_absent = ca * detectability;
+  det.c_absent = ca;
   return det;
 }
 
@@ -417,8 +440,9 @@ int dt_cc_detect_noisy_stream_decode(dt_cc_detect_noisy_stream_decoder *d, const
       return DT_ERR_ALLOC;
     }
     for (int i = 0; i < n_in; ++i) {
-      d->in[d->len] = (unsigned char)DT_BIT(in[i]); /* non-bits -> 0 */
-      d->emax[d->len] = DET_UNCOVERED;              /* not yet covered */
+      d->in[d->len] =
+          DT_IS_BIT(in[i]) ? (unsigned char)DT_BIT(in[i]) : DET_NOTBIT;
+      d->emax[d->len] = DET_UNCOVERED; /* not yet covered */
       ++d->len;
     }
   }

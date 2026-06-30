@@ -6,8 +6,9 @@ scored by a fast Walsh–Hadamard transform — across the four channel impairme
 each standard code. It shares the framework and CLI of the FEC harnesses, but
 detect_noisy does not recover bits, so the metrics are detection confidence rather
 than edit distance. It is the noise-tolerant sibling of
-[detect_clean](../detect_clean/METRICS.md): same metrics and plots, knees pushed
-substantially further out at a ~64 KB / heavier-compute cost.
+[detect_clean](../detect_clean/METRICS.md): same metrics and plots, with the flip
+and erasure knees pushed substantially further out (indels comparable) at a ~64 KB /
+heavier-compute cost.
 
 > [!NOTE]
 > The committed CSVs and plots are the **full sweep** (`40 6000 0xC0FFEE`) over the
@@ -82,7 +83,10 @@ One figure per (metric, axis): a solid curve per code (the coded value) and a da
 **random baseline**. Unlike detect_clean, the random `present` baseline sits at a
 small positive floor (~0.03–0.05 — the max bias over `2^14` candidates on random
 data), so the coded curves clear it by less at the clean end but stay separated far
-longer: detect_noisy holds to ~5–8 % flips, ~2–3 % indels, ~16 % erasures.
+longer: detect_noisy holds to ~5–8 % flips, ~2–3 % indels, ~16 % erasures. (On the
+erase axis that floor is *not* flat — past ~10 % erasure the forced-zero bits are
+themselves biased toward 0, so the random baseline climbs, reaching ~0.35 by 26 %;
+see `present_vs_erase`.)
 
 ### Code-present confidence (`c_erasure`)
 

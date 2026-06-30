@@ -42,7 +42,7 @@ extern "C" {
  *
  * detect_clean is the cheap, embeddable variant: it uses exact GF(2) rank deficiency
  * (a few KB of state, no large tables), tolerates inserted/dropped bits and ~1%
- * flips, but no more. For a flip-tolerant detector (flips ~8%, indels, and
+ * flips, but no more. For a flip-tolerant detector (flips ~5-8%, indels, and
  * combinations, at a ~64 KB / heavier-compute cost) use detect_noisy
  * (<drifty/cc/detect_noisy.h>). Same API and output as this one.
  *

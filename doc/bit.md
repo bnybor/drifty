@@ -84,9 +84,9 @@ The fields are **not** a probability split and need not sum to 1.
 
 The hard symbol is the argmax projection of the value fields over the alphabet
 (recoverability-first; see [Data-flow semantics](data_flow_semantics.md)). An
-implementation need not model every hypothesis, but the three soft cc decoders
-(`bcjr`, `hybrid`, `maxir`) all populate the full alphabet — `c_invalid` and
-`c_absent` included — and each hard decoder emits `DT_INVALID` for a poisoned slot
+implementation need not model every hypothesis, but the three value-recovering soft
+cc decoders (`bcjr`, `hybrid`, `maxir`) all populate the full alphabet — `c_invalid`
+and `c_absent` included — and each hard decoder emits `DT_INVALID` for a poisoned slot
 and `DT_ABSENT` where it loses lock.
 
 The soft interfaces ([streaming](stream.md), [block](block.md)) carry `dt_soft_bit`

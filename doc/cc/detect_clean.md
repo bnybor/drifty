@@ -125,7 +125,7 @@ matter.
 - **Indels — tolerated.** Insertions and deletions shift the bit phase (which
   desyncs an ordinary decoder), but the sliding windows only need a *locally*
   indel-free aligned run, so detection survives sparse drift, degrading gracefully:
-  it holds well to ~1 % and remains usable to ~2–3 % indels.
+  it holds well to ~1 % and remains usable to ~2 % indels.
 - **Scope.** Rank deficiency senses *linear* redundancy in general — a block linear
   code or an LFSR scrambler would also register as "code present". For the intended
   use (a stream is either uncoded/random or convolutionally coded) this is the

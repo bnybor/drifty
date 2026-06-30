@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`detect_clean`** (`dt_cc_detect_clean_soft_decoder_create`) — exact GF(2)
     **sliding** strided-window rank deficiency. A few KB of state and no transform;
     **indel-tolerant** (the sliding windows only need a locally indel-free aligned
-    run) and sharply localizing, holding to ~1 % flips and ~2–3 % indels. The
+    run) and sharply localizing, holding to ~1 % flips and ~2 % indels. The
     embeddable default for clean / very-low-noise streams. See `doc/cc/detect_clean.md`.
   - **`detect_noisy`** (`dt_cc_detect_noisy_soft_decoder_create`) — parity-check
     **bias** scored by a fast Walsh–Hadamard transform, which degrades gracefully

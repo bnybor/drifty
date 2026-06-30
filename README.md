@@ -26,8 +26,9 @@ through small **interfaces** you call by function pointer:
 - `dt_stream_soft_decoder` — the same, but report per-bit *consistencies* rather than a
   hard decision.
 
-drifty ships **five codecs** that implement these interfaces over a `dt_cc_code`,
-differing in what channel damage they correct and how much you pay for it:
+drifty ships **five convolutional decoders** that implement these interfaces over a
+`dt_cc_code`, differing in what channel damage they correct and how much you pay for
+it:
 
 - **`viterbi`** — a plain Viterbi hard-decision decoder. Corrects flipped and
   erased bits. Simplest and fastest, and takes no settings.
@@ -43,6 +44,13 @@ differing in what channel damage they correct and how much you pay for it:
 - **`maxir`** — `bcjr`'s drift-tolerant sibling: the same max-log-MAP decoder and
   **full** soft output, extended to stay aligned through inserted and dropped
   bits. The most detailed soft output of the five, and the heaviest decoder.
+
+Two further **meta-codecs**, `detect_clean` and `detect_noisy`, don't decode at all:
+each blindly detects whether a convolutional code is *present* in an arbitrary stream
+(no code or alignment known), reporting soft `c_erasure` (present) / `c_absent`
+(absent) confidences. `detect_clean` is tiny and exact, for clean / very-low-noise
+channels; `detect_noisy` adds flip and erasure tolerance via a Walsh–Hadamard
+transform (more memory and compute). See [`doc/cc/`](doc/cc/README.md).
 
 Build one with its `dt_cc_<codec>_*_create` factories — `dt_cc_viterbi_*`, `dt_cc_bcjr_*`,
 `dt_cc_vindel_*`, `dt_cc_hybrid_*`, or `dt_cc_maxir_*` — and include its single header
@@ -67,8 +75,9 @@ This README is the overview. The full reference lives in [`doc/`](doc/README.md)
   model: the transmit vs output domains and what each pipeline stage consumes and
   produces.
 - [Convolutional coding (`doc/cc/`)](doc/cc/README.md) — per-codec reference for
-  the shared encoder and the five decoders (`viterbi`, `vindel`, `hybrid`,
-  `maxir`, `bcjr`), with a guide to choosing one.
+  the shared encoder, the five decoders (`viterbi`, `vindel`, `hybrid`, `maxir`,
+  `bcjr`), and the `detect_clean` / `detect_noisy` meta-codecs, with a guide to
+  choosing one.
 - [Block coding (`doc/bc/`)](doc/bc/rs251.md) — the `rs251` Reed–Solomon block
   codec, an RS(n, k) code over GF(251).
 - [Frame coding (`doc/fc/`)](doc/fc/README.md) — the frame-delimiting codecs

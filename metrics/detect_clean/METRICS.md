@@ -116,5 +116,6 @@ The engine constants worth sweeping live in `src/cc/detect_clean/decode.c`
 (`DET_W`, `DET_STEP`, `DET_MARGIN`, `DET_SMAX`). Edit, rebuild the target, re-run —
 the curves move with them. Retune the channel sweep in `rate_grids.txt` (read at
 startup) to zoom a knee without recompiling. Compare against
-[detect_noisy](../detect_noisy/METRICS.md), whose bias method pushes every knee
-substantially further out at a ~64 KB / heavier-compute cost.
+[detect_noisy](../detect_noisy/METRICS.md), whose bias method pushes the flip and
+erasure knees substantially further out (indels comparable) at a ~64 KB /
+heavier-compute cost.

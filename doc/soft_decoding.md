@@ -1,11 +1,13 @@
 # drifty — soft decoding
 
-Three of the convolutional decoders have a **soft** front end that reports, per
-recovered information position, a graded *consistency* for each output-domain
-hypothesis instead of a single hard symbol: [`bcjr`](cc/bcjr.md) on a
+Three of the convolutional decoders **recover bit values** with a **soft** front end
+that reports, per recovered information position, a graded *consistency* for each
+output-domain hypothesis instead of a single hard symbol: [`bcjr`](cc/bcjr.md) on a
 flip/erasure channel, and [`hybrid`](cc/hybrid.md) and [`maxir`](cc/maxir.md) on a
-drifting one. The Reed–Solomon block codec [`rs251`](bc/rs251.md) also has a
-soft-input decoder. This page is about what the soft output *means*, how the three
+drifting one. (The two [`detect`](cc/detect_clean.md) meta-codecs also emit soft
+output, but a code-*presence* confidence rather than recovered values — a different
+use, covered on their own pages.) The Reed–Solomon block codec [`rs251`](bc/rs251.md)
+also has a soft-input decoder. This page is about what the soft output *means*, how the three
 decoders differ in producing it, and how to use it across the inner→outer boundary
 — the practical payoff being that the soft inner decoders recover values the hard
 decision discards.

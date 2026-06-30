@@ -31,8 +31,8 @@ The symbol alphabet these components speak is defined in
 | **[vindel](vindel.md)** | drift-tolerant Viterbi | ✅ | — | `p_sub`, `p_ins`/`p_del`, `p_erase` |
 | **[hybrid](hybrid.md)** | drift-tolerant, hard + soft | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
 | **[maxir](maxir.md)** | drift-tolerant max-log-MAP | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
-| **[detect_clean](detect_clean.md)** | blind code-presence detector (GF(2) rank) | ✅ tolerant | ✅ `c_lost`/`c_absent` | `p_flip`, insertions ×3, `p_del`, overwrites ×3 (calibration only) |
-| **[detect_noisy](detect_noisy.md)** | blind code-presence detector (FWHT parity bias) | ✅ tolerant | ✅ `c_lost`/`c_absent` | `p_flip`, insertions ×3, `p_del`, overwrites ×3 (calibration only) |
+| **[detect_clean](detect_clean.md)** | blind code-presence detector (GF(2) rank) | ✅ tolerant | ✅ `c_erasure`/`c_absent` | `p_flip`, insertions ×3, `p_del`, overwrites ×3 (calibration only) |
+| **[detect_noisy](detect_noisy.md)** | blind code-presence detector (FWHT parity bias) | ✅ tolerant | ✅ `c_erasure`/`c_absent` | `p_flip`, insertions ×3, `p_del`, overwrites ×3 (calibration only) |
 
 The first five correct substitutions (flipped bits) and erasures. They differ in
 whether they track **drift** (inserted/dropped bits), whether they emit **soft**

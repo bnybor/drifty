@@ -82,22 +82,27 @@ input by up to one window (~1200 bits).
 
 ### Measured envelope
 
-Mean code-present (`c_erasure`) and no-code (`c_absent`) confidence on the K7-rate-½
-preset, clean-channel model, over a long stream (`detect_noisy` self-tests and the
-[`examples/11_detect`](../../examples/11_detect) demo exercise these points):
+Mean code-present confidence (`c_erasure`) for the K7-rate-½ preset, read from the
+full sweep (`metrics/detect_noisy/`, 40 trials × 6000 info bits). `c_erasure` does
+not depend on the channel model, so these are the ground-truth detection numbers;
+the complementary `c_absent` and the per-code / pegged-vs-matched picture are in the
+[metrics plots](../../metrics/detect_noisy/).
 
-| Channel | `c_erasure` (code-present) | `c_absent` (no-code) |
-|---------|:--------------------------:|:--------------------:|
-| coded, clean            | **1.00** | 0.00 |
-| coded, 1 % flip         | 1.00 | 0.00 |
-| coded, 3 % flip         | 0.92 | 0.00 |
-| coded, 5 % flip         | ~0.50 | ~0.13 |
-| coded, 1.5 % deletion   | 0.69 | 0.00 |
-| coded, 3 % flip + 0.5 % deletion | 0.33 | ~0.49 |
-| **random**              | 0.02 | **0.96** |
+| Channel (K7-rate-½)   | mean `c_erasure` |
+|-----------------------|:----------------:|
+| coded, clean          | **1.00** |
+| coded, 1 % flip       | 1.00 |
+| coded, 3 % flip       | 0.97 |
+| coded, 5 % flip       | 0.58 |
+| coded, 8 % flip       | 0.12 |
+| coded, 1.5 % deletion | 0.79 |
+| **random**            | 0.04 |
 
-Clean coded reads an unambiguous *present*, random an unambiguous *absent*, and the
-evidence degrades smoothly in between rather than snapping off.
+Clean coded reads an unambiguous *present*; random sits at a near-zero floor (~0.04,
+the max bias over `2^14` candidates on random data); the evidence degrades smoothly
+in between rather than snapping off. A *combined* channel (3 % flip + 0.5 % deletion)
+— harsher than either alone, and not a single-axis sweep point — still reads ~0.33 in
+the codec's self-test, well clear of random.
 
 ## API
 

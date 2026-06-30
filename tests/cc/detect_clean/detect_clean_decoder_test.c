@@ -26,11 +26,17 @@
 
 /*
  * Tests for the detect_clean codec - a blind detector of convolutional-code structure.
- * It outputs, per position, c_erasure = confidence a code IS present (engine
- * c_lost) and c_absent = confidence a code is NOT present, all other soft fields
- * 0. The tests confirm: a real coded stream reads as "code present", a random
- * stream reads as "no code", output count tracks input, only the two fields are
- * populated, and the lifecycle is sound.
+ * Per position it emits TWO INDEPENDENT goodness-of-fit reads (not a probability
+ * split, so they need not sum to 1):
+ *   c_erasure = consistency with "a convolutional code IS present"
+ *   c_absent  = consistency with "no code / the stream is random"
+ * Each answers "does the data fail to contradict this hypothesis?", so the
+ * no-discriminating-evidence state is (1, 1) - an all-non-bit run, or the warm-up /
+ * flush tail - not (0, 0). The tests confirm: a coded stream is consistent with a
+ * code and contradicts random; a random stream the reverse (under a clean model);
+ * the channel model lifts the CODE-PRESENT axis (not the no-code one) when flips are
+ * expected; an all-erasure run reads (1, 1); indels are tolerated; output count
+ * tracks input; only the two fields are populated; and the lifecycle is sound.
  */
 
 #include <drifty/cc/ccode.h>
@@ -94,7 +100,8 @@ static int encode(dt_cc_standard_code which, int n_info, dt_bit *out, int cap,
   return len;
 }
 
-/* A clean-channel model (p_flip 0): a null detection result is fully trusted. */
+/* A clean-channel model (p_flip 0): an unstructured window is trusted to rule a
+ * code out, so c_erasure on random collapses to ~0. */
 static dt_cc_detect_clean_stream_params clean_params(void) {
   dt_cc_detect_clean_stream_params p = {0};
   p.decision_depth = 40;
@@ -118,6 +125,17 @@ static int detect_all(const dt_cc_detect_clean_stream_params *p, const dt_bit *r
   got += sd->finalize(sd, out + got, cap - got);
   dt_cc_detect_clean_soft_decoder_destroy(sd);
   return got;
+}
+
+/* Mean code-present (c_erasure) and no-code (c_absent) consistency over a run. */
+static void means(const dt_soft_bit *out, int got, double *present, double *absent) {
+  double e = 0, a = 0;
+  for (int i = 0; i < got; ++i) {
+    e += out[i].c_erasure;
+    a += out[i].c_absent;
+  }
+  *present = got ? e / got : 0;
+  *absent = got ? a / got : 0;
 }
 
 /* Argument validation at the factory, and destroy(NULL) safety. */
@@ -146,10 +164,10 @@ static void test_create(void) {
   check("destroy(NULL) is safe", 1);
 }
 
-/* A real coded stream reads as "code present": mean coded-confidence high, mean
- * not-coded low, and the other soft fields stay 0. Output count tracks input. */
+/* A coded stream is consistent with a code and contradicts random: mean c_erasure
+ * high, mean c_absent low. Output count tracks input; only the two fields populate. */
 static void test_detects_code(void) {
-  printf("detect on a coded stream (should read as code present):\n");
+  printf("detect on a coded stream (consistent with a code, contradicts random):\n");
   enum { NINFO = 2000, CAP = NINFO * 5 + 256 };
   uint64_t rng = 0xC0DE11u;
   dt_bit *coded = malloc(CAP);
@@ -159,11 +177,8 @@ static void test_detects_code(void) {
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
   int got = detect_all(&p, coded, clen, out, CAP);
 
-  double lost = 0, absent = 0;
   int other_nonzero = 0, range_ok = 1;
   for (int i = 0; i < got; ++i) {
-    lost += out[i].c_erasure; /* engine c_lost = coded confidence */
-    absent += out[i].c_absent;
     if (out[i].c_true != 0.0f || out[i].c_false != 0.0f ||
         out[i].c_invalid != 0.0f || out[i].c_locked != 0.0f) {
       ++other_nonzero;
@@ -175,19 +190,22 @@ static void test_detects_code(void) {
       }
     }
   }
+  double present, absent;
+  means(out, got, &present, &absent);
   check("output count tracks input", got == clen);
-  check_gt("coded: mean code-present confidence high", lost / got, 0.8);
-  check_lt("coded: mean no-code confidence low", absent / got, 0.1);
-  check("coded: confidences in [0,1]", range_ok);
+  check_gt("coded: consistency with a code high", present, 0.9);
+  check_lt("coded: consistency with random low", absent, 0.05);
+  check("coded: consistencies in [0,1]", range_ok);
   check("coded: only c_erasure/c_absent populated", other_nonzero == 0);
 
   free(coded);
   free(out);
 }
 
-/* A random stream reads as "no code": mean not-coded confidence high. */
+/* A random stream fits the random model and, under a clean channel model,
+ * contradicts a code: mean c_absent high, mean c_erasure low. */
 static void test_rejects_random(void) {
-  printf("detect on a random stream (should read as no code):\n");
+  printf("detect on a random stream (fits random, contradicts a code):\n");
   enum { RL = 4000, CAP = RL + 256 };
   uint64_t rng = 0x9A9A9Au;
   dt_bit *rx = malloc(CAP);
@@ -198,25 +216,25 @@ static void test_rejects_random(void) {
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
   int got = detect_all(&p, rx, RL, out, CAP);
 
-  double lost = 0, absent = 0;
-  for (int i = 0; i < got; ++i) {
-    lost += out[i].c_erasure;
-    absent += out[i].c_absent;
-  }
+  double present, absent;
+  means(out, got, &present, &absent);
   check("output count tracks input", got == RL);
-  check_gt("random: mean no-code confidence high", absent / got, 0.8);
-  check_lt("random: mean code-present confidence low", lost / got, 0.05);
+  check_gt("random: consistency with random high", absent, 0.8);
+  check_lt("random: consistency with a code low", present, 0.1);
 
   free(rx);
   free(out);
 }
 
-/* The channel model calibrates a NULL result: telling detect to expect heavy noise
- * lowers the confidence of a "no code" verdict on a random stream (a code could be
- * hidden by that much noise), while the code-present confidence on coded data is
- * unaffected (found parity checks are real regardless of expected noise). */
+/* The channel model calibrates the CODE-PRESENT axis, not the no-code one. On a
+ * random stream, telling detect to expect flips RAISES c_erasure - a clean-looking
+ * full-rank window can no longer rule a code out, since the expected flips could
+ * have broken a real code's parity - while c_absent (the positive fit to the random
+ * model) is left untouched, because an unstructured window is consistent with random
+ * whatever the channel. (The old model damped c_absent; that coupled the axes and
+ * is exactly what changed.) */
 static void test_noise_calibration(void) {
-  printf("detect channel-model calibration of the no-code verdict:\n");
+  printf("detect channel-model calibration of the code-present axis:\n");
   enum { RL = 4000, CAP = RL + 256 };
   uint64_t rng = 0x5151FFu;
   dt_bit *rx = malloc(CAP);
@@ -229,24 +247,46 @@ static void test_noise_calibration(void) {
   dt_cc_detect_clean_stream_params noisy = clean_params();
   noisy.p_flip = 0.05f; /* expect 5% flips: a code could hide under that */
 
+  double present_clean, absent_clean, present_noisy, absent_noisy;
   int gc = detect_all(&clean, rx, RL, out, CAP);
-  double abs_clean = 0;
-  for (int i = 0; i < gc; ++i) {
-    abs_clean += out[i].c_absent;
-  }
-  abs_clean /= gc;
+  means(out, gc, &present_clean, &absent_clean);
   int gn = detect_all(&noisy, rx, RL, out, CAP);
-  double abs_noisy = 0;
-  for (int i = 0; i < gn; ++i) {
-    abs_noisy += out[i].c_absent;
-  }
-  abs_noisy /= gn;
+  means(out, gn, &present_noisy, &absent_noisy);
 
-  printf("  random stream: c_absent clean=%.3f vs noisy-model=%.3f\n", abs_clean,
-         abs_noisy);
-  check_gt("clean model: no-code confidence high", abs_clean, 0.8);
-  check_lt("noisy model: no-code confidence damped", abs_noisy, 0.5);
-  check("noisy model lowers the no-code confidence", abs_noisy < abs_clean);
+  printf("  random stream: c_erasure clean=%.3f vs noisy-model=%.3f"
+         "  |  c_absent clean=%.3f vs noisy-model=%.3f\n",
+         present_clean, present_noisy, absent_clean, absent_noisy);
+  check_lt("clean model: code-present consistency low", present_clean, 0.1);
+  check_gt("noisy model: code-present consistency raised", present_noisy, 0.5);
+  check("noisy model lifts the code-present axis", present_noisy > present_clean);
+  check_gt("no-code consistency stays high (clean model)", absent_clean, 0.8);
+  check_gt("no-code consistency stays high (noisy model)", absent_noisy, 0.8);
+  check("channel model leaves the no-code axis unchanged",
+        absent_noisy - absent_clean < 0.01 && absent_clean - absent_noisy < 0.01);
+
+  free(rx);
+  free(out);
+}
+
+/* No discriminating evidence reads (1, 1): with no usable bits to judge (a run of
+ * all DT_ERASURE), nothing contradicts either hypothesis, so both consistencies stay
+ * near 1 rather than collapsing to 0. */
+static void test_no_evidence(void) {
+  printf("detect on an all-erasure run (no discriminating evidence -> (1,1)):\n");
+  enum { RL = 4000, CAP = RL + 256 };
+  dt_bit *rx = malloc(CAP);
+  for (int i = 0; i < RL; ++i) {
+    rx[i] = DT_ERASURE;
+  }
+  dt_cc_detect_clean_stream_params p = clean_params();
+  dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
+  int got = detect_all(&p, rx, RL, out, CAP);
+
+  double present, absent;
+  means(out, got, &present, &absent);
+  check("output count tracks input", got == RL);
+  check_gt("all-erasure: code-present consistency near 1", present, 0.9);
+  check_gt("all-erasure: no-code consistency near 1", absent, 0.9);
 
   free(rx);
   free(out);
@@ -267,8 +307,8 @@ static int delete_channel(const dt_bit *in, int len, double p, uint64_t *rng,
 }
 
 /* detect tolerates sparse indels: a coded stream through a ~1% deletion channel
- * still reads code-present (the runs between deletions are clean and aligned),
- * while a random stream through the same channel still reads no-code. */
+ * stays consistent with a code (the runs between deletions are clean and aligned),
+ * while a random stream through the same channel stays a confident no-code. */
 static void test_indel_tolerance(void) {
   printf("detect indel tolerance (coded stream through a ~1%% deletion channel):\n");
   enum { NINFO = 2500, CAP = NINFO * 5 + 256 };
@@ -281,14 +321,12 @@ static void test_indel_tolerance(void) {
   int rl = delete_channel(coded, clen, 0.01, &rng, rx);
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
   int got = detect_all(&p, rx, rl, out, CAP);
-  double lost = 0;
-  for (int i = 0; i < got; ++i) {
-    lost += out[i].c_erasure;
-  }
-  printf("  coded + 1%% deletions: %d bits -> mean code-present %.3f\n", rl,
-         lost / got);
+  double present, absent;
+  means(out, got, &present, &absent);
+  printf("  coded + 1%% deletions: %d bits -> consistency with a code %.3f\n", rl,
+         present);
   check("output count tracks input", got == rl);
-  check_gt("coded+indels still reads code-present", lost / got, 0.5);
+  check_gt("coded+indels stays consistent with a code", present, 0.5);
 
   /* random through the same channel must NOT become a false positive */
   for (int i = 0; i < clen; ++i) {
@@ -296,14 +334,9 @@ static void test_indel_tolerance(void) {
   }
   rl = delete_channel(coded, clen, 0.01, &rng, rx);
   got = detect_all(&p, rx, rl, out, CAP);
-  double absent = 0;
-  lost = 0;
-  for (int i = 0; i < got; ++i) {
-    absent += out[i].c_absent;
-    lost += out[i].c_erasure;
-  }
-  check_gt("random+indels still reads no-code", absent / got, 0.8);
-  check_lt("random+indels: no false code-present", lost / got, 0.05);
+  means(out, got, &present, &absent);
+  check_gt("random+indels stays a confident no-code", absent, 0.8);
+  check_lt("random+indels: no false code-present", present, 0.1);
 
   free(coded);
   free(rx);
@@ -315,6 +348,7 @@ int main(void) {
   test_detects_code();
   test_rejects_random();
   test_noise_calibration();
+  test_no_evidence();
   test_indel_tolerance();
   printf("%s (%d failure%s)\n", g_failures ? "FAILED" : "OK", g_failures,
          g_failures == 1 ? "" : "s");

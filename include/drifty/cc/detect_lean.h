@@ -24,8 +24,8 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_CC_DETECT_H
-#define DRIFTY_CC_DETECT_H
+#ifndef DRIFTY_CC_DETECT_LEAN_H
+#define DRIFTY_CC_DETECT_LEAN_H
 
 #include <drifty/stream_soft_decoder.h>
 
@@ -34,9 +34,16 @@ extern "C" {
 #endif
 
 /*
- * The detect codec - a META-codec that blindly detects the presence of a
- * convolutional code in an arbitrary bit stream, with no prior knowledge or
- * coordination (no code, rate, generators, or alignment known).
+ * The detect_lean codec - the LEAN of drifty's two blind code-presence detectors.
+ * It blindly detects whether a convolutional code is present in an arbitrary bit
+ * stream, with no prior knowledge or coordination (no code, rate, generators, or
+ * alignment known).
+ *
+ * detect_lean is the cheap, embeddable variant: it uses exact GF(2) rank deficiency
+ * (a few KB of state, no large tables), tolerates inserted/dropped bits and ~1%
+ * flips, but no more. For a flip-tolerant detector (flips ~8%, indels, and
+ * combinations, at a ~64 KB / heavier-compute cost) use detect_full
+ * (<drifty/cc/detect_full.h>). Same API and output as this one.
  *
  * It is SOFT-OUTPUT ONLY and standalone: unlike the other cc decoders it is not
  * built over a dt_cc_code. It does not recover bit values; it reports, per stream
@@ -48,8 +55,8 @@ extern "C" {
  *
  * All other dt_soft_bit fields are 0. (The coded-presence confidence rides in
  * c_erasure by the engine-c_lost -> soft-c_erasure convention; detect repurposes
- * that field.) Detection works in the clean / very-low-noise regime; see
- * doc/cc/detect.md for the method (GF(2) rank deficiency) and its limits.
+ * that field.) See doc/cc/detect_lean.md for the method (GF(2) rank deficiency)
+ * and its limits.
  *
  * Build a soft decoder with the factory below, drive it through its vtable (see
  * <drifty/stream_soft_decoder.h>), and free it with the matching _destroy().
@@ -57,7 +64,7 @@ extern "C" {
 
 /* clang-format off */
 /*
- * Channel model for dt_cc_detect_soft_decoder_create() - the same rich field set
+ * Channel model for dt_cc_detect_lean_soft_decoder_create() - the same rich field set
  * as dt_cc_hybrid_stream_params / dt_cc_maxir_stream_params, so a channel you
  * already describe for an inner codec can be handed to detect unchanged. Use
  * designated initializers; any field left out is 0.
@@ -102,18 +109,18 @@ typedef struct {
   float p_ovr_true;
   float p_ovr_false;
   float p_ovr_erase;
-} dt_cc_detect_stream_params;
+} dt_cc_detect_lean_stream_params;
 
 /* Build a soft-output detect decoder with the channel model in `params` (copied;
  * need not outlive the call). Returns NULL on a bad argument (including an invalid
  * `params`) or out of memory. */
-dt_stream_soft_decoder *dt_cc_detect_soft_decoder_create(
-    const dt_cc_detect_stream_params *params);
-/* Free a soft decoder from dt_cc_detect_soft_decoder_create(). NULL is fine. */
-void dt_cc_detect_soft_decoder_destroy(dt_stream_soft_decoder *dec);
+dt_stream_soft_decoder *dt_cc_detect_lean_soft_decoder_create(
+    const dt_cc_detect_lean_stream_params *params);
+/* Free a soft decoder from dt_cc_detect_lean_soft_decoder_create(). NULL is fine. */
+void dt_cc_detect_lean_soft_decoder_destroy(dt_stream_soft_decoder *dec);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DRIFTY_CC_DETECT_H */
+#endif /* DRIFTY_CC_DETECT_LEAN_H */

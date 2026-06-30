@@ -24,13 +24,13 @@
  */
 /* clang-format on */
 
-#ifndef DRIFTY_DETECT_DECODE_H
-#define DRIFTY_DETECT_DECODE_H
+#ifndef DRIFTY_DETECT_LEAN_DECODE_H
+#define DRIFTY_DETECT_LEAN_DECODE_H
 
 /* The decoder shares the cc result codes. It is standalone (no dt_cc_code) but
- * takes the dt_cc_detect_stream_params channel model, which lives in
- * <drifty/cc/detect.h>. */
-#include <drifty/cc/detect.h>
+ * takes the dt_cc_detect_lean_stream_params channel model, which lives in
+ * <drifty/cc/detect_lean.h>. */
+#include <drifty/cc/detect_lean.h>
 #include <drifty/result.h>
 
 #include <stdint.h>
@@ -40,22 +40,22 @@ extern "C" {
 #endif
 
 /*
- * The receiver's half of the detect codec - a blind detector of convolutional-code
+ * The receiver's half of the detect_lean codec - a blind detector of convolutional-code
  * structure in an arbitrary bit stream (no code, rate, generators, or alignment
  * known). It reports, per stream position, a confidence that the stream carries a
  * convolutional code vs that it does not. See decode.c for the method (GF(2)
  * strided-window rank deficiency).
  *
- *   dt_cc_detect_stream_decoder *d = dt_cc_detect_stream_decoder_create(
-       &(dt_cc_detect_stream_params){ .decision_depth = 40 });
- *   dt_cc_detect_decode_details det[CAP];
- *   int n = dt_cc_detect_stream_decode(d, in, n_in, det, CAP);
- *   while (dt_cc_detect_stream_decode_flush(d, det, CAP) > 0) { }
- *   dt_cc_detect_stream_decoder_destroy(d);
+ *   dt_cc_detect_lean_stream_decoder *d = dt_cc_detect_lean_stream_decoder_create(
+       &(dt_cc_detect_lean_stream_params){ .decision_depth = 40 });
+ *   dt_cc_detect_lean_decode_details det[CAP];
+ *   int n = dt_cc_detect_lean_stream_decode(d, in, n_in, det, CAP);
+ *   while (dt_cc_detect_lean_stream_decode_flush(d, det, CAP) > 0) { }
+ *   dt_cc_detect_lean_stream_decoder_destroy(d);
  *
- * dt_cc_detect_stream_decoder is an opaque handle.
+ * dt_cc_detect_lean_stream_decoder is an opaque handle.
  */
-typedef struct dt_cc_detect_stream_decoder dt_cc_detect_stream_decoder;
+typedef struct dt_cc_detect_lean_stream_decoder dt_cc_detect_lean_stream_decoder;
 
 /*
  * Per-position detection output. Two consistencies in [0, 1] (how well each
@@ -67,18 +67,18 @@ typedef struct {
   float c_lost;
   /* Confidence that a convolutional code is NOT encoded onto the stream here. */
   float c_absent;
-} dt_cc_detect_decode_details;
+} dt_cc_detect_lean_decode_details;
 
 /*
  * Make a decoder with the channel model in `params` (copied; need not outlive the
  * call). Returns NULL on invalid settings or out of memory; free it with
- * dt_cc_detect_stream_decoder_destroy().
+ * dt_cc_detect_lean_stream_decoder_destroy().
  */
-dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
-    const dt_cc_detect_stream_params *params);
+dt_cc_detect_lean_stream_decoder *dt_cc_detect_lean_stream_decoder_create(
+    const dt_cc_detect_lean_stream_params *params);
 
 /* Free a decoder. Passing NULL is fine. */
-void dt_cc_detect_stream_decoder_destroy(dt_cc_detect_stream_decoder *d);
+void dt_cc_detect_lean_stream_decoder_destroy(dt_cc_detect_lean_stream_decoder *d);
 
 /*
  * Feed `n_in` received bits and collect up to `max_out` per-position detection
@@ -89,20 +89,20 @@ void dt_cc_detect_stream_decoder_destroy(dt_cc_detect_stream_decoder *d);
  * only emitted once its analysis block is complete, so output trails input by up
  * to one block.
  */
-int dt_cc_detect_stream_decode(dt_cc_detect_stream_decoder *d, const uint8_t *in,
-                            int n_in, dt_cc_detect_decode_details *details,
+int dt_cc_detect_lean_stream_decode(dt_cc_detect_lean_stream_decoder *d, const uint8_t *in,
+                            int n_in, dt_cc_detect_lean_decode_details *details,
                             int max_out);
 
 /*
  * Call at the end of the stream to get the last records still in flight. Returns
  * how many were written (0..max_out); call repeatedly until it returns 0.
  */
-int dt_cc_detect_stream_decode_flush(dt_cc_detect_stream_decoder *d,
-                                 dt_cc_detect_decode_details *details,
+int dt_cc_detect_lean_stream_decode_flush(dt_cc_detect_lean_stream_decoder *d,
+                                 dt_cc_detect_lean_decode_details *details,
                                  int max_out);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DRIFTY_DETECT_DECODE_H */
+#endif /* DRIFTY_DETECT_LEAN_DECODE_H */

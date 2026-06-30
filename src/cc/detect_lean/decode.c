@@ -25,7 +25,7 @@
 /* clang-format on */
 
 /*
- * detect decode engine - blind detection of convolutional-code structure in an
+ * detect_lean decode engine - blind detection of convolutional-code structure in an
  * arbitrary bit stream, with no prior knowledge or coordination (no code, rate,
  * generators, or alignment).
  *
@@ -87,7 +87,7 @@
 
 #define DET_LN2 0.69314718055994531f
 
-struct dt_cc_detect_stream_decoder {
+struct dt_cc_detect_lean_stream_decoder {
   /* Input bit FIFO (0/1 values) and a parallel per-position best-deficiency-so-far
    * (signed char: -1 = position not yet covered by any window, else 0..DET_W).
    * Both share head/len/cap; in[head + k] is absolute position `base + k`. */
@@ -97,7 +97,7 @@ struct dt_cc_detect_stream_decoder {
   long long base;       /* absolute index of in[head]              */
   long long next_start; /* absolute index of next window start (multiple of STEP) */
   /* Pending output FIFO of per-position records, drained from the front. */
-  dt_cc_detect_decode_details *out;
+  dt_cc_detect_lean_decode_details *out;
   int out_head, out_len, out_cap;
   int finalized; /* the final tail has been processed */
   /* (1 - expected per-bit FLIP/overwrite corruption)^DET_W, from the channel
@@ -160,8 +160,8 @@ static int gf2_rank(const unsigned char *win, int count, int stride) {
 
 /* Map a position's max deficiency (d, or -1 if no window ever covered it) to its
  * (c_lost, c_absent) verdict. */
-static dt_cc_detect_decode_details verdict_from(int d, float detectability) {
-  dt_cc_detect_decode_details det;
+static dt_cc_detect_lean_decode_details verdict_from(int d, float detectability) {
+  dt_cc_detect_lean_decode_details det;
   if (d < 0) {
     /* Never covered by a full window (the stream's leading/trailing tail): not
      * enough data to judge. Abstain. */
@@ -185,7 +185,7 @@ static dt_cc_detect_decode_details verdict_from(int d, float detectability) {
 /* -- growable buffers ------------------------------------------------------ */
 
 /* Grow the input/dmax FIFO to hold `extra` more positions, compacting first. */
-static int buf_reserve(dt_cc_detect_stream_decoder *d, int extra) {
+static int buf_reserve(dt_cc_detect_lean_stream_decoder *d, int extra) {
   if (d->head > 0 && d->len + extra > d->cap) {
     dt_memmove(d->in, d->in + d->head, (size_t)(d->len - d->head));
     dt_memmove(d->dmax, d->dmax + d->head, (size_t)(d->len - d->head));
@@ -212,7 +212,7 @@ static int buf_reserve(dt_cc_detect_stream_decoder *d, int extra) {
   return 1;
 }
 
-static int out_reserve(dt_cc_detect_stream_decoder *d, int extra) {
+static int out_reserve(dt_cc_detect_lean_stream_decoder *d, int extra) {
   if (d->out_head > 0 && d->out_len + extra > d->out_cap) {
     dt_memmove(d->out, d->out + d->out_head,
                (size_t)(d->out_len - d->out_head) * sizeof(*d->out));
@@ -224,7 +224,7 @@ static int out_reserve(dt_cc_detect_stream_decoder *d, int extra) {
     while (nc < d->out_len + extra) {
       nc *= 2;
     }
-    dt_cc_detect_decode_details *nb =
+    dt_cc_detect_lean_decode_details *nb =
         dt_realloc(d->out, (size_t)nc * sizeof(*nb));
     if (!nb) {
       return 0;
@@ -242,7 +242,7 @@ static int out_reserve(dt_cc_detect_stream_decoder *d, int extra) {
  * it covers. A window of length L_s straddling an indel or a code/random boundary
  * contains independent rows, so it reads d = 0 there - only a fully-clean aligned
  * run shows d > 0, which keeps localization sharp. */
-static void process_start(dt_cc_detect_stream_decoder *d, long long start) {
+static void process_start(dt_cc_detect_lean_stream_decoder *d, long long start) {
   const long long bend = d->base + (d->len - d->head);
   const int lo = d->head + (int)(start - d->base);
   for (int s = 2; s <= DET_SMAX; ++s) {
@@ -264,7 +264,7 @@ static void process_start(dt_cc_detect_stream_decoder *d, long long start) {
 
 /* Emit (finalize) every position in [base, upto): its dmax is settled because all
  * window starts <= position have been processed. */
-static int emit_upto(dt_cc_detect_stream_decoder *d, long long upto) {
+static int emit_upto(dt_cc_detect_lean_stream_decoder *d, long long upto) {
   int count = (int)(upto - d->base);
   if (count <= 0) {
     return 1;
@@ -280,8 +280,8 @@ static int emit_upto(dt_cc_detect_stream_decoder *d, long long upto) {
   return 1;
 }
 
-static int drain(dt_cc_detect_stream_decoder *d,
-                 dt_cc_detect_decode_details *details, int max_out) {
+static int drain(dt_cc_detect_lean_stream_decoder *d,
+                 dt_cc_detect_lean_decode_details *details, int max_out) {
   int w = 0;
   while (w < max_out && d->out_head < d->out_len) {
     if (details) {
@@ -301,7 +301,7 @@ static int drain(dt_cc_detect_stream_decoder *d,
 /* detectability = (1 - p)^DET_W, p = expected per-bit FLIP/overwrite corruption.
  * Indels (p_ins / p_del) are deliberately excluded - the sliding method tolerates
  * them, so they must not discount the no-code confidence. */
-static float detectability_from(const dt_cc_detect_stream_params *p) {
+static float detectability_from(const dt_cc_detect_lean_stream_params *p) {
   const float p_ovr = p->p_ovr_true + p->p_ovr_false + p->p_ovr_erase;
   float p_corrupt = p_ovr + (1.0f - p_ovr) * p->p_flip;
   if (p_corrupt <= 0.0f) {
@@ -313,8 +313,8 @@ static float detectability_from(const dt_cc_detect_stream_params *p) {
   return dt_exp((float)DET_W * dt_log(1.0f - p_corrupt));
 }
 
-dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
-    const dt_cc_detect_stream_params *params) {
+dt_cc_detect_lean_stream_decoder *dt_cc_detect_lean_stream_decoder_create(
+    const dt_cc_detect_lean_stream_params *params) {
   if (!params) {
     return NULL;
   }
@@ -337,7 +337,7 @@ dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
         1.0f)) {
     return NULL;
   }
-  dt_cc_detect_stream_decoder *d = dt_malloc(sizeof(*d));
+  dt_cc_detect_lean_stream_decoder *d = dt_malloc(sizeof(*d));
   if (!d) {
     return NULL;
   }
@@ -353,7 +353,7 @@ dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
   return d;
 }
 
-void dt_cc_detect_stream_decoder_destroy(dt_cc_detect_stream_decoder *d) {
+void dt_cc_detect_lean_stream_decoder_destroy(dt_cc_detect_lean_stream_decoder *d) {
   if (!d) {
     return;
   }
@@ -363,8 +363,8 @@ void dt_cc_detect_stream_decoder_destroy(dt_cc_detect_stream_decoder *d) {
   dt_free(d);
 }
 
-int dt_cc_detect_stream_decode(dt_cc_detect_stream_decoder *d, const uint8_t *in,
-                            int n_in, dt_cc_detect_decode_details *details,
+int dt_cc_detect_lean_stream_decode(dt_cc_detect_lean_stream_decoder *d, const uint8_t *in,
+                            int n_in, dt_cc_detect_lean_decode_details *details,
                             int max_out) {
   if (!d || (n_in > 0 && !in) || n_in < 0 || max_out < 0) {
     return DT_ERR_ARG;
@@ -392,8 +392,8 @@ int dt_cc_detect_stream_decode(dt_cc_detect_stream_decoder *d, const uint8_t *in
   return drain(d, details, max_out);
 }
 
-int dt_cc_detect_stream_decode_flush(dt_cc_detect_stream_decoder *d,
-                                 dt_cc_detect_decode_details *details,
+int dt_cc_detect_lean_stream_decode_flush(dt_cc_detect_lean_stream_decoder *d,
+                                 dt_cc_detect_lean_decode_details *details,
                                  int max_out) {
   if (!d || max_out < 0) {
     return DT_ERR_ARG;

@@ -1,24 +1,36 @@
 # 11 — detect
 
-Blind **code-presence detection** with the [`detect`](../../doc/cc/detect.md)
-meta-codec. Every other example encodes or decodes a *known* code; `detect` is the
-odd one out — given an arbitrary bit stream with **no prior knowledge or
-coordination** (no code, rate, generators, or alignment), it reports per position
-how confident it is that a convolutional code is present. It does not recover bit
-values — it answers "is there a code here?".
+Blind **code-presence detection** with the [`detect_lean`](../../doc/cc/detect_lean.md)
+and [`detect_full`](../../doc/cc/detect_full.md) meta-codecs. Every other example
+encodes or decodes a *known* code; the detect codecs are the odd ones out — given an
+arbitrary bit stream with **no prior knowledge or coordination** (no code, rate,
+generators, or alignment), each reports per position how confident it is that a
+convolutional code is present. They do not recover bit values — they answer "is
+there a code here?".
+
+There are two, trading footprint for noise tolerance, and this example shows **when
+to reach for which**:
+
+- **`detect_lean`** — exact GF(2) rank deficiency. A few KB, no transform; tolerates
+  indels and ~1 % flips. The embeddable default (Parts A and B).
+- **`detect_full`** — parity-check *bias* via a Walsh–Hadamard transform. A ~64 KB
+  histogram and more compute, but tolerates flips (~5–8 %), indels (~2–3 %), and
+  light combinations of the two (Part C).
 
 ## What it shows
 
-- `dt_cc_detect_soft_decoder_create(&params)` — it takes the same rich channel
-  model as `hybrid`/`maxir` (here a clean channel) — driven through the normal
-  soft-decoder vtable.
-- The repurposed output fields: `c_erasure` = confidence a code **is** present,
-  `c_absent` = confidence it is **not** (they need not sum to 1).
-- **Part A:** a whole coded stream reads as "present", a random stream as "absent".
-- **Part B:** a coded segment spliced into a random stream — detect **localizes**
+- `dt_cc_detect_lean_soft_decoder_create(&p)` / `dt_cc_detect_full_soft_decoder_create(&p)`
+  — both take the same rich channel model as `hybrid`/`maxir` (here a clean channel),
+  driven through the normal soft-decoder vtable, with the same repurposed output
+  fields: `c_erasure` = confidence a code **is** present, `c_absent` = confidence it
+  is **not** (they need not sum to 1).
+- **Part A (lean):** a whole coded stream reads as "present", a random stream as
+  "absent".
+- **Part B (lean):** a coded segment spliced into a random stream — lean **localizes**
   the code per-position, with no hint of where (or whether) it is.
-- **Part C:** the same detection through an insert/delete channel — detect tolerates
-  the drift and still finds the code, degrading gracefully with the indel rate.
+- **Part C (lean vs full):** add bit **flips**, which break lean's exact parity, and
+  watch full hold on where lean collapses — including through a combined flip+drift
+  channel, the case that motivates carrying both noise types in one codec.
 
 ## Run
 
@@ -29,50 +41,62 @@ values — it answers "is there a code here?".
 ## Expected output
 
 ```
-Part A - a whole stream, coded vs random:
-  coded  (4012 bits): code-present [####################### ] 0.96   no-code 0.00
-  random (4012 bits): code-present [                        ] 0.00   no-code 0.96
+Part A - a whole stream, coded vs random (detect_lean):
+  coded  (4012 bits): code-present [########################] 1.00   no-code 0.00
+  random (4012 bits): code-present [                        ] 0.00   no-code 1.00
 
 Part B - a coded segment spliced into a random stream...
   true coded region: bits [1536, 4348)
-  bits  1152.. 1536 (random) [                        ] 0.00
+  bits  1152.. 1536 (random) [##                      ] 0.08
   bits  1536.. 1920 (coded)  [########################] 1.00
   ...
   bits  3840.. 4224 (coded)  [########################] 1.00
   bits  4224.. 4608 (random) [##########              ] 0.43   <- edge block straddles the boundary
 
-Part C - detection through an insert/delete channel...
-  0.0% deletions (4012 bits): code-present [########################] 1.00
-  0.5% deletions (3998 bits): code-present [####################### ] 0.97
-  1.0% deletions (3966 bits): code-present [###################     ] 0.78
-  2.0% deletions (3945 bits): code-present [###########             ] 0.47
+Part C - the same coded stream through a bit-FLIP channel...
+  0% flips:  lean [########################] 1.00   full [########################] 1.00
+  1% flips:  lean [###################     ] 0.80   full [########################] 1.00
+  3% flips:  lean [######                  ] 0.23   full [########################] 0.99
+  5% flips:  lean [                        ] 0.00   full [################        ] 0.67
+
+  combined 3% flip + 0.5% deletion (flips AND drift at once):
+  3987 bits:    lean [                        ] 0.00   full [########                ] 0.35
 ```
 
 ## Reading it
 
-- **Part B:** ~0 in the random regions, ~1 across the coded segment. detect finds
-  the code's location without being told it exists — the "no coordination" property.
+- **Part B:** ~0 in the random regions, ~1 across the coded segment. lean finds the
+  code's location without being told it exists — the "no coordination" property.
   Blocks that straddle the code/random boundary read a partial value (the analysis
   windows fully inside the code fire; those crossing the edge do not).
-- Part A's `0.96` (not `1.00`) is the unanalyzable final tail: the last positions
-  have too few following bits for a full analysis window, so detect abstains there
-  (reads 0), pulling the mean down slightly.
-- **Part C:** indels shift the bit phase — which desyncs an ordinary decoder — but
-  detect's analysis windows slide, so it only needs one indel-free aligned run to
-  fire. Detection fades smoothly as the indel rate climbs.
+- **Part C** is the whole reason there are two codecs. lean reads exact parity, so a
+  few flips erase the structure it looks for: code-present fades from 1.00 to 0 by
+  ~5 % flips. full scores parity *bias*, which flips only weaken — it stays near 1.00
+  through 3 % and is still firing at 5 %. Under the combined flip+deletion channel
+  lean reads a flat 0 while full keeps measurable evidence (and stays well clear of
+  what it reports on a random stream).
+- A mean of `1.00`/`0.00` is the analyzable interior; the very first/last positions
+  have too few neighbours for a full window, so a detector abstains there — visible
+  as the partial edge blocks in Part B.
 
-## Method & limits (see [the page](../../doc/cc/detect.md))
+## Method & limits
 
-A convolutional code is linear, so windows of coded bits are GF(2) **rank-deficient**
-(they satisfy parity checks) while random bits are full-rank; detect slides short
+A convolutional code is linear, so it leaves a parity-check signature in the stream.
+**lean** ([page](../../doc/cc/detect_lean.md)) measures it *exactly*: windows of coded
+bits are GF(2) **rank-deficient** while random bits are full-rank; it slides short
 windows over candidate block sizes and takes each position's max deficiency. Sliding
-is what buys indel tolerance — only a *locally* clean aligned run is needed. It is
-still brittle to **flips** (a flip is an independent row in every covering window),
-so it works in the **clean / very-low-noise** regime: it holds to ~1 % flips and to
-~2–3 % indels.
+buys indel tolerance — only a *locally* clean aligned run is needed — but a flip is an
+independent row in every covering window, so lean is brittle to flips (~1 %).
+**full** ([page](../../doc/cc/detect_full.md)) measures it *approximately*: the
+**bias** of low-weight checks, found for all candidates at once by a Walsh–Hadamard
+transform of the window's bit-slice histogram. A flip only shrinks a check's bias
+rather than destroying it, so full degrades gracefully through flips, indels, and
+their combination — at a ~64 KB / heavier-compute cost.
 
 ## See also
 
-- [`detect` reference](../../doc/cc/detect.md) and [Soft decoding](../../doc/soft_decoding.md).
+- [`detect_lean`](../../doc/cc/detect_lean.md) and
+  [`detect_full`](../../doc/cc/detect_full.md) references, and
+  [Soft decoding](../../doc/soft_decoding.md).
 - [04 soft_output](../04_soft_output) — the normal soft decoders, whose
   `dt_soft_bit` fields detect repurposes.

@@ -1,11 +1,18 @@
-# drifty — `detect` meta-codec
+# drifty — `detect_lean` meta-codec
 
 A **blind detector** of convolutional-code structure in an arbitrary bit stream,
 with no prior knowledge or coordination — no code, rate, generators, or alignment.
 It is **soft-output only** and standalone: unlike the other [`cc/`](README.md)
-decoders it is not built over a [`dt_cc_code`](ccode.md) and takes **no
-parameters**. It does not recover bit values; it reports, per stream position, how
-confident it is that a convolutional code is present.
+decoders it is not built over a [`dt_cc_code`](ccode.md). It does not recover bit
+values; it reports, per stream position, how confident it is that a convolutional
+code is present.
+
+`detect_lean` is the **lean, embeddable** of drifty's two blind detectors: exact
+GF(2) rank deficiency, a few KB of state, no transform. It tolerates indels and
+**~1 % flips** — the clean / very-low-noise regime. For a channel with real flip
+noise (and combinations of flips and drift), reach for the heavier
+[`detect_full`](detect_full.md), which scores parity-check *bias* and shares this
+codec's API and output.
 
 ## Output
 
@@ -60,7 +67,7 @@ K7-rate-⅓ / K5-rate-⅕ → `c_erasure ≈ 1`; a random stream gives `d = 0` �
 ## API
 
 ```c
-#include <drifty/cc/detect.h>
+#include <drifty/cc/detect_lean.h>
 
 typedef struct {
   int   decision_depth;
@@ -69,18 +76,18 @@ typedef struct {
   float p_ins_true, p_ins_false, p_ins_erase;
   float p_del;
   float p_ovr_true, p_ovr_false, p_ovr_erase;
-} dt_cc_detect_stream_params;
+} dt_cc_detect_lean_stream_params;
 
-dt_stream_soft_decoder *dt_cc_detect_soft_decoder_create(const dt_cc_detect_stream_params *params);
-void             dt_cc_detect_soft_decoder_destroy(dt_stream_soft_decoder *dec);
+dt_stream_soft_decoder *dt_cc_detect_lean_soft_decoder_create(const dt_cc_detect_lean_stream_params *params);
+void             dt_cc_detect_lean_soft_decoder_destroy(dt_stream_soft_decoder *dec);
 ```
 
 The factory takes the **same rich channel model as [`hybrid`](hybrid.md) /
-[`maxir`](maxir.md)**, so a channel you already describe for an inner codec can be
-handed to detect unchanged (copied; need not outlive the call). It returns NULL on
-a bad argument or out of memory. Drive the soft decoder through its vtable —
-`begin → decode` (repeat) `→ finalize` — like any [soft decoder](../stream.md); it
-uses no preamble.
+[`maxir`](maxir.md)** (and [`detect_full`](detect_full.md)), so a channel you
+already describe for an inner codec can be handed to detect unchanged (copied; need
+not outlive the call). It returns NULL on a bad argument or out of memory. Drive the
+soft decoder through its vtable — `begin → decode` (repeat) `→ finalize` — like any
+[soft decoder](../stream.md); it uses no preamble.
 
 ### Channel-model parameters
 
@@ -109,10 +116,12 @@ matter.
 ## Limitations
 
 - **Flips.** A flipped bit is an independent row in every window that covers it, so
-  it breaks that window's deficiency. detect targets the **clean / very-low-noise**
-  regime for flips: it holds to ~1 % bit flips (`d` degrades but stays positive) and
-  collapses to "absent" beyond that. A flip-tolerant detector needs approximate
-  low-weight parity checks / syndrome statistics / LPN-style methods (future work).
+  it breaks that window's deficiency. detect_lean targets the **clean /
+  very-low-noise** regime for flips: it holds to ~1 % bit flips (`d` degrades but
+  stays positive) and collapses to "absent" beyond that. For a channel that actually
+  flips bits, use [`detect_full`](detect_full.md) — it scores approximate parity
+  *bias* (a Walsh–Hadamard transform), which flips only weaken rather than destroy,
+  holding to ~5–8 % flips at a ~64 KB / heavier-compute cost.
 - **Indels — tolerated.** Insertions and deletions shift the bit phase (which
   desyncs an ordinary decoder), but the sliding windows only need a *locally*
   indel-free aligned run, so detection survives sparse drift, degrading gracefully:
@@ -127,6 +136,7 @@ matter.
 
 ## See also
 
+- [`detect_full`](detect_full.md) — the flip-tolerant sibling (same API and output).
 - [Soft decoding](../soft_decoding.md) and [Symbols (`bit`)](../bit.md) — the
   `dt_soft_bit` fields detect repurposes.
 - [Convolutional coding (`cc/`)](README.md) — the codec family detect senses.

@@ -1,32 +1,37 @@
 /*
- * 11 - Blind code detection: the `detect` meta-codec.
+ * 11 - Blind code detection: the `detect_lean` and `detect_full` meta-codecs.
  *
- * Every other codec here ENCODES or DECODES a known code. `detect` is different:
- * it is a blind detector that, given an arbitrary bit stream with NO prior
- * knowledge or coordination (no code, rate, generators, or alignment), reports per
- * position how confident it is that a convolutional code is present. It does not
- * recover bit values - it answers "is there a code here?".
+ * Every other codec here ENCODES or DECODES a known code. The two detect codecs are
+ * different: each is a blind detector that, given an arbitrary bit stream with NO
+ * prior knowledge or coordination (no code, rate, generators, or alignment), reports
+ * per position how confident it is that a convolutional code is present. They do not
+ * recover bit values - they answer "is there a code here?".
  *
- * Its soft output repurposes two dt_soft_bit fields (the two need not sum to 1):
+ * Soft output repurposes two dt_soft_bit fields (the two need not sum to 1):
  *   c_erasure = confidence a convolutional code IS present
  *   c_absent  = confidence a convolutional code is NOT present
  *
- * Part A: a pure coded stream reads as "present"; a pure random stream as "absent".
- * Part B: splice a coded segment into the middle of a random stream and watch
- *         detect light up exactly the coded region - it finds the code with no hint
- *         of where (or whether) it is.
+ * There are two, trading footprint for noise tolerance - this example shows when to
+ * reach for which:
+ *   detect_lean - exact GF(2) rank deficiency. A few KB, no transform; tolerates
+ *                 indels and ~1% flips. The embeddable default (Parts A and B).
+ *   detect_full - parity-check bias via a Walsh-Hadamard transform. A ~64 KB
+ *                 histogram and more compute, but tolerates flips (~5-8%), indels
+ *                 (~2-3%), and light combinations of the two (Part C).
  *
- * Method: a convolutional code is linear, so windows of coded bits are GF(2)
- * rank-deficient (parity checks) while random bits are full-rank. detect sweeps
- * candidate block sizes and measures the deficiency. It works in the clean /
- * very-low-noise regime (see doc/cc/detect.md).
+ * Part A: a pure coded stream reads "present", a pure random stream "absent" (lean).
+ * Part B: splice a coded segment into a random stream and watch lean light up
+ *         exactly the coded region - it finds the code with no hint of where it is.
+ * Part C: add bit FLIPS - which break lean's exact parity - and watch full hold on
+ *         where lean collapses, including through a combined flip+indel channel.
  *
  * Run: ./11_detect
  */
 
 #include "util.h"
 
-#include <drifty/cc/detect.h>
+#include <drifty/cc/detect_full.h>
+#include <drifty/cc/detect_lean.h>
 
 /* mean coded-confidence (c_erasure) over recovered records [lo, hi) */
 static double mean_coded(const dt_soft_bit *o, int lo, int hi) {
@@ -60,15 +65,17 @@ int main(void) {
   }
   const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
 
-  /* detect takes the same rich channel model as hybrid/maxir. We expect a clean
-   * channel here (p_flip 0), so a "no code" verdict is fully trusted; telling it
-   * to expect noise would damp the no-code confidence (a code could hide under
-   * the noise). decision_depth is required (>= 1) but unused by the detector. */
-  dt_cc_detect_stream_params dp = {0};
-  dp.decision_depth = 40;
+  /* Both detectors take the same rich channel model as hybrid/maxir. We expect a
+   * clean channel here (p_flip 0), so a "no code" verdict is fully trusted; telling
+   * a detector to expect noise would damp its no-code confidence (a code could hide
+   * under the noise). decision_depth is required (>= 1) but unused by the detectors. */
+  dt_cc_detect_lean_stream_params lean = {0};
+  lean.decision_depth = 40;
+  dt_cc_detect_full_stream_params full = {0};
+  full.decision_depth = 40;
 
-  /* ---- Part A: pure coded vs pure random ---- */
-  printf("Part A - a whole stream, coded vs random:\n");
+  /* ---- Part A: pure coded vs pure random (detect_lean) ---- */
+  printf("Part A - a whole stream, coded vs random (detect_lean):\n");
   enum { NINFO = 2000 };
   const int cap = (NINFO + K) * n + 512;
   dt_bit *coded = malloc((size_t)cap);
@@ -78,9 +85,9 @@ int main(void) {
   ex_rand_bits(msg, NINFO, &rng);
   int clen = ex_encode(code, msg, NINFO, coded, cap);
   {
-    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
+    dt_stream_soft_decoder *sd = dt_cc_detect_lean_soft_decoder_create(&lean);
     int got = ex_decode_soft(sd, coded, clen, out, cap);
-    dt_cc_detect_soft_decoder_destroy(sd);
+    dt_cc_detect_lean_soft_decoder_destroy(sd);
     printf("  coded  (%d bits): code-present ", clen);
     bar(mean_coded(out, 0, got));
     printf("   no-code %.2f\n", mean_absent(out, 0, got));
@@ -90,18 +97,18 @@ int main(void) {
     for (int i = 0; i < clen; ++i) {
       r[i] = (ex_rng_next(&rng) & 1) ? DT_TRUE : DT_FALSE;
     }
-    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
+    dt_stream_soft_decoder *sd = dt_cc_detect_lean_soft_decoder_create(&lean);
     int got = ex_decode_soft(sd, r, clen, out, cap);
-    dt_cc_detect_soft_decoder_destroy(sd);
+    dt_cc_detect_lean_soft_decoder_destroy(sd);
     printf("  random (%d bits): code-present ", clen);
     bar(mean_coded(out, 0, got));
     printf("   no-code %.2f\n", mean_absent(out, 0, got));
     free(r);
   }
 
-  /* ---- Part B: localize a coded segment hidden in random noise ---- */
-  printf("\nPart B - a coded segment spliced into a random stream. detect is given\n"
-         "no hint where (or whether) a code is; it lights up the coded region:\n\n");
+  /* ---- Part B: localize a coded segment hidden in random noise (detect_lean) ---- */
+  printf("\nPart B - a coded segment spliced into a random stream. detect_lean is\n"
+         "given no hint where (or whether) a code is; it lights up the coded region:\n\n");
   enum { PRE = 1536, MID_INFO = 1400, POST = 1536, SCAP = 16384 };
   dt_bit *stream = malloc(SCAP);
   int len = 0;
@@ -119,9 +126,9 @@ int main(void) {
   }
 
   dt_soft_bit *sout = malloc((size_t)SCAP * sizeof *sout);
-  dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
+  dt_stream_soft_decoder *sd = dt_cc_detect_lean_soft_decoder_create(&lean);
   int got = ex_decode_soft(sd, stream, len, sout, SCAP);
-  dt_cc_detect_soft_decoder_destroy(sd);
+  dt_cc_detect_lean_soft_decoder_destroy(sd);
 
   printf("  true coded region: bits [%d, %d)\n", code_lo, code_hi);
   const int step = 384; /* one detection block */
@@ -135,25 +142,62 @@ int main(void) {
   printf("\nThe bar tracks code-present confidence: ~0 in the random regions, ~1\n"
          "across the coded segment.\n");
 
-  /* ---- Part C: detection survives indels (drift that desyncs a normal decoder) ---- */
-  printf("\nPart C - detection through an insert/delete channel. Indels shift the\n"
-         "bit phase, yet detect still finds the code (the runs between indels stay\n"
-         "aligned, and it only needs one clean run to fire):\n");
+  /* ---- Part C: bit flips - where lean collapses and full holds on ---- */
+  printf("\nPart C - the same coded stream through a bit-FLIP channel. lean uses\n"
+         "exact parity, so a few flips erase the structure it looks for; full scores\n"
+         "parity BIAS, which flips only weaken. code-present confidence, lean vs full:\n\n");
   ex_rand_bits(msg, NINFO, &rng);
   clen = ex_encode(code, msg, NINFO, coded, cap);
   dt_bit *chan = malloc((size_t)cap);
-  double idel[] = {0.0, 0.005, 0.01, 0.02};
+  double fr[] = {0.0, 0.01, 0.03, 0.05};
   for (int k = 0; k < 4; ++k) {
-    int rl = ex_delete(coded, clen, idel[k], &rng, chan); /* deletions = drift */
-    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
-    int g = ex_decode_soft(sd, chan, rl, out, cap);
-    dt_cc_detect_soft_decoder_destroy(sd);
-    printf("  %.1f%% deletions (%d bits): code-present ", idel[k] * 100.0, rl);
-    bar(mean_coded(out, 0, g));
+    memcpy(chan, coded, (size_t)clen);
+    for (int i = 0; i < clen; ++i) { /* flip each bit with probability fr[k] */
+      if (ex_rng_unit(&rng) < fr[k]) {
+        chan[i] = (chan[i] == DT_TRUE) ? DT_FALSE : DT_TRUE;
+      }
+    }
+    dt_stream_soft_decoder *sl = dt_cc_detect_lean_soft_decoder_create(&lean);
+    int gl = ex_decode_soft(sl, chan, clen, out, cap);
+    double ml = mean_coded(out, 0, gl);
+    dt_cc_detect_lean_soft_decoder_destroy(sl);
+    dt_stream_soft_decoder *sf = dt_cc_detect_full_soft_decoder_create(&full);
+    int gf = ex_decode_soft(sf, chan, clen, out, cap);
+    double mf = mean_coded(out, 0, gf);
+    dt_cc_detect_full_soft_decoder_destroy(sf);
+    printf("  %.0f%% flips:  lean ", fr[k] * 100.0);
+    bar(ml);
+    printf("   full ");
+    bar(mf);
     putchar('\n');
   }
-  printf("\nDetection degrades gracefully with the indel rate (it is exact-parity\n"
-         "based, so it holds in the low-noise regime - see doc/cc/detect.md).\n");
+
+  /* combined flip + indel: the case that motivates one codec carrying both */
+  printf("\n  combined 3%% flip + 0.5%% deletion (flips AND drift at once):\n");
+  {
+    int rl = ex_delete(coded, clen, 0.005, &rng, chan); /* deletions = drift */
+    for (int i = 0; i < rl; ++i) {
+      if (ex_rng_unit(&rng) < 0.03) {
+        chan[i] = (chan[i] == DT_TRUE) ? DT_FALSE : DT_TRUE;
+      }
+    }
+    dt_stream_soft_decoder *sl = dt_cc_detect_lean_soft_decoder_create(&lean);
+    int gl = ex_decode_soft(sl, chan, rl, out, cap);
+    double ml = mean_coded(out, 0, gl);
+    dt_cc_detect_lean_soft_decoder_destroy(sl);
+    dt_stream_soft_decoder *sf = dt_cc_detect_full_soft_decoder_create(&full);
+    int gf = ex_decode_soft(sf, chan, rl, out, cap);
+    double mf = mean_coded(out, 0, gf);
+    dt_cc_detect_full_soft_decoder_destroy(sf);
+    printf("  %d bits:    lean ", rl);
+    bar(ml);
+    printf("   full ");
+    bar(mf);
+    putchar('\n');
+  }
+  printf("\nlean stays the cheap pick for clean / very-low-noise streams; full earns\n"
+         "its ~64 KB when the channel flips or drifts. See doc/cc/detect_lean.md and\n"
+         "doc/cc/detect_full.md.\n");
 
   free(coded);
   free(out);

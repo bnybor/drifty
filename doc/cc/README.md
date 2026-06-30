@@ -31,18 +31,23 @@ The symbol alphabet these components speak is defined in
 | **[vindel](vindel.md)** | drift-tolerant Viterbi | ✅ | — | `p_sub`, `p_ins`/`p_del`, `p_erase` |
 | **[hybrid](hybrid.md)** | drift-tolerant, hard + soft | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
 | **[maxir](maxir.md)** | drift-tolerant max-log-MAP | ✅ | ✅ full alphabet | `p_flip`, insertions ×3, `p_del`, overwrites ×3 |
-| **[detect](detect.md)** | blind code-presence detector (GF(2) rank) | ✅ tolerant | ✅ `c_lost`/`c_absent` | `p_flip`, insertions ×3, `p_del`, overwrites ×3 (calibration only) |
+| **[detect_lean](detect_lean.md)** | blind code-presence detector (GF(2) rank) | ✅ tolerant | ✅ `c_lost`/`c_absent` | `p_flip`, insertions ×3, `p_del`, overwrites ×3 (calibration only) |
+| **[detect_full](detect_full.md)** | blind code-presence detector (FWHT parity bias) | ✅ tolerant | ✅ `c_lost`/`c_absent` | `p_flip`, insertions ×3, `p_del`, overwrites ×3 (calibration only) |
 
 The first five correct substitutions (flipped bits) and erasures. They differ in
 whether they track **drift** (inserted/dropped bits), whether they emit **soft**
 per-bit consistencies as well as a hard decision, and how rich a channel model they
-take. **`detect`** is the odd one out — a **meta-codec** that does not decode at
-all: it blindly detects whether a convolutional code is present in an arbitrary
+take. The last two are the odd ones out — **meta-codecs** that do not decode at
+all: each blindly detects whether a convolutional code is present in an arbitrary
 stream (no code/rate/alignment known) and reports a per-position code-present
-(`c_lost`, surfaced in `c_erasure`) vs no-code (`c_absent`) confidence. It is not
-built over a `dt_cc_code`, but takes the same rich channel model as `hybrid` /
-`maxir` (used to calibrate the no-code verdict). It works in the clean /
-very-low-noise regime; see [its page](detect.md).
+(`c_lost`, surfaced in `c_erasure`) vs no-code (`c_absent`) confidence. Neither is
+built over a `dt_cc_code`, but both take the same rich channel model as `hybrid` /
+`maxir` (used to calibrate the no-code verdict). They share one API and output and
+differ only in footprint vs noise tolerance: **`detect_lean`** uses exact GF(2)
+rank — a few KB, for clean / very-low-noise streams ([page](detect_lean.md)) —
+while **`detect_full`** scores parity-check *bias* via a Walsh–Hadamard transform —
+a ~64 KB histogram and more compute, tolerating flips, indels, and combinations
+([page](detect_full.md)).
 
 ## Choosing a decoder
 

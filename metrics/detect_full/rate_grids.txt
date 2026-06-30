@@ -1,0 +1,13 @@
+# Per-axis channel rate grids for the detect metrics harnesses. These grids are kept
+# IDENTICAL in metrics/detect_lean/ and metrics/detect_full/ so corresponding plots
+# share an x-axis and the two codecs can be compared side by side - if you retune one,
+# mirror it in the other. One line per axis: "<axis>  <rate> <rate> ...". '#' begins a
+# comment; rates are per coded bit; read at startup (retune without recompiling).
+#
+# Points are clustered across the UNION of both codecs' transition bands - detect_lean's
+# knees are low, detect_full's higher - and kept sparse in the shared plateau/floor.
+# Per axis (union band): flip ~0.008-0.12, insert/delete ~0.002-0.07, erase ~0.018-0.26.
+flip    0 0.004 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.024 0.028 0.032 0.036 0.04 0.045 0.05 0.055 0.06 0.065 0.07 0.075 0.08 0.085 0.09 0.095 0.1 0.11 0.12
+insert  0 0.002 0.004 0.006 0.008 0.01 0.012 0.015 0.018 0.021 0.025 0.029 0.033 0.038 0.043 0.05 0.057 0.064 0.07
+delete  0 0.002 0.004 0.006 0.008 0.01 0.012 0.015 0.018 0.021 0.025 0.029 0.033 0.038 0.043 0.05 0.057 0.064 0.07
+erase   0 0.006 0.012 0.018 0.022 0.026 0.03 0.035 0.04 0.045 0.05 0.06 0.07 0.08 0.09 0.1 0.11 0.12 0.13 0.14 0.15 0.16 0.18 0.2 0.22 0.24 0.26

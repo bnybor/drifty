@@ -12,8 +12,9 @@ code is present.
 flips), detect_noisy scores the **bias** of approximate parity checks with a fast
 Walsh–Hadamard transform, which degrades *gracefully* with noise: it tolerates flips
 (to ~5 %, marginally to ~8 %), indels (to ~2–3 %), and **light–moderate combinations
-of the two**. The cost is a **~64 KB transform histogram** and roughly one to two
-orders more compute per bit. For a clean / very-low-noise channel where footprint
+of the two**. The cost is a **~64 KB transform histogram** and somewhat more compute
+(a heavier per-window transform, only partly offset by its coarser sliding step —
+~1.5–2× slower than detect_clean in measurement). For a clean / very-low-noise channel where footprint
 matters, prefer the cheaper [`detect_clean`](detect_clean.md); the two share this
 codec's API and output.
 
@@ -158,9 +159,11 @@ matter.
   honest output is "uncertain", and detect_noisy keeps coded streams measurably above
   random even there.
 - **Cost.** One `2^{L_c}`-entry histogram (~64 KB) plus a Walsh–Hadamard transform
-  per window-stride — roughly one to two orders more work per bit than detect_clean,
-  whose state is a few KB with no transform. On a clean channel detect_clean reaches
-  the same verdict for far less, so spend detect_noisy only where the noise warrants.
+  per window-stride. That transform is heavy; detect_noisy slides a coarser window
+  than detect_clean (`DET_STEP` 300 vs 32 bits), so it runs ~10× fewer windows, which
+  only partly offsets it — net it measures **~1.5–2× slower** than detect_clean (a
+  few KB, no transform), and needs the **~64 KB** besides. Spend it only where the
+  noise warrants.
 - **Scope.** Parity-check bias senses *linear* redundancy in general — a block linear
   code or an LFSR scrambler would also register as "code present". For the intended
   use (a stream is either uncoded/random or convolutionally coded) this is the right

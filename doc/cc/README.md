@@ -46,7 +46,7 @@ built over a `dt_cc_code`, but both take the same rich channel model as `hybrid`
 differ only in footprint vs noise tolerance: **`detect_clean`** uses exact GF(2)
 rank — a few KB, for clean / very-low-noise streams ([page](detect_clean.md)) —
 while **`detect_noisy`** scores parity-check *bias* via a Walsh–Hadamard transform —
-a ~64 KB histogram and more compute, tolerating flips, indels, and combinations
+a ~64 KB histogram and somewhat more compute, tolerating flips, indels, and combinations
 ([page](detect_noisy.md)).
 
 ## Choosing a decoder

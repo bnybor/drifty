@@ -25,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`detect_noisy`** (`dt_cc_detect_noisy_soft_decoder_create`) — parity-check
     **bias** scored by a fast Walsh–Hadamard transform, which degrades gracefully
     with noise: it tolerates flips (~5–8 %), indels (~2–3 %), and light–moderate
-    combinations of the two, at the cost of a ~64 KB transform histogram and roughly
-    one to two orders more compute per bit. See `doc/cc/detect_noisy.md`.
+    combinations of the two, at the cost of a ~64 KB transform histogram and somewhat
+    more compute (~1.5–2× slower than detect_clean). See `doc/cc/detect_noisy.md`.
 
   Both factories take the same rich channel model as `hybrid` / `maxir`, used to
   calibrate how much a null result is trusted (expected flip noise damps the no-code

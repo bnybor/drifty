@@ -16,7 +16,7 @@
  *   detect_clean - exact GF(2) rank deficiency. A few KB, no transform; tolerates
  *                 indels and ~1% flips. The embeddable default (Parts A and B).
  *   detect_noisy - parity-check bias via a Walsh-Hadamard transform. A ~64 KB
- *                 histogram and more compute, but tolerates flips (~5-8%), indels
+ *                 histogram and somewhat more compute, but tolerates flips (~5-8%), indels
  *                 (~2-3%), and light combinations of the two (Part C).
  *
  * Part A: a pure coded stream reads "present", a pure random stream "absent" (clean).

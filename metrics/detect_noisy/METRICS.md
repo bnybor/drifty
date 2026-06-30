@@ -10,9 +10,9 @@ than edit distance. It is the noise-tolerant sibling of
 substantially further out at a ~64 KB / heavier-compute cost.
 
 > [!NOTE]
-> **The committed CSVs and plots are a COARSE pass** (low trials / info_bits) for
-> fast iteration on the grids and parameters. Re-run the full sweep (below) once the
-> shape looks right.
+> The committed CSVs and plots are the **full sweep** (`40 6000 0xC0FFEE`) over the
+> shipped `rate_grids.txt`. For fast iteration on the grids, a coarse pass (e.g.
+> `4 2500`) regenerates everything in seconds.
 
 ## What is measured
 
@@ -55,13 +55,13 @@ is real regardless of what you expected) and the **INSERT/DELETE** axes barely m
 cmake -S . -B build -DDRIFTY_BUILD_BENCH=ON
 cmake --build build --target dt_detect_noisy_metrics
 
-# Coarse pass (fast - what is committed):
-build/metrics/detect_noisy/dt_detect_noisy_metrics 4 2500 0xC0FFEE pegged  > metrics/detect_noisy/untuned/metrics.csv
-build/metrics/detect_noisy/dt_detect_noisy_metrics 4 2500 0xC0FFEE matched > metrics/detect_noisy/tuned/metrics.csv
-
-# Full sweep (more trials / bits; run when done iterating):
+# Full sweep (what is committed):
 build/metrics/detect_noisy/dt_detect_noisy_metrics 40 6000 0xC0FFEE pegged  > metrics/detect_noisy/untuned/metrics.csv
 build/metrics/detect_noisy/dt_detect_noisy_metrics 40 6000 0xC0FFEE matched > metrics/detect_noisy/tuned/metrics.csv
+
+# Coarse pass (fast, for iterating on the grids):
+build/metrics/detect_noisy/dt_detect_noisy_metrics 4 2500 0xC0FFEE pegged  > metrics/detect_noisy/untuned/metrics.csv
+build/metrics/detect_noisy/dt_detect_noisy_metrics 4 2500 0xC0FFEE matched > metrics/detect_noisy/tuned/metrics.csv
 
 # Plot both confidences (with the random baseline) into each variation's plots/.
 python3 -m venv .venv && .venv/bin/pip install matplotlib   # once

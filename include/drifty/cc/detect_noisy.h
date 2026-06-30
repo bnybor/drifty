@@ -44,8 +44,10 @@ extern "C" {
  * parity (it holds only to ~1% flips), detect_noisy scores BIASED parity checks via
  * a fast Walsh-Hadamard transform, which degrades gracefully with noise. It
  * tolerates flips (to ~5%, marginally to ~8%), indels (to ~2-3%), and light-moderate
- * COMBINATIONS of the two - at the cost of a ~64 KB transform histogram and roughly
- * one to two orders more compute per stream bit. For a clean / very-low-noise
+ * COMBINATIONS of the two - at the cost of a ~64 KB transform histogram and somewhat
+ * more compute (a heavier per-window transform, only partly offset by its coarser
+ * sliding step - ~1.5-2x slower than detect_clean in measurement). For a clean /
+ * very-low-noise
  * channel where footprint matters (a few KB, no transform), prefer detect_clean
  * (<drifty/cc/detect_clean.h>). Same API and output as this one.
  *

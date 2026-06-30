@@ -27,7 +27,7 @@
 /*
  * dt_detect_clean_metrics - Monte-Carlo measurement of the detect_clean blind
  * code-presence detector (exact GF(2) sliding-window rank deficiency) as a function
- * of the channel's flip / insert / delete / erase rates, for each standard code.
+ * of the channel's flip / insert / delete / erase / invalid rates, per standard code.
  *
  * detect_clean does not recover bits - it answers "is a convolutional code present?".
  * So for one point we run TWO streams through the channel: a CODED one (a random
@@ -44,8 +44,8 @@
  * a pure-random BASELINE to compare against: detection works to the extent the coded
  * curves stand clear of the random ones.
  *
- * Each axis (flip, insert, delete, erase) is swept independently with the other
- * rates at zero. The detector takes a channel model, selected by a VARIATION:
+ * Each axis (flip, insert, delete, erase, invalid) is swept independently with the
+ * other rates at zero. The detector takes a channel model, selected by a VARIATION:
  *
  *   pegged  - the model is fixed at a flat 1% on every impairment, regardless of
  *             axis or rate (the decoder never told what the channel does).
@@ -57,6 +57,14 @@
  * window could still be a code the flips broke), so matched FLIP and ERASE sweeps
  * LIFT the c_erasure random baseline as the rate climbs, while c_absent (a
  * model-independent fit to random) and the INSERT/DELETE axes are unaffected.
+ *
+ * The INVALID axis is different in kind. It marks coded bits DT_INVALID - a symbol no
+ * single code could emit at that spot. detect reads invalid PLACEMENT as present-axis
+ * evidence: lone or odd-length invalids damp the code-present read (c_erasure) toward
+ * 0, while leaving c_absent untouched. That damping is model-independent (there is no
+ * params knob for it), so matched and pegged coincide on this axis. The sweep marks
+ * bits at random, which at low rates lands isolated singletons - the un-encodable
+ * worst case - so the coded c_erasure curve collapses with only a few percent invalid.
  *
  * Output is CSV on stdout (see header row); feed it to plot_metrics.py.
  *
@@ -132,8 +140,8 @@ static const code_entry CODES[] = {
 };
 #define N_CODES ((int)(sizeof(CODES) / sizeof(CODES[0])))
 
-typedef enum { AXIS_FLIP, AXIS_INSERT, AXIS_DELETE, AXIS_ERASE } axis;
-static const char *AXIS_NAME[] = {"flip", "insert", "delete", "erase"};
+typedef enum { AXIS_FLIP, AXIS_INSERT, AXIS_DELETE, AXIS_ERASE, AXIS_INVALID } axis;
+static const char *AXIS_NAME[] = {"flip", "insert", "delete", "erase", "invalid"};
 #define N_AXES ((int)(sizeof(AXIS_NAME) / sizeof(AXIS_NAME[0])))
 
 typedef enum { VAR_PEGGED, VAR_MATCHED } variation;
@@ -239,11 +247,12 @@ static int encode_stream(const dt_cc_code *code, const uint8_t *msg, int info_bi
 
 /* Apply the channel to src[0..len): with probability p_ins emit a random bit
  * before each, with p_del drop the bit, otherwise emit it flipped with p_flip and
- * then, with p_erase, marked DT_ERASURE. Returns received length; stores a
- * malloc'd buffer in *out (caller frees). */
+ * then, with p_erase, marked DT_ERASURE - or, with p_invalid, marked DT_INVALID (a
+ * symbol no code could emit there). Returns received length; stores a malloc'd
+ * buffer in *out (caller frees). */
 static int apply_channel(const uint8_t *src, int len, double p_flip, double p_ins,
-                         double p_del, double p_erase, uint64_t *rng,
-                         uint8_t **out) {
+                         double p_del, double p_erase, double p_invalid,
+                         uint64_t *rng, uint8_t **out) {
   int cap = len + len / 2 + 64;
   uint8_t *rx = xmalloc((size_t)cap);
   int rl = 0;
@@ -269,6 +278,11 @@ static int apply_channel(const uint8_t *src, int len, double p_flip, double p_in
     if (p_erase > 0.0 && rng_unit(rng) < p_erase) {
       bit = DT_ERASURE;
     }
+    /* Guarded so p_invalid == 0 draws no PRNG: the other axes' streams stay
+     * bit-identical to before this axis existed. */
+    if (p_invalid > 0.0 && rng_unit(rng) < p_invalid) {
+      bit = DT_INVALID;
+    }
     rx[rl++] = bit;
   }
   *out = rx;
@@ -292,7 +306,9 @@ static point_model make_model(const dt_cc_code *code, axis a, double rate,
     if (a == AXIS_FLIP) p_flip = clamp_double(rate, 0.0, 0.999);
     else if (a == AXIS_INSERT) p_ins = clamp_double(rate, 0.0, 0.95);
     else if (a == AXIS_DELETE) p_del = clamp_double(rate, 0.0, 0.95);
-    else /* AXIS_ERASE */ p_erase = clamp_double(rate, 0.0, 0.999);
+    else if (a == AXIS_ERASE) p_erase = clamp_double(rate, 0.0, 0.999);
+    /* AXIS_INVALID: invalid-symbol damping is model-independent (no params knob),
+     * so matched tracks pegged on this axis - the floor model stands. */
   }
   dt_cc_detect_clean_stream_params p = {0};
   p.decision_depth = 8 * m.K; /* required >= 1 but unused by the rank method */
@@ -368,6 +384,7 @@ static point_result run_point(const dt_cc_code *code, axis a, double rate,
   const double c_ins = a == AXIS_INSERT ? rate : 0.0;
   const double c_del = a == AXIS_DELETE ? rate : 0.0;
   const double c_erase = a == AXIS_ERASE ? rate : 0.0;
+  const double c_inval = a == AXIS_INVALID ? rate : 0.0;
   point_result acc = {0, 0, 0, 0};
 
   for (int t = 0; t < trials; ++t) {
@@ -379,7 +396,8 @@ static point_result run_point(const dt_cc_code *code, axis a, double rate,
     }
     int clen = encode_stream(code, msg, info_bits, coded, coded_cap);
     uint8_t *rx = NULL;
-    int rl = apply_channel(coded, clen, c_flip, c_ins, c_del, c_erase, &rng, &rx);
+    int rl =
+        apply_channel(coded, clen, c_flip, c_ins, c_del, c_erase, c_inval, &rng, &rx);
     double cp, ca;
     run_detect(&m.params, rx, rl, &cp, &ca);
     free(rx);
@@ -390,7 +408,8 @@ static point_result run_point(const dt_cc_code *code, axis a, double rate,
       rnd[i] = bit_sym((unsigned int)rng_next(&rng));
     }
     uint8_t *rrx = NULL;
-    int rrl = apply_channel(rnd, clen, c_flip, c_ins, c_del, c_erase, &rng, &rrx);
+    int rrl =
+        apply_channel(rnd, clen, c_flip, c_ins, c_del, c_erase, c_inval, &rng, &rrx);
     double rp, ra;
     run_detect(&m.params, rrx, rrl, &rp, &ra);
     free(rrx);

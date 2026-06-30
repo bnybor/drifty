@@ -3,7 +3,7 @@
 """Plot blind code-presence detection metrics vs channel rate.
 
 Reads the CSV produced by a dt_detect_{clean,noisy}_metrics harness and renders, for
-each channel axis (flip / insert / delete / erase), two figures - one per soft
+each channel axis (flip / insert / delete / erase / invalid), two figures - one per soft
 consistency read the detector emits:
 
   present (c_erasure) - consistency with a code present.

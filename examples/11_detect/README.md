@@ -32,6 +32,10 @@ to reach for which**:
   parity, and watch detect_noisy hold on where detect_clean collapses — including
   through a combined flip+drift channel, the case that motivates carrying both noise
   types in one codec.
+- **Part D (clean):** **`DT_INVALID`** symbols as *present-axis evidence* — a value no
+  code could emit at that spot. Lone (un-encodable) invalids damp `c_erasure` while
+  leaving `c_absent` low — the `(low, low)` corner — whereas an encodable invalid *run*
+  carries no penalty.
 
 ## Run
 
@@ -62,6 +66,11 @@ Part C - the same coded stream through a bit-FLIP channel...
 
   combined 3% flip + 0.5% deletion (flips AND drift at once):
   3987 bits:    clean [                        ] 0.00   noisy [########                ] 0.35
+
+Part D - DT_INVALID symbols as present-axis evidence (detect_clean):
+  coded clean              code-present [########################] 1.00   no-code 0.00
+  coded + lone invalids    code-present [                        ] 0.00   no-code 0.00
+  coded + one invalid run  code-present [########################] 1.00   no-code 0.00
 ```
 
 ## Reading it
@@ -76,6 +85,11 @@ Part C - the same coded stream through a bit-FLIP channel...
   weaken — it stays near 1.00 through 3 % and is still firing at 5 %. Under the
   combined flip+deletion channel detect_clean reads a flat 0 while detect_noisy keeps
   measurable evidence (and stays well clear of what it reports on a random stream).
+- **Part D** is a third kind of evidence: not noise that *obscures* a code, but a
+  symbol that *rules one out*. A `DT_INVALID` whose placement no single code could emit
+  — a lone invalid, or runs of differing length — drives code-present to 0 while no-code
+  stays low: the `(low, low)` corner, "structure, but not from one code". A single
+  contiguous invalid run is an encodable shape, so it reads like a clean coded stream.
 - A mean of `1.00`/`0.00` is the analyzable interior; the very first/last positions
   have too few neighbours for a full window, so a detector abstains there — visible
   as the partial edge blocks in Part B.

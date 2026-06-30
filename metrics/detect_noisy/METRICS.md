@@ -2,8 +2,8 @@
 
 `metrics/detect_noisy/dt_detect_noisy_metrics.c` measures the **detect_noisy** blind
 code-presence detector ([doc](../../doc/cc/detect_noisy.md)) — parity-check **bias**
-scored by a fast Walsh–Hadamard transform — across the four channel impairments, for
-each standard code. It shares the framework and CLI of the FEC harnesses, but
+scored by a fast Walsh–Hadamard transform — across the channel's flip / insert / delete
+/ erase / invalid axes, for each standard code. It shares the framework and CLI of the FEC harnesses, but
 detect_noisy does not recover bits, so the metrics are detection consistency rather
 than edit distance. It is the noise-tolerant sibling of
 [detect_clean](../detect_clean/METRICS.md): same metrics and plots, with the flip
@@ -29,7 +29,15 @@ and average each of the detector's two consistency reads over the stream interio
 
 Emitting the random stream's means alongside the coded ones gives every plot a
 pure-random **baseline**: detection works to the extent the coded curves stand clear
-of it. Each axis (flip / insert / delete / erase) is swept independently.
+of it. Each axis (flip / insert / delete / erase / invalid) is swept independently.
+
+The **invalid** axis is different in kind. It marks coded bits `DT_INVALID` — a symbol
+no single code could emit at that spot — and detect reads invalid *placement* as
+present-axis evidence. Rising invalid rate **collapses `c_erasure`**, even faster than
+for detect_clean (the larger window catches more invalids per scored region), driving
+coded to the `(low, low)` corner — code-like bias that nonetheless carries un-encodable
+symbols — while `c_absent` stays low (the surviving rows still bias). The damping has no
+model knob, so **pegged and matched coincide** on this axis.
 
 ## Variations (the decoder's channel model)
 
@@ -89,6 +97,10 @@ detection margin. The `c_erasure` plots show the *model calibration* instead (be
 detect_noisy degrades **gracefully**: on the `c_absent` plots the coded curves climb
 toward the ceiling only past ~5–8 % flips, ~2–3 % indels, ~16 % erasures.
 
+The **invalid** axis is the exception to "read it on `c_absent`": there the signal is
+the **`c_erasure` collapse** itself (invalids are present-axis evidence), read directly
+off the present plot, and pegged ≡ matched (no model knob).
+
 ### Code-present consistency (`c_erasure`)
 
 **Where the variation bites.** Coded stays high; the **random baseline is lifted by
@@ -104,6 +116,13 @@ INSERT/DELETE barely move the baseline (indels don't feed detectability).
 | insert | <img src="untuned/plots/present_vs_insert.png" width="420"> | <img src="tuned/plots/present_vs_insert.png" width="420"> |
 | delete | <img src="untuned/plots/present_vs_delete.png" width="420"> | <img src="tuned/plots/present_vs_delete.png" width="420"> |
 | erase  | <img src="untuned/plots/present_vs_erase.png"  width="420"> | <img src="tuned/plots/present_vs_erase.png"  width="420"> |
+| invalid | <img src="untuned/plots/present_vs_invalid.png" width="420"> | <img src="tuned/plots/present_vs_invalid.png" width="420"> |
+
+On the **invalid** axis `c_erasure` *is* the detection read: the coded curve **collapses**
+to ~0 within a few tenths of a percent (the 1200-bit window catches many invalids, each
+lone one un-encodable), faster than detect_clean's, and the two columns are identical (no
+model knob). Coded then sits at `(low, low)` — the bias still says "not random" (next
+section) while the invalids say "not a single code".
 
 ### No-code consistency (`c_absent`)
 
@@ -112,7 +131,9 @@ model never touches this axis). The random baseline sits at/near the ceiling
 (~0.93–1.0); the coded curves rise from ~0 to meet it as flips/indels/erasures erode
 the bias. The knee (coded ≈ 0.5, half the bias gone) is ~7 % flips for K7-rate-½,
 later for the more-redundant codes; the coded-to-ceiling gap is the readable
-detection margin.
+detection margin. On the **invalid** axis this read barely moves — coded `c_absent`
+stays low because the non-invalid rows still bias — so invalids register only on the
+present plot.
 
 | axis | pegged | matched |
 |---|---|---|
@@ -120,6 +141,7 @@ detection margin.
 | insert | <img src="untuned/plots/absent_vs_insert.png" width="420"> | <img src="tuned/plots/absent_vs_insert.png" width="420"> |
 | delete | <img src="untuned/plots/absent_vs_delete.png" width="420"> | <img src="tuned/plots/absent_vs_delete.png" width="420"> |
 | erase  | <img src="untuned/plots/absent_vs_erase.png"  width="420"> | <img src="tuned/plots/absent_vs_erase.png"  width="420"> |
+| invalid | <img src="untuned/plots/absent_vs_invalid.png" width="420"> | <img src="tuned/plots/absent_vs_invalid.png" width="420"> |
 
 ## Iterating
 

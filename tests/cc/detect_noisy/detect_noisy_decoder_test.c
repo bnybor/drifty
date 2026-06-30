@@ -33,7 +33,8 @@
  *   c_absent  = consistency with "no code / the stream is random"
  * The no-discriminating-evidence state is (1, 1) - an all-non-bit run, or the warm-up
  * tail. Beyond the basics (coded is consistent with a code, random fits random, the
- * (1,1) no-evidence state, the channel model lifting the code-present axis, field
+ * (1,1) no-evidence state, the channel model lifting the code-present axis, un-encodable
+ * DT_INVALID placement damping the code-present axis where a window scored, field
  * hygiene, lifecycle), these confirm detect_noisy's reason for being over
  * detect_clean: code-present consistency survives FLIPS, indels, and light
  * COMBINATIONS of the two.
@@ -321,6 +322,45 @@ static void test_no_evidence(void) {
   free(out);
 }
 
+/* DT_INVALID is present-axis evidence here too - lone or odd-length invalids damp the
+ * CODE-PRESENT read (c_erasure) while leaving c_absent untouched - but detect_noisy
+ * weighs it only where a window actually SCORED. On a coded stream the singletons
+ * crush c_erasure; on an all-non-bit run (all erasures) no window scores, so the
+ * invalids are not weighed and the verdict stays at the (1, 1) no-evidence state - the
+ * bias detector has nothing to attach the evidence to. (detect_clean, whose rank
+ * method needs no scored window, DOES damp invalids on an all-erasure base; this is
+ * the one place the two engines read the same input differently.) */
+static void test_invalid_evidence(void) {
+  printf("detect DT_INVALID present-axis evidence (weighed only where a window scored):\n");
+  enum { NINFO = 3000, CAP = NINFO * 5 + 256 };
+  uint64_t rng = 0xC0DE99u;
+  dt_cc_detect_noisy_stream_params p = clean_params();
+  dt_bit *buf = malloc(CAP);
+  dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
+  double present, absent;
+
+  /* Coded stream, then lone invalids spliced in: the windows still score (most rows
+   * are bits), and the un-encodable singletons crush the code-present read. */
+  int clen = encode(DT_CC_CODE_K7_RATE_1_2, NINFO, buf, CAP, &rng);
+  for (int i = 50; i < clen; i += 50) buf[i] = DT_INVALID;
+  int got = detect_all(&p, buf, clen, out, CAP);
+  means(out, got, &present, &absent);
+  check_lt("coded + invalid singletons: code-present crushed", present, 0.1);
+
+  /* All-erasure base + the same singletons: no window scores (every row is a non-bit),
+   * so the invalids are not weighed - the verdict stays (1, 1), NOT damped. */
+  enum { RL = 6000 };
+  for (int i = 0; i < RL; ++i) buf[i] = DT_ERASURE;
+  for (int i = 20; i < RL; i += 20) buf[i] = DT_INVALID;
+  got = detect_all(&p, buf, RL, out, CAP);
+  means(out, got, &present, &absent);
+  check_gt("all-erasure + invalids: unscored, stays (1,1) present", present, 0.9);
+  check_gt("all-erasure + invalids: unscored, stays (1,1) absent", absent, 0.9);
+
+  free(buf);
+  free(out);
+}
+
 /* detect_noisy's headline over detect_clean: code-present consistency holds through
  * FLIPS. A coded stream through a 3% bit-flip channel stays consistent with a code
  * (the parity bias only shrinks, it is not destroyed), while a random stream through
@@ -438,6 +478,7 @@ int main(void) {
   test_rejects_random();
   test_noise_calibration();
   test_no_evidence();
+  test_invalid_evidence();
   test_flip_tolerance();
   test_indel_tolerance();
   test_combined_tolerance();

@@ -42,8 +42,10 @@ all: each blindly detects whether a convolutional code is present in an arbitrar
 stream (no code/rate/alignment known) and reports a per-position code-present
 (`c_erasure`) vs no-code (`c_absent`) consistency. Neither is
 built over a `dt_cc_code`, but both take the same rich channel model as `hybrid` /
-`maxir` (used to calibrate the code-present read when flips are expected). They share one API and output and
-differ only in footprint vs noise tolerance: **`detect_clean`** uses exact GF(2)
+`maxir` (used to calibrate the code-present read when flips are expected). Both also
+read a **`DT_INVALID`** symbol as *present-axis evidence* — a placement no single code
+could emit damps the code-present read while leaving the no-code read alone. They share
+one API and output and differ only in footprint vs noise tolerance: **`detect_clean`** uses exact GF(2)
 rank — a few KB, for clean / very-low-noise streams ([page](detect_clean.md)) —
 while **`detect_noisy`** scores parity-check *bias* via a Walsh–Hadamard transform —
 a ~64 KB histogram and somewhat more compute, tolerating flips, indels, and combinations

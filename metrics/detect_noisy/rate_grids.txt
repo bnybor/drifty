@@ -7,7 +7,12 @@
 # Points are clustered across the UNION of both codecs' transition bands - detect_clean's
 # knees are low, detect_noisy's higher - and kept sparse in the shared plateau/floor.
 # Per axis (union band): flip ~0.008-0.12, insert/delete ~0.002-0.07, erase ~0.018-0.26.
+# INVALID runs the other way: the knee is very low and detect_noisy's sits BELOW
+# detect_clean's (its bigger window catches more invalids per scored region), so the band
+# clusters near 0 - invalid ~0.0006-0.02. (invalid placement is model-independent, so the
+# matched and pegged invalid curves coincide.)
 flip    0 0.004 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.024 0.028 0.032 0.036 0.04 0.045 0.05 0.055 0.06 0.065 0.07 0.075 0.08 0.085 0.09 0.095 0.1 0.11 0.12
 insert  0 0.002 0.004 0.006 0.008 0.01 0.012 0.015 0.018 0.021 0.025 0.029 0.033 0.038 0.043 0.05 0.057 0.064 0.07
 delete  0 0.002 0.004 0.006 0.008 0.01 0.012 0.015 0.018 0.021 0.025 0.029 0.033 0.038 0.043 0.05 0.057 0.064 0.07
 erase   0 0.006 0.012 0.018 0.022 0.026 0.03 0.035 0.04 0.045 0.05 0.06 0.07 0.08 0.09 0.1 0.11 0.12 0.13 0.14 0.15 0.16 0.18 0.2 0.22 0.24 0.26
+invalid 0 0.0003 0.0006 0.001 0.0015 0.002 0.0025 0.003 0.004 0.005 0.006 0.008 0.01 0.013 0.016 0.02 0.03 0.04 0.05

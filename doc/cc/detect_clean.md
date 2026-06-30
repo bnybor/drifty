@@ -28,10 +28,20 @@ These are two INDEPENDENT goodness-of-fit reads, not a probability split: each a
 "does the data fail to contradict this hypothesis?", so they need **not** sum to 1.
 `(high, low)` reads as a code, `(low, high)` as random; **`(1, 1)`** means *no
 discriminating evidence* — an all-non-bit run (e.g. all-erasure) or the warm-up /
-flush tail, where nothing observed contradicts either hypothesis — and `(low, low)`
-is unreachable from the single rank statistic. The code-present read rides in
-`c_erasure` by the engine convention (internal `c_lost` → soft `c_erasure`). One
-record is emitted per input bit (output trails input by up to one analysis block).
+flush tail, where nothing observed contradicts either hypothesis.
+
+A **`DT_INVALID`** symbol is **present-axis evidence**: not a bit, so it never argues
+for or against random (`c_absent` is untouched), but a placement no single encoder
+could emit — a lone invalid, or runs of differing length — damps `c_erasure` toward 0
+(a real code could not have produced it); an invalid in an *encodable* shape (a single
+contiguous run) carries no penalty. This makes **`(low, low)`** reachable: code-like
+structure (`c_absent` low) carrying un-encodable invalids (`c_erasure` low) — the
+catalogue-mismatch corner. Other non-bits (`DT_ERASURE`/`DT_ABSENT`/`DT_NONE`) are
+neutral don't-knows and damp neither axis.
+
+The code-present read rides in `c_erasure` by the engine convention (internal
+`c_lost` → soft `c_erasure`). One record is emitted per input bit (output trails input
+by up to one analysis block).
 
 ## Method — GF(2) sliding strided-window rank deficiency
 
@@ -65,6 +75,16 @@ position the **max deficiency over the windows covering it**:
   not have been flipped into full rank: `c_erasure = 1 − detectability · fillconf`
   (see the channel model).
 - never covered (the tail, or an all-non-bit run) → **`(1, 1)`**, no evidence.
+
+Overlaid on the `d` verdict is a **`DT_INVALID` placement** check, present-axis only and
+independent of `d`: a row carrying a non-bit is dropped from the rank as a don't-know,
+but an invalid whose *placement* no single encoder could emit is positive evidence
+against a code. Each un-encodable **unit** — a singleton (a length-1 invalid run), plus
+each extra distinct run-length present — damps `c_erasure` by a factor `4^{−1}` (and
+`c_absent` is left untouched). A single invalid run, or several of equal length, is an
+encodable shape and adds no penalty. So a coded window spliced with lone invalids reads
+`(low, low)`, while an all-erasure run carrying the same invalids stays `(low, 1)` — the
+deficiency is what `c_absent` keys on, and there is none.
 
 So a code is detected wherever a *locally* clean aligned run exists — an indel only
 kills the windows that span it, not the runs between them — and a window crossing a

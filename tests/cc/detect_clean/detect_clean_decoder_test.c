@@ -35,8 +35,10 @@
  * flush tail - not (0, 0). The tests confirm: a coded stream is consistent with a
  * code and contradicts random; a random stream the reverse (under a clean model);
  * the channel model lifts the CODE-PRESENT axis (not the no-code one) when flips are
- * expected; an all-erasure run reads (1, 1); indels are tolerated; output count
- * tracks input; only the two fields are populated; and the lifecycle is sound.
+ * expected; an all-erasure run reads (1, 1); un-encodable DT_INVALID placement damps
+ * the CODE-PRESENT axis only (an encodable invalid run does not); indels are
+ * tolerated; output count tracks input; only the two fields are populated; and the
+ * lifecycle is sound.
  */
 
 #include <drifty/cc/ccode.h>
@@ -292,6 +294,53 @@ static void test_no_evidence(void) {
   free(out);
 }
 
+/* DT_INVALID is present-axis evidence. A placement no single convolutional encoder
+ * could emit - a lone invalid (a length-1 run), or runs of differing length - damps
+ * the CODE-PRESENT read (c_erasure) toward 0, while leaving c_absent (the fit to
+ * random) untouched: an invalid is off the random-boolean manifold too, so it never
+ * argues FOR random. An ENCODABLE invalid shape (a single contiguous run, one trellis
+ * offset) carries no penalty. The damping applies even with no other usable bits (an
+ * all-erasure base), and on a coded stream it drives c_erasure down off its ceiling -
+ * code-like structure that nonetheless carries un-encodable symbols. */
+static void test_invalid_evidence(void) {
+  printf("detect DT_INVALID present-axis evidence (damps code-present, not no-code):\n");
+  enum { RL = 4000, CAP = RL + 256 };
+  dt_cc_detect_clean_stream_params p = clean_params();
+  dt_bit *rx = malloc(CAP);
+  dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
+  double present, absent;
+
+  /* Lone invalids (singletons) over an all-erasure base: un-encodable, so c_erasure
+   * is crushed while c_absent stays at the no-evidence ceiling (~1). Contrast
+   * test_no_evidence, where the same base with NO invalids reads (1, 1). */
+  for (int i = 0; i < RL; ++i) rx[i] = DT_ERASURE;
+  for (int i = 20; i < RL; i += 20) rx[i] = DT_INVALID;
+  int got = detect_all(&p, rx, RL, out, CAP);
+  means(out, got, &present, &absent);
+  check_lt("invalid singletons: code-present consistency crushed", present, 0.1);
+  check_gt("invalid singletons: no-code consistency untouched", absent, 0.9);
+
+  /* A single contiguous invalid RUN is an encodable shape (one offset) and adds no
+   * penalty: it reads like an all-non-bit gap, (1, 1). */
+  for (int i = 0; i < RL; ++i) rx[i] = DT_ERASURE;
+  for (int i = 1000; i < 1100; ++i) rx[i] = DT_INVALID;
+  got = detect_all(&p, rx, RL, out, CAP);
+  means(out, got, &present, &absent);
+  check_gt("single invalid run: encodable shape, no damping", present, 0.9);
+
+  /* On a CODED stream the same singletons contradict a single code: c_erasure drops
+   * off its ~1 ceiling even though the underlying structure is still code-like. */
+  uint64_t rng = 0xC0DE99u;
+  int clen = encode(DT_CC_CODE_K7_RATE_1_2, 1500, rx, CAP, &rng);
+  for (int i = 50; i < clen; i += 50) rx[i] = DT_INVALID;
+  got = detect_all(&p, rx, clen, out, CAP);
+  means(out, got, &present, &absent);
+  check_lt("coded + invalid singletons: code-present contradicted", present, 0.1);
+
+  free(rx);
+  free(out);
+}
+
 /* Drop each bit with probability p (a deletion channel); returns the new length.
  * Deletions drift the stream's phase - the case the sliding-window method handles. */
 static int delete_channel(const dt_bit *in, int len, double p, uint64_t *rng,
@@ -349,6 +398,7 @@ int main(void) {
   test_rejects_random();
   test_noise_calibration();
   test_no_evidence();
+  test_invalid_evidence();
   test_indel_tolerance();
   printf("%s (%d failure%s)\n", g_failures ? "FAILED" : "OK", g_failures,
          g_failures == 1 ? "" : "s");

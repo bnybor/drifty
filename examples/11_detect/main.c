@@ -133,7 +133,27 @@ int main(void) {
     putchar('\n');
   }
   printf("\nThe bar tracks code-present confidence: ~0 in the random regions, ~1\n"
-         "across the coded segment, with the block-sized transition at each edge.\n");
+         "across the coded segment.\n");
+
+  /* ---- Part C: detection survives indels (drift that desyncs a normal decoder) ---- */
+  printf("\nPart C - detection through an insert/delete channel. Indels shift the\n"
+         "bit phase, yet detect still finds the code (the runs between indels stay\n"
+         "aligned, and it only needs one clean run to fire):\n");
+  ex_rand_bits(msg, NINFO, &rng);
+  clen = ex_encode(code, msg, NINFO, coded, cap);
+  dt_bit *chan = malloc((size_t)cap);
+  double idel[] = {0.0, 0.005, 0.01, 0.02};
+  for (int k = 0; k < 4; ++k) {
+    int rl = ex_delete(coded, clen, idel[k], &rng, chan); /* deletions = drift */
+    dt_stream_soft_decoder *sd = dt_cc_detect_soft_decoder_create(&dp);
+    int g = ex_decode_soft(sd, chan, rl, out, cap);
+    dt_cc_detect_soft_decoder_destroy(sd);
+    printf("  %.1f%% deletions (%d bits): code-present ", idel[k] * 100.0, rl);
+    bar(mean_coded(out, 0, g));
+    putchar('\n');
+  }
+  printf("\nDetection degrades gracefully with the indel rate (it is exact-parity\n"
+         "based, so it holds in the low-noise regime - see doc/cc/detect.md).\n");
 
   free(coded);
   free(out);
@@ -141,6 +161,7 @@ int main(void) {
   free(stream);
   free(mid);
   free(sout);
+  free(chan);
   dt_cc_code_destroy(code);
   return 0;
 }

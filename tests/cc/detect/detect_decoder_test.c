@@ -252,11 +252,70 @@ static void test_noise_calibration(void) {
   free(out);
 }
 
+/* Drop each bit with probability p (a deletion channel); returns the new length.
+ * Deletions drift the stream's phase - the case the sliding-window method handles. */
+static int delete_channel(const dt_bit *in, int len, double p, uint64_t *rng,
+                          dt_bit *out) {
+  int o = 0;
+  for (int i = 0; i < len; ++i) {
+    if ((double)(rng_next(rng) >> 11) * (1.0 / 9007199254740992.0) < p) {
+      continue;
+    }
+    out[o++] = in[i];
+  }
+  return o;
+}
+
+/* detect tolerates sparse indels: a coded stream through a ~1% deletion channel
+ * still reads code-present (the runs between deletions are clean and aligned),
+ * while a random stream through the same channel still reads no-code. */
+static void test_indel_tolerance(void) {
+  printf("detect indel tolerance (coded stream through a ~1%% deletion channel):\n");
+  enum { NINFO = 2500, CAP = NINFO * 5 + 256 };
+  uint64_t rng = 0x1DEC0DEu;
+  dt_cc_detect_stream_params p = clean_params();
+
+  dt_bit *coded = malloc(CAP);
+  int clen = encode(DT_CC_CODE_K7_RATE_1_2, NINFO, coded, CAP, &rng);
+  dt_bit *rx = malloc(CAP);
+  int rl = delete_channel(coded, clen, 0.01, &rng, rx);
+  dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
+  int got = detect_all(&p, rx, rl, out, CAP);
+  double lost = 0;
+  for (int i = 0; i < got; ++i) {
+    lost += out[i].c_erasure;
+  }
+  printf("  coded + 1%% deletions: %d bits -> mean code-present %.3f\n", rl,
+         lost / got);
+  check("output count tracks input", got == rl);
+  check_gt("coded+indels still reads code-present", lost / got, 0.5);
+
+  /* random through the same channel must NOT become a false positive */
+  for (int i = 0; i < clen; ++i) {
+    coded[i] = (rng_next(&rng) & 1) ? DT_TRUE : DT_FALSE;
+  }
+  rl = delete_channel(coded, clen, 0.01, &rng, rx);
+  got = detect_all(&p, rx, rl, out, CAP);
+  double absent = 0;
+  lost = 0;
+  for (int i = 0; i < got; ++i) {
+    absent += out[i].c_absent;
+    lost += out[i].c_erasure;
+  }
+  check_gt("random+indels still reads no-code", absent / got, 0.8);
+  check_lt("random+indels: no false code-present", lost / got, 0.05);
+
+  free(coded);
+  free(rx);
+  free(out);
+}
+
 int main(void) {
   test_create();
   test_detects_code();
   test_rejects_random();
   test_noise_calibration();
+  test_indel_tolerance();
   printf("%s (%d failure%s)\n", g_failures ? "FAILED" : "OK", g_failures,
          g_failures == 1 ? "" : "s");
   return g_failures ? 1 : 0;

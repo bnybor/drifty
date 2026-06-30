@@ -29,27 +29,39 @@
  * arbitrary bit stream, with no prior knowledge or coordination (no code, rate,
  * generators, or alignment).
  *
- * Method - GF(2) strided-window rank deficiency. A convolutional code is linear
- * and time-invariant, so its output bits satisfy parity-check relations: a
- * width-W window of coded bits lives in a proper GF(2) subspace, so a matrix built
- * from such windows is rank-DEFICIENT, while random bits span the full space
- * (full rank). The catch is that the code's parity checks are PHASE-specific (they
- * relate output bits at a fixed position mod n, the block size), so the window
- * rows must be stacked at a stride equal to n to stay phase-aligned. n is unknown,
- * so we SWEEP candidate strides s = 2..DET_SMAX and take the largest deficiency
- * d = max_s (W - rank_s); a code of block size n shows up at s = n (and multiples).
+ * Method - GF(2) strided-window rank deficiency, over SLIDING windows. A
+ * convolutional code is linear and time-invariant, so its output bits satisfy
+ * parity-check relations: a width-W window of coded bits lives in a proper GF(2)
+ * subspace, so a matrix built from such windows is rank-DEFICIENT, while random
+ * bits span the full space (full rank). The checks are PHASE-specific (they relate
+ * output bits at a fixed position mod n, the block size n), so the window rows must
+ * be stacked at a stride equal to n to stay phase-aligned. n is unknown, so we
+ * sweep candidate strides s = 2..DET_SMAX.
  *
- *   d = 0          -> no linear structure  -> "no code" (c_absent high)
- *   d > 0          -> parity checks found  -> "code present" (c_lost = 1 - 2^-d)
+ * Crucially the windows SLIDE (we do not take one fixed-origin matrix over a whole
+ * block). Each width-W row that spans an insertion/deletion - or strays out of a
+ * coded region into random bits - is linearly independent of the code's subspace,
+ * so it fills the rank and erases the deficiency. A matrix is therefore deficient
+ * only when ALL its rows lie inside one indel-free, phase-aligned coded run. By
+ * sliding a short window of length L_s = s*(W + DET_MARGIN) + W (chosen so every
+ * stride yields the same row count N = W + DET_MARGIN + 1, hence the same random
+ * rejection 2^-(N-W)) and assigning each stream position the MAX deficiency over
+ * the windows covering it, a code is detected wherever a clean aligned run exists -
+ * tolerating sparse indels (an indel only kills the windows that span it, not the
+ * runs between them). A window that straddles a code/random boundary has random
+ * rows, so it reads d = 0; localization stays sharp.
  *
- * Per block of DET_BLOCK input bits we compute one (c_lost, c_absent) verdict and
- * emit DET_BLOCK records carrying it (one per input position). Output trails input
- * by up to one block.
+ *   d = 0  -> no structure here -> "no code" (c_absent high)
+ *   d > 0  -> parity checks found -> "code present" (c_lost = 1 - 2^-d)
+ *
+ * One record is produced per input position (the per-position max deficiency);
+ * output trails input by up to one longest window (DET_MAXL).
  *
  * LIMITATIONS (see also doc/cc/detect.md):
- *  - Noise: a single flipped bit breaks exact parity over the windows that overlap
- *    it, so exact GF(2) rank is brittle. This targets the clean / very-low-noise
- *    regime; it holds to ~0.5% bit flips and collapses to "absent" by ~1%.
+ *  - Noise: a single flipped bit is an independent row in every window that covers
+ *    it, breaking that window's deficiency. Indels are tolerated (the runs between
+ *    them are clean), but FLIPS are not - this targets the clean / very-low-noise
+ *    regime: it holds to ~1% flips and to ~2-3% indels.
  *  - Scope: rank deficiency senses LINEAR structure in general - a block linear
  *    code or an LFSR scrambler would also register. For the intended use (a stream
  *    is either uncoded/random or convolutionally coded) this is the right proxy.
@@ -59,30 +71,41 @@
 #include "decode.h"
 
 #include <drifty/bit.h>
-#include <drifty/stdlib.h> /* dt_malloc / dt_free / dt_realloc / dt_memmove / dt_exp */
+#include <drifty/stdlib.h> /* dt_malloc / dt_free / dt_realloc / dt_memmove / dt_exp / dt_log */
 
 /* Detector geometry. W must fit a uint64_t and exceed a code's parity span
- * (~2*K bits for the standard K<=7 codes). BLOCK is sized so even the largest
- * stride leaves N = (BLOCK - W)/SMAX + 1 >= W rows (here 59 >= 32) for a
- * well-determined null space. Validated empirically on the standard presets. */
-#define DET_W 32      /* GF(2) window width, bits */
-#define DET_SMAX 6    /* sweep strides 2..DET_SMAX (block sizes n in 2..6) */
-#define DET_BLOCK 384 /* input bits analysed per detection block */
+ * (~2*K bits for the standard K<=7 codes). Each stride s uses a window of length
+ * s*(W+MARGIN)+W so every stride has N = W+MARGIN+1 rows (uniform random
+ * rejection ~2^-(MARGIN+1)). Windows slide by STEP. Validated empirically. */
+#define DET_W 32       /* GF(2) window width, bits */
+#define DET_SMAX 6     /* sweep strides 2..DET_SMAX (block sizes n in 2..6) */
+#define DET_MARGIN 18  /* extra rows per stride window beyond W */
+#define DET_STEP 32    /* window slide granularity, bits */
+#define DET_LWIN(s) ((s) * (DET_W + DET_MARGIN) + DET_W) /* window length, stride s */
+#define DET_MAXL DET_LWIN(DET_SMAX) /* longest window (s = SMAX): 332 */
+#define DET_MINL DET_LWIN(2)        /* shortest window (s = 2): 132   */
 
 #define DET_LN2 0.69314718055994531f
 
 struct dt_cc_detect_stream_decoder {
-  /* Input bit FIFO (0/1 values), drained from the front by `head`. */
+  /* Input bit FIFO (0/1 values) and a parallel per-position best-deficiency-so-far
+   * (signed char: -1 = position not yet covered by any window, else 0..DET_W).
+   * Both share head/len/cap; in[head + k] is absolute position `base + k`. */
   unsigned char *in;
-  int in_head, in_len, in_cap;
+  signed char *dmax;
+  int head, len, cap;
+  long long base;       /* absolute index of in[head]              */
+  long long next_start; /* absolute index of next window start (multiple of STEP) */
   /* Pending output FIFO of per-position records, drained from the front. */
   dt_cc_detect_decode_details *out;
   int out_head, out_len, out_cap;
-  int finalized; /* the short final block has been processed */
-  /* (1 - expected per-bit corruption)^DET_W, from the channel model: the chance a
-   * width-W window survives the expected noise intact, hence the chance a code
-   * (if present) would still show as rank deficiency. Scales the confidence of a
-   * "no code" verdict - a noisy channel cannot confidently rule a code out. */
+  int finalized; /* the final tail has been processed */
+  /* (1 - expected per-bit FLIP/overwrite corruption)^DET_W, from the channel
+   * model: the chance a width-W window survives the expected flip noise intact,
+   * hence the chance a code (if present) would still show as rank deficiency. It
+   * scales the confidence of a "no code" verdict - a flip-noisy channel cannot
+   * confidently rule a code out. Indels are NOT folded in: the sliding method
+   * tolerates them, so they should not discount the no-code confidence. */
   float detectability;
 };
 
@@ -107,21 +130,20 @@ static int msb64(uint64_t x) {
   return b;
 }
 
-/* GF(2) rank of the matrix whose rows are the DET_W-bit windows of bits[0..count)
+/* GF(2) rank of the matrix whose rows are the DET_W-bit windows of win[0..count)
  * taken at offsets 0, stride, 2*stride, ... (online Gaussian elimination against
- * an MSB-indexed pivot table). Writes the row count to *nrows. */
-static int gf2_rank(const unsigned char *bits, int count, int stride, int *nrows) {
+ * an MSB-indexed pivot table). */
+static int gf2_rank(const unsigned char *win, int count, int stride) {
   uint64_t pivot[DET_W];
   for (int i = 0; i < DET_W; ++i) {
     pivot[i] = 0;
   }
-  int rank = 0, rows = 0;
+  int rank = 0;
   for (int start = 0; start + DET_W <= count; start += stride) {
     uint64_t v = 0;
     for (int j = 0; j < DET_W; ++j) {
-      v = (v << 1) | (uint64_t)(bits[start + j] & 1u);
+      v = (v << 1) | (uint64_t)(win[start + j] & 1u);
     }
-    ++rows;
     while (v) {
       const int b = msb64(v);
       if (pivot[b]) {
@@ -133,33 +155,16 @@ static int gf2_rank(const unsigned char *bits, int count, int stride, int *nrows
       }
     }
   }
-  *nrows = rows;
   return rank;
 }
 
-/* Analyse `count` bits (count <= DET_BLOCK) and produce the (c_lost, c_absent)
- * verdict. d = max deficiency over the stride sweep; N_min = fewest rows over the
- * sweep (the weakest-evidence stride), which gauges data sufficiency.
- * `detectability` (channel-derived, in [0, 1]) scales how much a NULL result can
- * be trusted as "no code". */
-static dt_cc_detect_decode_details analyse(const unsigned char *bits, int count,
-                                           float detectability) {
+/* Map a position's max deficiency (d, or -1 if no window ever covered it) to its
+ * (c_lost, c_absent) verdict. */
+static dt_cc_detect_decode_details verdict_from(int d, float detectability) {
   dt_cc_detect_decode_details det;
-  int d = 0, n_min = 1 << 30;
-  for (int s = 2; s <= DET_SMAX; ++s) {
-    int rows;
-    const int rank = gf2_rank(bits, count, s, &rows);
-    const int def = DET_W - rank;
-    if (def > d) {
-      d = def;
-    }
-    if (rows < n_min) {
-      n_min = rows;
-    }
-  }
-  if (n_min < DET_W) {
-    /* Too few rows to determine the code's null space at some stride: the
-     * deficiency could be mere under-determination, not structure. Abstain. */
+  if (d < 0) {
+    /* Never covered by a full window (the stream's leading/trailing tail): not
+     * enough data to judge. Abstain. */
     det.c_lost = 0.0f;
     det.c_absent = 0.0f;
     return det;
@@ -168,35 +173,41 @@ static dt_cc_detect_decode_details analyse(const unsigned char *bits, int count,
    * checks are real regardless of expected noise, so detectability never scales
    * this up. */
   det.c_lost = 1.0f - pow2_neg(d);
-  /* c_absent: when no structure is found, confidence grows with how many rows
-   * beyond W ruled a code out, but is discounted by `detectability` - if the
-   * channel is noisy enough to hide a code, a clean-looking block cannot
-   * confidently be called code-free. When structure IS found it is the small
-   * residual (independent of expected noise). */
-  det.c_absent = (d == 0) ? (1.0f - pow2_neg(n_min - DET_W)) * detectability
+  /* c_absent: no structure here -> confidence grows with the rows beyond W that
+   * ruled a code out (N - W = DET_MARGIN + 1), discounted by detectability (a
+   * flip-noisy channel cannot confidently call a clean-looking run code-free).
+   * Where structure IS found it is the small residual. */
+  det.c_absent = (d == 0) ? (1.0f - pow2_neg(DET_MARGIN + 1)) * detectability
                           : pow2_neg(d);
   return det;
 }
 
-/* -- small growable FIFOs -------------------------------------------------- */
+/* -- growable buffers ------------------------------------------------------ */
 
-static int in_reserve(dt_cc_detect_stream_decoder *d, int extra) {
-  if (d->in_head > 0 && d->in_len + extra > d->in_cap) {
-    dt_memmove(d->in, d->in + d->in_head, (size_t)(d->in_len - d->in_head));
-    d->in_len -= d->in_head;
-    d->in_head = 0;
+/* Grow the input/dmax FIFO to hold `extra` more positions, compacting first. */
+static int buf_reserve(dt_cc_detect_stream_decoder *d, int extra) {
+  if (d->head > 0 && d->len + extra > d->cap) {
+    dt_memmove(d->in, d->in + d->head, (size_t)(d->len - d->head));
+    dt_memmove(d->dmax, d->dmax + d->head, (size_t)(d->len - d->head));
+    d->len -= d->head;
+    d->head = 0;
   }
-  if (d->in_len + extra > d->in_cap) {
-    int nc = d->in_cap ? d->in_cap * 2 : 1024;
-    while (nc < d->in_len + extra) {
+  if (d->len + extra > d->cap) {
+    int nc = d->cap ? d->cap * 2 : 1024;
+    while (nc < d->len + extra) {
       nc *= 2;
     }
-    unsigned char *nb = dt_realloc(d->in, (size_t)nc);
-    if (!nb) {
+    unsigned char *ni = dt_realloc(d->in, (size_t)nc);
+    if (!ni) {
       return 0;
     }
-    d->in = nb;
-    d->in_cap = nc;
+    d->in = ni;
+    signed char *nd = dt_realloc(d->dmax, (size_t)nc);
+    if (!nd) {
+      return 0;
+    }
+    d->dmax = nd;
+    d->cap = nc;
   }
   return 1;
 }
@@ -209,7 +220,7 @@ static int out_reserve(dt_cc_detect_stream_decoder *d, int extra) {
     d->out_head = 0;
   }
   if (d->out_len + extra > d->out_cap) {
-    int nc = d->out_cap ? d->out_cap * 2 : DET_BLOCK * 2;
+    int nc = d->out_cap ? d->out_cap * 2 : 512;
     while (nc < d->out_len + extra) {
       nc *= 2;
     }
@@ -224,18 +235,48 @@ static int out_reserve(dt_cc_detect_stream_decoder *d, int extra) {
   return 1;
 }
 
-/* Analyse the next `count` buffered input bits and enqueue `count` output records
- * carrying the block's verdict; consume those input bits. Returns 0 on OOM. */
-static int emit_block(dt_cc_detect_stream_decoder *d, int count) {
-  const dt_cc_detect_decode_details v =
-      analyse(d->in + d->in_head, count, d->detectability);
+/* -- sliding-window processing --------------------------------------------- */
+
+/* Process the windows that start at absolute index `start` (one per stride that
+ * fits the buffer), folding each window's deficiency into dmax over the positions
+ * it covers. A window of length L_s straddling an indel or a code/random boundary
+ * contains independent rows, so it reads d = 0 there - only a fully-clean aligned
+ * run shows d > 0, which keeps localization sharp. */
+static void process_start(dt_cc_detect_stream_decoder *d, long long start) {
+  const long long bend = d->base + (d->len - d->head);
+  const int lo = d->head + (int)(start - d->base);
+  for (int s = 2; s <= DET_SMAX; ++s) {
+    const int L = DET_LWIN(s);
+    if (start + L > bend) {
+      continue; /* this stride's window does not fit the buffer */
+    }
+    int def = DET_W - gf2_rank(d->in + lo, L, s);
+    if (def < 0) {
+      def = 0;
+    }
+    for (int j = 0; j < L; ++j) { /* d>=0 also marks "covered" (-1 -> 0) */
+      if ((int)d->dmax[lo + j] < def) {
+        d->dmax[lo + j] = (signed char)def;
+      }
+    }
+  }
+}
+
+/* Emit (finalize) every position in [base, upto): its dmax is settled because all
+ * window starts <= position have been processed. */
+static int emit_upto(dt_cc_detect_stream_decoder *d, long long upto) {
+  int count = (int)(upto - d->base);
+  if (count <= 0) {
+    return 1;
+  }
   if (!out_reserve(d, count)) {
     return 0;
   }
   for (int i = 0; i < count; ++i) {
-    d->out[d->out_len++] = v;
+    d->out[d->out_len++] = verdict_from((int)d->dmax[d->head], d->detectability);
+    ++d->head;
+    ++d->base;
   }
-  d->in_head += count;
   return 1;
 }
 
@@ -257,22 +298,18 @@ static int drain(dt_cc_detect_stream_decoder *d,
 
 /* -- public engine API ----------------------------------------------------- */
 
-/* Aggregate per-bit corruption probability the channel model implies: a bit is
- * "wrong/unknown" if overwritten (any kind) or, failing that, flipped; an
- * insertion or deletion additionally shifts the strided-window phase. Any of these
- * breaks a window's exact parity, so they all count toward what could hide a code.
- * Returns detectability = (1 - p_corrupt)^DET_W in [0, 1]. */
+/* detectability = (1 - p)^DET_W, p = expected per-bit FLIP/overwrite corruption.
+ * Indels (p_ins / p_del) are deliberately excluded - the sliding method tolerates
+ * them, so they must not discount the no-code confidence. */
 static float detectability_from(const dt_cc_detect_stream_params *p) {
   const float p_ovr = p->p_ovr_true + p->p_ovr_false + p->p_ovr_erase;
-  const float p_ins = p->p_ins_true + p->p_ins_false + p->p_ins_erase;
-  float p_corrupt = p_ovr + (1.0f - p_ovr) * p->p_flip + p_ins + p->p_del;
+  float p_corrupt = p_ovr + (1.0f - p_ovr) * p->p_flip;
   if (p_corrupt <= 0.0f) {
     return 1.0f; /* clean channel: a code would show through fully */
   }
   if (p_corrupt > 0.999f) {
     p_corrupt = 0.999f;
   }
-  /* (1 - p_corrupt)^DET_W via the freestanding single-precision proxies. */
   return dt_exp((float)DET_W * dt_log(1.0f - p_corrupt));
 }
 
@@ -284,7 +321,7 @@ dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
   /* Validate the channel model. p_flip may be 0 (expect a clean channel); the
    * rates are non-negative and the overwrite / indel families each sum to < 1.
    * decision_depth and max_drift are accepted for interface uniformity (the rank
-   * method does not use them). */
+   * method does not use them - indel tolerance is intrinsic, not a drift window). */
   if (params->decision_depth < 1 || params->max_drift < 0) {
     return NULL;
   }
@@ -305,7 +342,10 @@ dt_cc_detect_stream_decoder *dt_cc_detect_stream_decoder_create(
     return NULL;
   }
   d->in = NULL;
-  d->in_head = d->in_len = d->in_cap = 0;
+  d->dmax = NULL;
+  d->head = d->len = d->cap = 0;
+  d->base = 0;
+  d->next_start = 0;
   d->out = NULL;
   d->out_head = d->out_len = d->out_cap = 0;
   d->finalized = 0;
@@ -318,6 +358,7 @@ void dt_cc_detect_stream_decoder_destroy(dt_cc_detect_stream_decoder *d) {
     return;
   }
   dt_free(d->in);
+  dt_free(d->dmax);
   dt_free(d->out);
   dt_free(d);
 }
@@ -329,18 +370,24 @@ int dt_cc_detect_stream_decode(dt_cc_detect_stream_decoder *d, const uint8_t *in
     return DT_ERR_ARG;
   }
   if (n_in > 0) {
-    if (!in_reserve(d, n_in)) {
+    if (!buf_reserve(d, n_in)) {
       return DT_ERR_ALLOC;
     }
     for (int i = 0; i < n_in; ++i) {
-      d->in[d->in_len++] = (unsigned char)DT_BIT(in[i]); /* non-bits -> 0 */
+      d->in[d->len] = (unsigned char)DT_BIT(in[i]); /* non-bits -> 0 */
+      d->dmax[d->len] = -1;                         /* not yet covered */
+      ++d->len;
     }
   }
-  /* Process every complete block now buffered. */
-  while (d->in_len - d->in_head >= DET_BLOCK) {
-    if (!emit_block(d, DET_BLOCK)) {
-      return DT_ERR_ALLOC;
-    }
+  /* Process every window whose full stride sweep is now buffered, then finalize
+   * the positions those windows have settled (everything below next_start). */
+  const long long bend = d->base + (d->len - d->head);
+  while (d->next_start + DET_MAXL <= bend) {
+    process_start(d, d->next_start);
+    d->next_start += DET_STEP;
+  }
+  if (!emit_upto(d, d->next_start)) {
+    return DT_ERR_ALLOC;
   }
   return drain(d, details, max_out);
 }
@@ -352,20 +399,21 @@ int dt_cc_detect_stream_decode_flush(dt_cc_detect_stream_decoder *d,
     return DT_ERR_ARG;
   }
   if (!d->finalized) {
-    /* Drain any complete blocks, then the short final block (its records carry a
-     * verdict if there is enough data, else an abstain). */
-    while (d->in_len - d->in_head >= DET_BLOCK) {
-      if (!emit_block(d, DET_BLOCK)) {
-        return DT_ERR_ALLOC;
-      }
+    const long long bend = d->base + (d->len - d->head);
+    /* Full-fit windows, then the tail's partial-fit windows (process_start skips
+     * the strides whose window no longer fits). */
+    while (d->next_start + DET_MAXL <= bend) {
+      process_start(d, d->next_start);
+      d->next_start += DET_STEP;
     }
-    const int rem = d->in_len - d->in_head;
-    if (rem > 0) {
-      if (!emit_block(d, rem)) {
-        return DT_ERR_ALLOC;
-      }
+    while (d->next_start + DET_MINL <= bend) {
+      process_start(d, d->next_start);
+      d->next_start += DET_STEP;
     }
     d->finalized = 1;
+    if (!emit_upto(d, bend)) { /* emit all remaining positions */
+      return DT_ERR_ALLOC;
+    }
   }
   return drain(d, details, max_out);
 }

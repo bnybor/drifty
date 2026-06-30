@@ -21,7 +21,7 @@ The coded-presence confidence rides in `c_erasure` by the engine convention
 (internal `c_lost` → soft `c_erasure`); detect repurposes that field. One record
 is emitted per input bit (output trails input by up to one analysis block).
 
-## Method — GF(2) strided-window rank deficiency
+## Method — GF(2) sliding strided-window rank deficiency
 
 A convolutional code is **linear and time-invariant**, so its output bits satisfy
 parity-check relations: a width-`W` window of coded bits lives in a proper GF(2)
@@ -29,22 +29,33 @@ subspace, so a matrix built from such windows is **rank-deficient**, while rando
 bits span the full space (full rank). The deficiency `d = W − rank` counts the
 parity checks visible in the window.
 
-The subtlety: a code's parity checks are **phase-specific** (they relate output
-bits at a fixed position mod `n`, the block size). So the window rows must be
-stacked at a **stride equal to `n`** to stay phase-aligned — stacking at stride 1
-mixes phases and the matrix is full-rank even for coded data. Since `n` is unknown,
-detect **sweeps candidate strides** `s = 2..6` and takes the largest deficiency
-`d = max_s (W − rank_s)`; a code of block size `n` shows up at `s = n` (and its
-multiples). Per analysis block of `BLOCK` input bits it computes one verdict:
+The checks are **phase-specific** (they relate output bits at a fixed position mod
+`n`, the block size), so the window rows must be stacked at a **stride equal to
+`n`** to stay phase-aligned — stacking at stride 1 mixes phases and the matrix is
+full-rank even for coded data. Since `n` is unknown, detect **sweeps candidate
+strides** `s = 2..6`; a code of block size `n` shows up at `s = n` (and multiples).
 
-- `d = 0` → no linear structure → **no code** (`c_absent` high).
+The windows **slide**, which is what makes detection indel-tolerant and sharply
+localized. Any row that spans an insertion/deletion — or strays out of a coded
+region into random bits — is independent of the code's subspace, so it fills the
+rank and erases the deficiency: a matrix is deficient **only when all its rows lie
+inside one indel-free, phase-aligned coded run**. detect slides a short window
+(length `L_s = s·(W+MARGIN)+W`, chosen so every stride yields the same row count
+`N = W+MARGIN+1` and the same random rejection `2^{−(N−W)}`) and assigns each
+position the **max deficiency over the windows covering it**:
+
+- `d = 0` → no clean aligned run here → **no code** (`c_absent` high).
 - `d > 0` → parity checks found → **code present** (`c_erasure = 1 − 2^{−d}`).
 
-Geometry: `W = 32`, strides `2..6` (block sizes `n ∈ {2..6}` — the rate-1/n presets
-are `n ∈ {2,3,5}`), `BLOCK = 384` (so the widest stride still gives ≥ 32 rows for a
-well-determined null space). On the standard presets the clean-stream deficiency is
-`d = 10 / 15 / 21` for K7-rate-½ / K7-rate-⅓ / K5-rate-⅕ → `c_erasure ≈ 1`, while a
-random stream gives `d = 0` → `c_absent ≈ 1`.
+So a code is detected wherever a *locally* clean aligned run exists — an indel only
+kills the windows that span it, not the runs between them — and a window crossing a
+code/random boundary reads `d = 0`, keeping localization sharp.
+
+Geometry: `W = 32`, `MARGIN = 18`, strides `2..6` (block sizes `n ∈ {2..6}` — the
+rate-1/n presets are `n ∈ {2,3,5}`), windows of `132…332` bits sliding by `32`. On
+the standard presets the clean-run deficiency is `d = 10 / 15 / 21` for K7-rate-½ /
+K7-rate-⅓ / K5-rate-⅕ → `c_erasure ≈ 1`; a random stream gives `d = 0` →
+`c_absent ≈ 1`. Output trails input by up to one longest window (~332 bits).
 
 ## API
 
@@ -73,22 +84,23 @@ uses no preamble.
 
 ### Channel-model parameters
 
-detect's rank method needs **exact** parity to see a code, which any corruption
-breaks — so the channel model is used not to decode but to **calibrate how much a
-null result can be trusted**. The more corruption you tell detect to expect, the
-less a clean-looking stream can be confidently declared code-*free* (a code could
-be present but hidden by the noise), so the **`c_absent` (no-code) confidence is
-scaled down** by a *detectability* factor `(1 − p)^W` where `p` is the expected
-per-bit corruption. The **`c_lost` (code-present) confidence is never affected** —
-parity checks that are actually found are real regardless of expected noise, since
-noise only destroys structure, never creates it.
+detect's rank method needs **exact** parity within a window to see a code, which a
+flip breaks — so the flip part of the channel model is used not to decode but to
+**calibrate how much a null result can be trusted**. The more flip noise you tell
+detect to expect, the less a clean-looking stream can be confidently declared
+code-*free* (a code could be present but hidden by the flips), so the **`c_absent`
+(no-code) confidence is scaled down** by a *detectability* factor `(1 − p)^W` where
+`p = p_ovr + (1−p_ovr)·p_flip` is the expected per-bit flip/overwrite corruption.
+The **`c_lost` (code-present) confidence is never affected** — parity checks that
+are actually found are real regardless of expected noise, since noise only destroys
+structure, never creates it.
 
 | Field | Role in detect |
 |-------|----------------|
-| `p_flip` | expected coded-bit flip rate, `0 ≤ p_flip < 1`. `0` = "expect a clean channel" (unlike hybrid/maxir, which require `> 0`). |
-| `p_ovr_true` / `p_ovr_false` / `p_ovr_erase` | overwrite rates (sum `< 1`); all count as corruption. |
-| `p_ins_true` / `p_ins_false` / `p_ins_erase`, `p_del` | insertion / deletion rates (sum `< 1`). Drift breaks the strided-window phase, so it reduces detectability sharply. |
-| `decision_depth` (`≥ 1`), `max_drift` (`≥ 0`) | accepted for interface uniformity with the cc family but **not used** by the rank method (detect has its own block-based delay and does not track drift). Validated only. |
+| `p_flip` | expected coded-bit flip rate, `0 ≤ p_flip < 1`. `0` = "expect a clean channel" (unlike hybrid/maxir, which require `> 0`). Damps the no-code confidence. |
+| `p_ovr_true` / `p_ovr_false` / `p_ovr_erase` | overwrite rates (sum `< 1`); count as flip-like corruption (damp the no-code confidence). |
+| `p_ins_true` / `p_ins_false` / `p_ins_erase`, `p_del` | insertion / deletion rates (sum `< 1`) — the **drift detect is built to tolerate**. They do **not** damp the no-code confidence (the sliding windows recover from indels by finding clean runs); accepted/validated as the expected drift. |
+| `decision_depth` (`≥ 1`), `max_drift` (`≥ 0`) | accepted for interface uniformity with the cc family but **not used** by the rank method (detect has its own windowed delay; indel tolerance is intrinsic, not a drift window). Validated only. |
 
 A clean channel (`p_flip = 0`, everything else 0) gives detectability `1`, so
 `c_absent` is undamped — the default behaviour. Rough magnitudes are all that
@@ -96,12 +108,15 @@ matter.
 
 ## Limitations
 
-- **Noise.** A single bit flip breaks exact parity over the windows overlapping it,
-  so exact GF(2) rank is brittle: a noisy coded stream reads full-rank and so
-  detects as *absent*. detect targets the **clean / very-low-noise** regime — it
-  holds to ~0.5 % bit flips (`d` degrades but stays positive) and collapses to
-  "absent" by ~1 %. A noise-tolerant detector needs approximate low-weight parity
-  checks / syndrome statistics / LPN-style methods (future work).
+- **Flips.** A flipped bit is an independent row in every window that covers it, so
+  it breaks that window's deficiency. detect targets the **clean / very-low-noise**
+  regime for flips: it holds to ~1 % bit flips (`d` degrades but stays positive) and
+  collapses to "absent" beyond that. A flip-tolerant detector needs approximate
+  low-weight parity checks / syndrome statistics / LPN-style methods (future work).
+- **Indels — tolerated.** Insertions and deletions shift the bit phase (which
+  desyncs an ordinary decoder), but the sliding windows only need a *locally*
+  indel-free aligned run, so detection survives sparse drift, degrading gracefully:
+  it holds well to ~1 % and remains usable to ~2–3 % indels.
 - **Scope.** Rank deficiency senses *linear* redundancy in general — a block linear
   code or an LFSR scrambler would also register as "code present". For the intended
   use (a stream is either uncoded/random or convolutionally coded) this is the

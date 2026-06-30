@@ -15,12 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   convolutional code is present in an arbitrary bit stream, with no prior knowledge
   or coordination (no code, rate, generators, or alignment). It reports, per
   position, `c_lost` (in `c_erasure`) = confidence a code is present and `c_absent`
-  = confidence it is not, via GF(2) strided-window rank deficiency. Its factory
+  = confidence it is not, via GF(2) **sliding** strided-window rank deficiency —
+  which makes it **indel-tolerant** (insertions/deletions shift the bit phase, but
+  the sliding windows only need a locally indel-free aligned run; holds to ~1 %
+  flips and ~2–3 % indels) and sharply localizing. Its factory
   (`dt_cc_detect_soft_decoder_create`) takes the same rich channel model as
   `hybrid` / `maxir`, used to calibrate how much a null result is trusted (expected
-  noise damps the no-code confidence — a code could be hidden by it). Targets the
-  clean / very-low-noise regime (see `doc/cc/detect.md`). Includes an
-  `examples/11_detect` demo that localizes a coded segment hidden in random noise.
+  flip noise damps the no-code confidence — a code could be hidden by it; indels,
+  being tolerated, do not). See `doc/cc/detect.md`; includes an `examples/11_detect`
+  demo that localizes a coded segment in random noise and survives an indel channel.
 
 ## [1.0.0] - 2026-06-28
 

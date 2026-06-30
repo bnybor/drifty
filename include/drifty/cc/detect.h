@@ -62,25 +62,27 @@ extern "C" {
  * already describe for an inner codec can be handed to detect unchanged. Use
  * designated initializers; any field left out is 0.
  *
- * detect's GF(2) rank method needs EXACT parity to see a code, which any
- * corruption breaks - so the channel model is used to calibrate how much a NULL
- * result (no structure found) can be trusted: the more corruption you tell detect
- * to expect, the less a clean-looking stream can be confidently declared
- * code-FREE (a code could be present but hidden by the noise). It lowers c_absent
- * accordingly; it never inflates c_lost (found parity checks are real regardless
- * of expected noise - noise only destroys structure, never creates it).
+ * detect's GF(2) rank method needs EXACT parity within a window to see a code,
+ * which a FLIP breaks - so the flip rates calibrate how much a NULL result (no
+ * structure found) can be trusted: the more flip noise you tell detect to expect,
+ * the less a clean-looking stream can be confidently declared code-FREE (a code
+ * could be present but hidden by the flips). It lowers c_absent accordingly; it
+ * never inflates c_lost (found parity checks are real regardless of expected noise
+ * - noise only destroys structure, never creates it). Indels are TOLERATED by the
+ * sliding windows, so p_ins/p_del do not lower c_absent.
  *
  *   p_flip                            : how often a coded bit is flipped, 0 <=
  *                                       p_flip < 1. 0 means "expect a clean
  *                                       channel" (unlike hybrid/maxir, which
- *                                       require p_flip > 0).
+ *                                       require p_flip > 0). Damps c_absent.
  *   p_ovr_true / p_ovr_false /        : how often a coded bit is overwritten with
  *   p_ovr_erase                         a fixed value / erasure (the three sum to
- *                                       < 1). All count as corruption.
- *   p_ins_true / p_ins_false /        : insertion rates, and
- *   p_ins_erase, p_del                  p_del the deletion rate (their sum < 1).
- *                                       Drift breaks the strided-window phase, so
- *                                       these reduce detectability sharply.
+ *                                       < 1). Flip-like; damp c_absent.
+ *   p_ins_true / p_ins_false /        : insertion rates, and p_del the deletion
+ *   p_ins_erase, p_del                  rate (their sum < 1) - the drift detect is
+ *                                       built to tolerate. They do NOT damp
+ *                                       c_absent (the sliding windows recover from
+ *                                       indels by finding clean runs).
  *   decision_depth (>= 1), max_drift  : accepted for interface uniformity with the
  *   (>= 0)                              cc family but NOT used by the rank method
  *                                       (detect has its own block-based delay and

@@ -25,12 +25,17 @@ consistency in `[0, 1]`; they need **not** sum to 1), all others 0:
 
 | Field | Meaning |
 |-------|---------|
-| `c_erasure` | confidence a convolutional code **is** encoded onto the stream here |
-| `c_absent`  | confidence a convolutional code is **not** encoded onto the stream here |
+| `c_erasure` | consistency with "a convolutional code **is** present here" |
+| `c_absent`  | consistency with "**no** code / the stream is random here" |
 
-The coded-presence confidence rides in `c_erasure` by the engine convention
-(internal `c_lost` → soft `c_erasure`); detect repurposes that field. One record
-is emitted per input bit (output trails input by up to one analysis window).
+These are two INDEPENDENT goodness-of-fit reads, not a probability split: each answers
+"does the data fail to contradict this hypothesis?", so they need **not** sum to 1.
+`(high, low)` reads as a code, `(low, high)` as random; **`(1, 1)`** means *no
+discriminating evidence* — an all-non-bit run (e.g. all-erasure) or the warm-up /
+flush tail — and `(low, low)` is unreachable from the single bias statistic. The
+code-present read rides in `c_erasure` by the engine convention (internal `c_lost` →
+soft `c_erasure`). One record is emitted per input bit (output trails input by up to
+one analysis window).
 
 ## Method — parity-check bias via a fast Walsh–Hadamard transform
 
@@ -72,9 +77,13 @@ per-window-per-stride evidence is the **excess** of the bias over the random flo
 to the verdict:
 
 ```
-  c_erasure = clamp(excess / K, 0, 1)               (code-present, K a calibration constant)
-  c_absent  = clamp(1 − excess, 0, 1) · detectability (no-code; see channel model)
+  p_ev      = clamp(excess / K, 0, 1)                (how far the peak clears the floor)
+  c_erasure = 1 − detectability · (1 − p_ev)         (consistency with a code; see channel model)
+  c_absent  = clamp(1 − excess, 0, 1)                (consistency with random; model-independent)
 ```
+
+A position no window scored (the tail, or all-non-bit rows such as an all-erasure
+run) reads `(1, 1)` — no discriminating evidence.
 
 Geometry: `L_c = 14` (the check span / transform order — `2^{14}` histogram, ~64 KB),
 strides `2..6`, window `L = 1200` bits sliding by `300`, `K = 2`. Output trails
@@ -82,11 +91,12 @@ input by up to one window (~1200 bits).
 
 ### Measured envelope
 
-Mean code-present confidence (`c_erasure`) for the K7-rate-½ preset, read from the
-full sweep (`metrics/detect_noisy/`, 40 trials × 6000 info bits). `c_erasure` does
-not depend on the channel model, so these are the ground-truth detection numbers;
-the complementary `c_absent` and the per-code / pegged-vs-matched picture are in the
-[metrics plots](../../metrics/detect_noisy/).
+Mean code-present consistency (`c_erasure`) for the K7-rate-½ preset under a **clean
+channel model** (`p_flip = 0`) — the intrinsic detection envelope, averaged over 20
+trials × 6000 info bits. (The metrics sweep instead runs pegged / matched models,
+which *hold `c_erasure` up* when noise is expected — see the channel model below; the
+complementary `c_absent` and the per-code picture are in the
+[metrics plots](../../metrics/detect_noisy/).)
 
 | Channel (K7-rate-½)   | mean `c_erasure` |
 |-----------------------|:----------------:|
@@ -94,11 +104,11 @@ the complementary `c_absent` and the per-code / pegged-vs-matched picture are in
 | coded, 1 % flip       | 1.00 |
 | coded, 3 % flip       | 0.97 |
 | coded, 5 % flip       | 0.58 |
-| coded, 8 % flip       | 0.12 |
+| coded, 8 % flip       | 0.11 |
 | coded, 1.5 % deletion | 0.79 |
-| **random**            | 0.04 |
+| **random**            | 0.03 |
 
-Clean coded reads an unambiguous *present*; random sits at a near-zero floor (~0.04,
+Clean coded reads an unambiguous *present*; random sits at a near-zero floor (~0.03,
 the max bias over `2^14` candidates on random data); the evidence degrades smoothly
 in between rather than snapping off. A *combined* channel (3 % flip + 0.5 % deletion)
 — harsher than either alone, and not a single-axis sweep point — still reads ~0.33 in
@@ -132,27 +142,29 @@ soft decoder through its vtable — `begin → decode` (repeat) `→ finalize` �
 ### Channel-model parameters
 
 detect_noisy's bias method **tolerates** flips, so flips are not what damages it; the
-flip part of the channel model instead **calibrates how much a null result can be
-trusted**. The more flip noise you tell detect_noisy to expect, the less a
-random-looking stream can be confidently declared code-*free* — a true code's bias
-decays as `(1 − 2·p_flip)^w`, so heavy expected flips could have pushed a real code's
-bias down into the random floor. So the **`c_absent` (no-code) confidence is scaled
-down** by a *detectability* factor `(1 − 2p)^{W_ref}` (`W_ref` a representative check
-weight) where `p = p_ovr + (1−p_ovr)·p_flip`; at `p ≥ 0.5` no bias survives and
-detectability is `0` (a code cannot be ruled out at all). The **`c_lost`
-(code-present) confidence is never affected** — an observed bias is real regardless
-of expected noise, since noise only erodes bias, never manufactures it.
+flip part of the channel model instead **calibrates how strongly a no-peak window is
+allowed to rule a code OUT**. The more flip noise you tell detect_noisy to expect,
+the more a random-looking window could still be a real code whose parity bias the
+flips eroded into the floor (the bias decays as `(1 − 2·p_flip)^w`), so the
+**code-present read `c_erasure` is held up** rather than collapsing to 0 — by a factor
+`1 − detectability`, where the *detectability* `(1 − 2p)^{W_ref}` (`W_ref` a
+representative check weight, `p = p_ovr + (1−p_ovr)·p_flip`) is roughly how much of a
+real code's bias would have *survived*; at `p ≥ 0.5` no bias survives, detectability
+is `0`, and a code cannot be ruled out at all. The **`c_absent` (no-code) read is
+never scaled** — an observed peak is what contradicts random, and noise only erodes
+bias, never manufactures a peak, so a no-peak window fits random whatever the channel.
+The model moves only the **code-present axis**.
 
 | Field | Role in detect |
 |-------|----------------|
-| `p_flip` | expected coded-bit flip rate, `0 ≤ p_flip < 1`. `0` = "expect a clean channel" (unlike hybrid/maxir, which require `> 0`). Damps the no-code confidence. |
-| `p_ovr_true` / `p_ovr_false` / `p_ovr_erase` | overwrite rates (sum `< 1`); count as flip-like corruption (damp the no-code confidence). |
-| `p_ins_true` / `p_ins_false` / `p_ins_erase`, `p_del` | insertion / deletion rates (sum `< 1`) — the **drift detect is built to tolerate**. They do **not** damp the no-code confidence (the sliding windows recover from indels by finding aligned runs); accepted/validated as the expected drift. |
+| `p_flip` | expected coded-bit flip rate, `0 ≤ p_flip < 1`. `0` = "expect a clean channel" (unlike hybrid/maxir, which require `> 0`). Holds the code-present read up on no-peak windows. |
+| `p_ovr_true` / `p_ovr_false` / `p_ovr_erase` | overwrite rates (sum `< 1`); count as flip-like corruption (hold the code-present read up). |
+| `p_ins_true` / `p_ins_false` / `p_ins_erase`, `p_del` | insertion / deletion rates (sum `< 1`) — the **drift detect is built to tolerate**. They affect **neither** read (the sliding windows recover from indels by finding aligned runs); accepted/validated as the expected drift. |
 | `decision_depth` (`≥ 1`), `max_drift` (`≥ 0`) | accepted for interface uniformity with the cc family but **not used** by the bias method (detect has its own windowed delay; indel tolerance is intrinsic, not a drift window). Validated only. |
 
-A clean channel (`p_flip = 0`, everything else 0) gives detectability `1`, so
-`c_absent` is undamped — the default behaviour. Rough magnitudes are all that
-matter.
+A clean channel (`p_flip = 0`, everything else 0) gives detectability `1`, so a
+no-peak window rules a code out fully (`c_erasure → 0`) — the default behaviour.
+Rough magnitudes are all that matter.
 
 ## Limitations
 
@@ -160,7 +172,7 @@ matter.
   ~8 %) and ~2–3 % indels, plus *light–moderate* combinations. Heavy **simultaneous**
   flips + indels (e.g. 8 % + 2 %) stay out of reach — this is fundamental to the
   underlying learning-parity-with-noise + synchronization problem, not a tuning
-  artefact. Where neither hypothesis dominates, the two confidences are both mid: the
+  artefact. Where neither hypothesis dominates, the two consistencies are both mid: the
   honest output is "uncertain", and detect_noisy keeps coded streams measurably above
   random even there.
 - **Cost.** One `2^{L_c}`-entry histogram (~64 KB) plus a Walsh–Hadamard transform

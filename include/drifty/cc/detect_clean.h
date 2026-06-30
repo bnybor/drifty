@@ -48,7 +48,7 @@ extern "C" {
  *
  * It is SOFT-OUTPUT ONLY and standalone: unlike the other cc decoders it is not
  * built over a dt_cc_code. It does not recover bit values; it reports, per stream
- * position, two confidences on the output dt_soft_bit (each in [0, 1], and they
+ * position, two consistency reads on the output dt_soft_bit (each in [0, 1], and they
  * need NOT sum to 1):
  *
  *   c_erasure = consistency with "a convolutional code IS present"
@@ -62,7 +62,7 @@ extern "C" {
  * random; (low, low) is not reachable from the single rank statistic and is
  * reserved for a future catalogue-mismatch signal.
  *
- * All other dt_soft_bit fields are 0. (The coded-presence confidence rides in
+ * All other dt_soft_bit fields are 0. (The coded-presence read rides in
  * c_erasure by the engine-c_lost -> soft-c_erasure convention; detect repurposes
  * that field.) See doc/cc/detect_clean.md for the method (GF(2) rank deficiency)
  * and its limits.

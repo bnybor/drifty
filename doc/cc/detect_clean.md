@@ -21,12 +21,17 @@ consistency in `[0, 1]`; they need **not** sum to 1), all others 0:
 
 | Field | Meaning |
 |-------|---------|
-| `c_erasure` | confidence a convolutional code **is** encoded onto the stream here |
-| `c_absent`  | confidence a convolutional code is **not** encoded onto the stream here |
+| `c_erasure` | consistency with "a convolutional code **is** present here" |
+| `c_absent`  | consistency with "**no** code / the stream is random here" |
 
-The coded-presence confidence rides in `c_erasure` by the engine convention
-(internal `c_lost` → soft `c_erasure`); detect repurposes that field. One record
-is emitted per input bit (output trails input by up to one analysis block).
+These are two INDEPENDENT goodness-of-fit reads, not a probability split: each answers
+"does the data fail to contradict this hypothesis?", so they need **not** sum to 1.
+`(high, low)` reads as a code, `(low, high)` as random; **`(1, 1)`** means *no
+discriminating evidence* — an all-non-bit run (e.g. all-erasure) or the warm-up /
+flush tail, where nothing observed contradicts either hypothesis — and `(low, low)`
+is unreachable from the single rank statistic. The code-present read rides in
+`c_erasure` by the engine convention (internal `c_lost` → soft `c_erasure`). One
+record is emitted per input bit (output trails input by up to one analysis block).
 
 ## Method — GF(2) sliding strided-window rank deficiency
 
@@ -51,8 +56,15 @@ inside one indel-free, phase-aligned coded run**. detect slides a short window
 `N = W+MARGIN+1` and the same random rejection `2^{−(N−W)}`) and assigns each
 position the **max deficiency over the windows covering it**:
 
-- `d = 0` → no clean aligned run here → **no code** (`c_absent` high).
-- `d > 0` → parity checks found → **code present** (`c_erasure = 1 − 2^{−d}`).
+- `d ≥ 1` → parity checks found → **consistent with a code** (`c_erasure = 1`); random
+  would need a `2^{−d}` fluke to fake this, so `c_absent = 2^{−d}` (low). True whatever
+  the channel — noise erodes structure, it never manufactures it.
+- `d = 0` → no structure. Its absence never contradicts random, so `c_absent = 1`; a
+  code is ruled out (`c_erasure → 0`) only insofar as the fill is confirmed (margin
+  rows beyond `W`) **and** the channel is clean enough that a real code's parity could
+  not have been flipped into full rank: `c_erasure = 1 − detectability · fillconf`
+  (see the channel model).
+- never covered (the tail, or an all-non-bit run) → **`(1, 1)`**, no evidence.
 
 So a code is detected wherever a *locally* clean aligned run exists — an indel only
 kills the windows that span it, not the runs between them — and a window crossing a
@@ -62,7 +74,8 @@ Geometry: `W = 32`, `MARGIN = 18`, strides `2..6` (block sizes `n ∈ {2..6}` �
 rate-1/n presets are `n ∈ {2,3,5}`), windows of `132…332` bits sliding by `32`. On
 the standard presets the clean-run deficiency is `d = 10 / 15 / 21` for K7-rate-½ /
 K7-rate-⅓ / K5-rate-⅕ → `c_erasure ≈ 1`; a random stream gives `d = 0` →
-`c_absent ≈ 1`. Output trails input by up to one longest window (~332 bits).
+`c_absent ≈ 1` (and, under a clean model, `c_erasure ≈ 0`). Output trails input by up
+to one longest window (~332 bits).
 
 ## API
 
@@ -93,25 +106,28 @@ soft decoder through its vtable — `begin → decode` (repeat) `→ finalize` �
 
 detect's rank method needs **exact** parity within a window to see a code, which a
 flip breaks — so the flip part of the channel model is used not to decode but to
-**calibrate how much a null result can be trusted**. The more flip noise you tell
-detect to expect, the less a clean-looking stream can be confidently declared
-code-*free* (a code could be present but hidden by the flips), so the **`c_absent`
-(no-code) confidence is scaled down** by a *detectability* factor `(1 − p)^W` where
-`p = p_ovr + (1−p_ovr)·p_flip` is the expected per-bit flip/overwrite corruption.
-The **`c_lost` (code-present) confidence is never affected** — parity checks that
-are actually found are real regardless of expected noise, since noise only destroys
-structure, never creates it.
+**calibrate how strongly an unstructured (full-rank) window is allowed to rule a code
+OUT**. The more flip noise you tell detect to expect, the more a clean-looking
+full-rank window could still be a real code whose parity the flips destroyed, so the
+**code-present read `c_erasure` is held up** rather than collapsing to 0 — by a factor
+`1 − detectability`, where the *detectability* `(1 − p)^W` (`p = p_ovr + (1−p_ovr)·p_flip`,
+the expected per-bit flip/overwrite corruption) is roughly how likely a real code's
+parity would have *survived* the expected noise. The **`c_absent` (no-code) read is
+never scaled** — an unstructured window is consistent with random whatever the
+channel, and a *found* deficiency contradicts random regardless of noise (noise only
+destroys structure, never creates it). So the model moves only the **code-present
+axis**, and only on full-rank windows.
 
 | Field | Role in detect |
 |-------|----------------|
-| `p_flip` | expected coded-bit flip rate, `0 ≤ p_flip < 1`. `0` = "expect a clean channel" (unlike hybrid/maxir, which require `> 0`). Damps the no-code confidence. |
-| `p_ovr_true` / `p_ovr_false` / `p_ovr_erase` | overwrite rates (sum `< 1`); count as flip-like corruption (damp the no-code confidence). |
-| `p_ins_true` / `p_ins_false` / `p_ins_erase`, `p_del` | insertion / deletion rates (sum `< 1`) — the **drift detect is built to tolerate**. They do **not** damp the no-code confidence (the sliding windows recover from indels by finding clean runs); accepted/validated as the expected drift. |
+| `p_flip` | expected coded-bit flip rate, `0 ≤ p_flip < 1`. `0` = "expect a clean channel" (unlike hybrid/maxir, which require `> 0`). Holds the code-present read up on full-rank windows. |
+| `p_ovr_true` / `p_ovr_false` / `p_ovr_erase` | overwrite rates (sum `< 1`); count as flip-like corruption (hold the code-present read up). |
+| `p_ins_true` / `p_ins_false` / `p_ins_erase`, `p_del` | insertion / deletion rates (sum `< 1`) — the **drift detect is built to tolerate**. They affect **neither** read (the sliding windows recover from indels by finding clean runs); accepted/validated as the expected drift. |
 | `decision_depth` (`≥ 1`), `max_drift` (`≥ 0`) | accepted for interface uniformity with the cc family but **not used** by the rank method (detect has its own windowed delay; indel tolerance is intrinsic, not a drift window). Validated only. |
 
-A clean channel (`p_flip = 0`, everything else 0) gives detectability `1`, so
-`c_absent` is undamped — the default behaviour. Rough magnitudes are all that
-matter.
+A clean channel (`p_flip = 0`, everything else 0) gives detectability `1`, so a
+full-rank window rules a code out fully (`c_erasure → 0`) — the default behaviour.
+Rough magnitudes are all that matter.
 
 ## Limitations
 

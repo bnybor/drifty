@@ -42,10 +42,10 @@
 /* -- soft decoder ---------------------------------------------------------- */
 
 /* Map detect's per-position verdict onto a dt_soft_bit. detect populates only two
- * confidences; they ride in the soft fields by the engine-c_lost -> soft-c_erasure
+ * consistency reads; they ride in the soft fields by the engine-c_lost -> soft-c_erasure
  * convention:
- *   c_erasure = engine c_lost  = confidence a convolutional code IS present
- *   c_absent  = engine c_absent = confidence a convolutional code is NOT present
+ *   c_erasure = engine c_lost  = consistency with "a convolutional code IS present"
+ *   c_absent  = engine c_absent = consistency with "no code / the stream is random"
  * All other soft fields are 0 (detect does not recover bit values - it only
  * detects code presence). The two need not sum to 1. */
 static void details_to_soft(const dt_cc_detect_clean_decode_details *d,

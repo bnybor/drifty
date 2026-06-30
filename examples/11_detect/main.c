@@ -8,8 +8,8 @@
  * recover bit values - they answer "is there a code here?".
  *
  * Soft output repurposes two dt_soft_bit fields (the two need not sum to 1):
- *   c_erasure = confidence a convolutional code IS present
- *   c_absent  = confidence a convolutional code is NOT present
+ *   c_erasure = consistency with "a convolutional code IS present"
+ *   c_absent  = consistency with "no code / the stream is random"
  *
  * There are two, trading footprint for noise tolerance - this example shows when to
  * reach for which:
@@ -33,7 +33,7 @@
 #include <drifty/cc/detect_noisy.h>
 #include <drifty/cc/detect_clean.h>
 
-/* mean coded-confidence (c_erasure) over recovered records [lo, hi) */
+/* mean code-present consistency (c_erasure) over recovered records [lo, hi) */
 static double mean_coded(const dt_soft_bit *o, int lo, int hi) {
   double s = 0;
   for (int i = lo; i < hi; ++i) {
@@ -66,9 +66,10 @@ int main(void) {
   const int n = dt_cc_code_n(code), K = dt_cc_code_k(code);
 
   /* Both detectors take the same rich channel model as hybrid/maxir. We expect a
-   * clean channel here (p_flip 0), so a "no code" verdict is fully trusted; telling
-   * a detector to expect noise would damp its no-code confidence (a code could hide
-   * under the noise). decision_depth is required (>= 1) but unused by the detectors. */
+   * clean channel here (p_flip 0), so an unstructured window rules a code out
+   * (code-present ~0); telling a detector to expect noise would instead hold the
+   * code-present read up there (a code could be hidden by the noise), leaving the
+   * no-code read alone. decision_depth is required (>= 1) but unused by the detectors. */
   dt_cc_detect_clean_stream_params clean = {0};
   clean.decision_depth = 40;
   dt_cc_detect_noisy_stream_params noisy = {0};
@@ -139,13 +140,13 @@ int main(void) {
     bar(mean_coded(sout, lo, lo + step));
     putchar('\n');
   }
-  printf("\nThe bar tracks code-present confidence: ~0 in the random regions, ~1\n"
+  printf("\nThe bar tracks code-present consistency: ~0 in the random regions, ~1\n"
          "across the coded segment.\n");
 
   /* ---- Part C: bit flips - where clean collapses and noisy holds on ---- */
   printf("\nPart C - the same coded stream through a bit-FLIP channel. clean uses\n"
          "exact parity, so a few flips erase the structure it looks for; noisy scores\n"
-         "parity BIAS, which flips only weaken. code-present confidence, clean vs noisy:\n\n");
+         "parity BIAS, which flips only weaken. code-present consistency, clean vs noisy:\n\n");
   ex_rand_bits(msg, NINFO, &rng);
   clen = ex_encode(code, msg, NINFO, coded, cap);
   dt_bit *chan = malloc((size_t)cap);

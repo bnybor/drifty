@@ -32,12 +32,13 @@
  * detect_clean does not recover bits - it answers "is a convolutional code present?".
  * So for one point we run TWO streams through the channel: a CODED one (a random
  * message encoded with the code) and a pure RANDOM one of the same length. Each is
- * detected, and we report the mean of the detector's two soft confidences over the
+ * detected, and we report the mean of the detector's two consistency reads over the
  * stream interior (the head/tail abstain transient is trimmed):
  *
- *   present (c_erasure) - confidence a code IS present. High on coded, ~0 on random.
- *   absent  (c_absent)  - confidence a code is NOT present. ~0 on coded, high on
- *                         random.
+ *   present (c_erasure) - consistency with a code present. ~1 on coded; model-dependent
+ *                         on random (~0 clean, lifted when noise is expected).
+ *   absent  (c_absent)  - consistency with random (model-independent). ~0 on coded,
+ *                         ~1 on random.
  *
  * Emitting the random stream's two means alongside the coded ones gives the plotter
  * a pure-random BASELINE to compare against: detection works to the extent the coded
@@ -51,11 +52,11 @@
  *   matched - the swept impairment's model rate tracks the channel rate; the others
  *             stay at the 1% floor.
  *
- * The model only calibrates the no-code confidence (c_absent): the detector damps it
- * by a detectability factor when it expects flips/overwrites (a code could be hidden
- * by them), so matched FLIP and ERASE sweeps pull c_absent down as the rate climbs,
- * while the code-present confidence (c_erasure) and the INSERT/DELETE axes are
- * unaffected by the model (indels are tolerated, not a reason to doubt "no code").
+ * The model only calibrates the code-present read (c_erasure): the detector holds it
+ * up by a detectability factor when it expects flips/overwrites (an unstructured
+ * window could still be a code the flips broke), so matched FLIP and ERASE sweeps
+ * LIFT the c_erasure random baseline as the rate climbs, while c_absent (a
+ * model-independent fit to random) and the INSERT/DELETE axes are unaffected.
  *
  * Output is CSV on stdout (see header row); feed it to plot_metrics.py.
  *

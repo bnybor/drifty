@@ -14,9 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`detect_clean`** and **`detect_noisy`** — two new soft-only **meta-codecs** that
   blindly detect whether a convolutional code is present in an arbitrary bit stream,
   with no prior knowledge or coordination (no code, rate, generators, or alignment).
-  Each reports, per position, `c_lost` (in `c_erasure`) = confidence a code is
-  present and `c_absent` = confidence it is not. They share one API and output and
-  differ only in footprint vs noise tolerance:
+  Each reports, per position, two INDEPENDENT consistency reads (they need not sum to
+  1): `c_erasure` (carrying the internal `c_lost`) = consistency with a code present,
+  `c_absent` = consistency with random; both near 1 is the no-discriminating-evidence
+  state. They share one API and output and differ only in footprint vs noise
+  tolerance:
   - **`detect_clean`** (`dt_cc_detect_clean_soft_decoder_create`) — exact GF(2)
     **sliding** strided-window rank deficiency. A few KB of state and no transform;
     **indel-tolerant** (the sliding windows only need a locally indel-free aligned
@@ -29,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     more compute (~1.5–2× slower than detect_clean). See `doc/cc/detect_noisy.md`.
 
   Both factories take the same rich channel model as `hybrid` / `maxir`, used to
-  calibrate how much a null result is trusted (expected flip noise damps the no-code
-  confidence — a code could be hidden by it; indels, being tolerated, do not).
+  calibrate the **code-present** read: expected flip noise holds it up on an
+  otherwise-unstructured window (a real code could be hidden by the flips), while the
+  no-code read is a model-independent fit to random and indels move neither.
   Includes an `examples/11_detect` demo that localizes a coded segment in random
   noise with `detect_clean`, then contrasts the two through a bit-flip and a combined
   flip+drift channel (where `detect_clean` collapses and `detect_noisy` holds on).

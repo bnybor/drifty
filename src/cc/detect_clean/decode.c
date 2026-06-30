@@ -51,13 +51,15 @@
  * runs between them). A window that straddles a code/random boundary has random
  * rows, so it reads d = 0; localization stays sharp.
  *
- *   d = 0  -> no structure here -> "no code" (c_absent high)
- *   d > 0  -> parity checks found -> "code present" (c_lost = 1 - 2^-d)
+ * mapping to two INDEPENDENT consistency reads (see verdict_from):
+ *   d >= 1 -> structure found -> c_lost = 1, c_absent = 2^-d (low)
+ *   d = 0  -> no structure -> c_absent = 1; c_lost = 1 - detectability*fillconf
+ *   uncovered (tail / all-non-bit run) -> (1, 1), no discriminating evidence
  *
  * One record is produced per input position (the per-position max deficiency);
  * output trails input by up to one longest window (DET_MAXL).
  *
- * LIMITATIONS (see also doc/cc/detect.md):
+ * LIMITATIONS (see also doc/cc/detect_clean.md):
  *  - Noise: a single flipped bit is an independent row in every window that covers
  *    it, breaking that window's deficiency. Indels are tolerated (the runs between
  *    them are clean), but FLIPS are not - this targets the clean / very-low-noise
@@ -111,10 +113,10 @@ struct dt_cc_detect_clean_stream_decoder {
   int finalized; /* the final tail has been processed */
   /* (1 - expected per-bit FLIP/overwrite corruption)^DET_W, from the channel
    * model: the chance a width-W window survives the expected flip noise intact,
-   * hence the chance a code (if present) would still show as rank deficiency. It
-   * scales the confidence of a "no code" verdict - a flip-noisy channel cannot
-   * confidently rule a code out. Indels are NOT folded in: the sliding method
-   * tolerates them, so they should not discount the no-code confidence. */
+   * hence the chance a real code would still show as rank deficiency. It scales how
+   * far a full-rank window rules a code OUT - a flip-noisy channel cannot, so
+   * c_erasure is held up there. Indels are NOT folded in: the sliding method
+   * tolerates them, so they should not feed detectability. */
   float detectability;
 };
 
@@ -358,7 +360,7 @@ static int drain(dt_cc_detect_clean_stream_decoder *d,
 
 /* detectability = (1 - p)^DET_W, p = expected per-bit FLIP/overwrite corruption.
  * Indels (p_ins / p_del) are deliberately excluded - the sliding method tolerates
- * them, so they must not discount the no-code confidence. */
+ * them, so they must not feed detectability. */
 static float detectability_from(const dt_cc_detect_clean_stream_params *p) {
   const float p_ovr = p->p_ovr_true + p->p_ovr_false + p->p_ovr_erase;
   float p_corrupt = p_ovr + (1.0f - p_ovr) * p->p_flip;

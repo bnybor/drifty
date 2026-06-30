@@ -42,8 +42,8 @@ extern "C" {
 /*
  * The receiver's half of the detect_noisy codec - a blind detector of convolutional-code
  * structure in an arbitrary bit stream (no code, rate, generators, or alignment
- * known). It reports, per stream position, a confidence that the stream carries a
- * convolutional code vs that it does not. See decode.c for the method (biased
+ * known). It reports, per stream position, two consistency reads - that the stream
+ * carries a convolutional code, and that it does not. See decode.c for the method (biased
  * parity checks scored by a fast Walsh-Hadamard transform).
  *
  *   dt_cc_detect_noisy_stream_decoder *d = dt_cc_detect_noisy_stream_decoder_create(
@@ -63,9 +63,9 @@ typedef struct dt_cc_detect_noisy_stream_decoder dt_cc_detect_noisy_stream_decod
  * sum to 1):
  */
 typedef struct {
-  /* Confidence that a convolutional code IS encoded onto the stream here. */
+  /* Consistency with a convolutional code being encoded onto the stream here. */
   float c_lost;
-  /* Confidence that a convolutional code is NOT encoded onto the stream here. */
+  /* Consistency with NO code / the stream being random here. */
   float c_absent;
 } dt_cc_detect_noisy_decode_details;
 

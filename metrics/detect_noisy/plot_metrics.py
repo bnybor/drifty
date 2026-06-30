@@ -4,17 +4,19 @@
 
 Reads the CSV produced by a dt_detect_{clean,noisy}_metrics harness and renders, for
 each channel axis (flip / insert / delete / erase), two figures - one per soft
-confidence the detector emits:
+consistency read the detector emits:
 
-  present (c_erasure) - confidence a convolutional code IS present.
-  absent  (c_absent)  - confidence a code is NOT present.
+  present (c_erasure) - consistency with a code present.
+  absent  (c_absent)  - consistency with random (model-independent).
 
 Each figure draws one solid curve per code (the value on a CODED stream) plus a
 dashed BASELINE - what the detector reports on a pure-RANDOM stream through the same
-channel, averaged over the codes (random detection is code-independent). Detection
-works to the extent the coded curves stand clear of that baseline: for `present`,
-coded should ride high above a near-zero random floor; for `absent`, coded should
-sit low under a high random baseline. Both axes are confidences in [0, 1].
+channel, averaged over the codes (random detection is code-independent). **Read
+detection on the `absent` plots**: that axis ignores the channel model, so the random
+baseline sits at the ceiling and the coded curves rise to meet it as noise destroys
+the structure - the coded-to-ceiling gap is the detection margin. The `present` plots
+show the model calibration instead (the random baseline is lifted when noise is
+expected). Both axes are consistencies in [0, 1].
 
 The CSV is a single variation (pegged or matched); run the plotter once per
 variation CSV into that variation's plots/ directory.
@@ -35,13 +37,13 @@ import matplotlib
 matplotlib.use("Agg")  # render to files; no display needed
 import matplotlib.pyplot as plt
 
-# The two confidences, each its own figure: (csv coded column, csv random column,
+# The two consistency reads, each its own figure: (csv coded column, csv random column,
 # y-axis label, title fragment).
 METRICS = {
     "present": ("coded_present", "random_present",
-                "mean c_erasure (code-present)", "code-present confidence"),
+                "mean c_erasure (code-present)", "code-present consistency"),
     "absent": ("coded_absent", "random_absent",
-               "mean c_absent (no-code)", "no-code confidence"),
+               "mean c_absent (no-code)", "no-code consistency"),
 }
 
 

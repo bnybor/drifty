@@ -55,9 +55,11 @@
  * per-window-per-stride evidence is the EXCESS of the bias over the random floor,
  *   excess = beta / f0 - 1,   f0(N) = sqrt(2 * L_c * ln2 / N)  (N = rows at stride s),
  * f0 being the expected max bias of N random rows over 2^L_c candidates; excess ~= 0
- * for random, large for a clean code. The per-position max excess maps to
- *   c_lost  = clamp(excess / DET_K_LOST, 0, 1)        (confidence a code is present)
- *   c_absent = clamp(1 - excess, 0, 1) * detectability (confidence none is)
+ * for random, large for a clean code. The per-position max excess maps to two
+ * INDEPENDENT consistency reads (see verdict_from):
+ *   c_lost  = 1 - detectability*(1 - clamp(excess/DET_K_LOST,0,1))  (consistency with a code)
+ *   c_absent = clamp(1 - excess, 0, 1)                              (consistency with random)
+ * with (1, 1) where no window scored (the tail, or an all-non-bit run).
  *
  * One record is produced per input position; output trails input by up to one
  * window (DET_L).
@@ -94,7 +96,7 @@
 #define DET_M (1 << DET_LC) /* transform size / histogram entries                 */
 
 #define DET_K_LOST 2.0f /* excess at which c_lost saturates to 1 (calibration)    */
-#define DET_WREF 7      /* representative check weight, for the c_absent damping   */
+#define DET_WREF 7      /* representative check weight, for the detectability factor */
 #define DET_LN2 0.69314718055994531f
 #define DET_FLOOR_C (2.0f * (float)DET_LC * DET_LN2) /* numerator of f0^2 * N      */
 #define DET_UNCOVERED (-1.0e30f) /* per-position sentinel: no window scored it yet */
@@ -123,9 +125,9 @@ struct dt_cc_detect_noisy_stream_decoder {
   int32_t *acc;
   /* (1 - 2p)^DET_WREF, p = expected per-bit FLIP/overwrite corruption, from the
    * channel model: roughly the bias a representative check would retain under the
-   * expected flips, i.e. how visible a code would still be. It scales the confidence
-   * of a "no code" verdict down - a flip-noisy channel cannot confidently rule a
-   * code out, since the flips could have eroded its bias into the random floor.
+   * expected flips, i.e. how visible a code would still be. It scales how far a
+   * no-peak window rules a code OUT - a flip-noisy channel cannot, so c_erasure is
+   * held up there (the flips could have eroded a real code's bias into the floor).
    * Indels are NOT folded in: the sliding method tolerates them. */
   float detectability;
 };
@@ -357,8 +359,8 @@ static int drain(dt_cc_detect_noisy_stream_decoder *d,
 
 /* detectability = (1 - 2p)^DET_WREF, p = expected per-bit FLIP/overwrite corruption:
  * the bias a representative check would retain. Indels (p_ins / p_del) are excluded -
- * the sliding method tolerates them, so they must not discount the no-code
- * confidence. p >= 0.5 erases all bias -> detectability 0 (a code cannot be ruled
+ * the sliding method tolerates them, so they must not feed detectability.
+ * p >= 0.5 erases all bias -> detectability 0 (a code cannot be ruled
  * out at all). */
 static float detectability_from(const dt_cc_detect_noisy_stream_params *p) {
   const float p_ovr = p->p_ovr_true + p->p_ovr_false + p->p_ovr_erase;

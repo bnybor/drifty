@@ -22,8 +22,8 @@ to reach for which**:
 - `dt_cc_detect_clean_soft_decoder_create(&p)` / `dt_cc_detect_noisy_soft_decoder_create(&p)`
   — both take the same rich channel model as `hybrid`/`maxir` (here a clean channel),
   driven through the normal soft-decoder vtable, with the same repurposed output
-  fields: `c_erasure` = confidence a code **is** present, `c_absent` = confidence it
-  is **not** (they need not sum to 1).
+  fields: `c_erasure` = consistency with a code present, `c_absent` = consistency with
+  random (independent goodness-of-fit reads, so they need not sum to 1).
 - **Part A (clean):** a whole coded stream reads as "present", a random stream as
   "absent".
 - **Part B (clean):** a coded segment spliced into a random stream — detect_clean
@@ -52,12 +52,12 @@ Part B - a coded segment spliced into a random stream...
   bits  1536.. 1920 (coded)  [########################] 1.00
   ...
   bits  3840.. 4224 (coded)  [########################] 1.00
-  bits  4224.. 4608 (random) [##########              ] 0.43   <- edge block straddles the boundary
+  bits  4224.. 4608 (random) [###########             ] 0.45   <- edge block straddles the boundary
 
 Part C - the same coded stream through a bit-FLIP channel...
   0% flips:  clean [########################] 1.00   noisy [########################] 1.00
-  1% flips:  clean [###################     ] 0.80   noisy [########################] 1.00
-  3% flips:  clean [######                  ] 0.23   noisy [########################] 0.99
+  1% flips:  clean [#####################   ] 0.86   noisy [########################] 1.00
+  3% flips:  clean [######                  ] 0.26   noisy [########################] 0.99
   5% flips:  clean [                        ] 0.00   noisy [################        ] 0.67
 
   combined 3% flip + 0.5% deletion (flips AND drift at once):

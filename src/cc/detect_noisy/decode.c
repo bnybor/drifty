@@ -106,15 +106,16 @@
  * coerced to 0 (which would fake an all-zeros delta whose Walsh transform is flat
  * and reads as maximal bias). They are kept DISTINCT for the present axis:
  *   DET_NOTBIT - an UNBOUND non-bit (DT_ERASURE / DT_ABSENT / DT_NONE): neutral.
- *   DET_INVAL  - a BOUND non-boolean (DT_INVALID): off both the codeword and the
- *                random-boolean manifold, so its PLACEMENT is present-axis evidence
- *                (see invalid_units). */
+ *   DET_INVAL  - a BOUND non-boolean (DT_INVALID): encoders emit invalids only in
+ *                runs, so an un-encodable PLACEMENT (a singleton, or varied-length
+ *                runs) is TWO-SIDED evidence - against a code and for no-code (see
+ *                invalid_units). */
 #define DET_NOTBIT 2u
 #define DET_INVAL  3u
 
-/* Each unit of invalid-placement penalty damps c_lost by 2^-DET_INV_BITS = 1/4.
- * Soft: channel invalids are unmodeled but not impossible, so this is strong
- * present-axis EVIDENCE, never proof. */
+/* Each unit of invalid-placement penalty damps c_lost AND lifts c_absent by a factor
+ * 2^-DET_INV_BITS = 1/4. Soft: channel invalids are unmodeled but not impossible, so
+ * this is strong two-sided EVIDENCE, never proof. */
 #define DET_INV_BITS 2
 #define DET_INV_MAXRUNS 64
 #define DET_INV_MAXUNITS 32
@@ -179,7 +180,7 @@ struct dt_cc_detect_noisy_stream_decoder {
   /* Input bit FIFO (0/1, or DET_NOTBIT / DET_INVAL for a non-bit position) and two
    * parallel per-position pools: emax = best bias excess so far (float; DET_UNCOVERED
    * = not yet covered), imax = worst invalid-placement penalty units of any covering
-   * window (signed char; 0 = none, present-axis only). All share head/len/cap;
+   * window (signed char; 0 = none, two-sided evidence). All share head/len/cap;
    * in[head + k] is absolute position `base + k`. */
   unsigned char *in;
   float *emax;
@@ -318,11 +319,15 @@ static dt_cc_detect_noisy_decode_details verdict_from(float excess, int iunits,
   float ca = 1.0f - excess;
   ca = ca < 0.0f ? 0.0f : (ca > 1.0f ? 1.0f : ca);
   det.c_absent = ca;
-  /* Invalid placement is present-axis-only evidence: its pattern can contradict a
-   * code (damp c_lost) but an invalid is off the random-boolean manifold too, so it
-   * never raises c_absent. Soft (channel invalids are unmodeled, not impossible). */
+  /* Invalid placement is TWO-SIDED evidence (soft - channel invalids are unmodeled but
+   * not impossible): a pattern no single code could emit contradicts a code (damps
+   * c_lost toward 0) and, being the signature of a non-coded source, validates no-code
+   * (lifts c_absent toward 1). Weighed only where a window scored - an all-non-bit run
+   * returns (1, 1) above, with nothing to attach the evidence to. */
   if (iunits > 0) {
-    det.c_lost *= pow2_neg(DET_INV_BITS * iunits);
+    const float f = pow2_neg(DET_INV_BITS * iunits);
+    det.c_lost *= f;
+    det.c_absent = 1.0f - (1.0f - det.c_absent) * f;
   }
   return det;
 }

@@ -96,15 +96,16 @@
  * things to the present axis:
  *   DET_NOTBIT - an UNBOUND non-bit (DT_ERASURE / DT_ABSENT / DT_NONE): a value was
  *                here but is not known. Neutral - consistent with a code or random.
- *   DET_INVAL  - a BOUND non-boolean (DT_INVALID): a deliberate non-value. Off the
- *                codeword manifold AND off the random-boolean manifold, so its
- *                PLACEMENT is present-axis evidence (see invalid_units below). */
+ *   DET_INVAL  - a BOUND non-boolean (DT_INVALID): a deliberate non-value. Encoders
+ *                emit invalids only in runs, so an un-encodable PLACEMENT (a singleton,
+ *                or varied-length runs) is TWO-SIDED evidence - against a code and for
+ *                no-code (see invalid_units below). */
 #define DET_NOTBIT 2u
 #define DET_INVAL  3u
 
-/* Each unit of invalid-placement penalty damps c_lost by 2^-DET_INV_BITS = 1/4.
- * Soft, not a hard kill: channel invalids are unmodeled but not impossible, so an
- * invalid pattern is strong present-axis EVIDENCE, never proof. */
+/* Each unit of invalid-placement penalty damps c_lost AND lifts c_absent by a factor
+ * 2^-DET_INV_BITS = 1/4. Soft, not a hard kill: channel invalids are unmodeled but not
+ * impossible, so an invalid pattern is strong two-sided EVIDENCE, never proof. */
 #define DET_INV_BITS 2
 #define DET_INV_MAXRUNS 64 /* cap on runs tracked for the distinct-length test     */
 #define DET_INV_MAXUNITS 32 /* cap on penalty units (c_lost already ~0 past this)   */
@@ -157,9 +158,10 @@ static int msb64(uint64_t x) {
   return b;
 }
 
-/* Penalty units from the PLACEMENT of DT_INVAL symbols over win[0..count): a
- * present-axis measure of how badly the invalid pattern contradicts "one
- * convolutional code produced this". Two generator-agnostic signatures, summed:
+/* Penalty units from the PLACEMENT of DT_INVAL symbols over win[0..count): how badly
+ * the invalid pattern contradicts "one convolutional code produced this" - used
+ * two-sided in the verdict (damps c_lost, lifts c_absent). Two generator-agnostic
+ * signatures, summed:
  *   - singletons (length-1 invalid runs): a single invalid INPUT smears over the
  *     encoder's K-step register into a generator-shaped cluster (or, once inputs
  *     saturate, a solid run) - never a lone invalid with clean neighbours. So a
@@ -259,13 +261,14 @@ static int gf2_rank(const unsigned char *win, int count, int stride, int *nrows)
  *   d   = pooled structural deficiency min(n_eff, W) - rank (>= 0), or -1 if the
  *         position was never covered by a window with a usable row.
  *   cov = largest usable row count of any covering window (sets the fill margin).
- *   iunits = pooled invalid-placement penalty units (present-axis only).
+ *   iunits = pooled invalid-placement penalty units (two-sided evidence).
  * A structural deficiency contradicts random (lowers c_absent) and is real whatever
  * the channel. A genuinely full rank contradicts a code (lowers c_lost) - but only
  * insofar as the fill is confirmed (margin) and the channel is clean enough that a
  * real code's parity could not have been flipped into full rank (detectability).
- * Invalid placement only ever lowers c_lost (its pattern contradicts a code) and
- * never raises c_absent (an invalid is off the random-boolean manifold too). */
+ * Invalid placement is TWO-SIDED evidence: a placement no single code could emit both
+ * contradicts a code (lowers c_lost) and, being the hallmark of a non-coded source,
+ * validates no-code (raises c_absent). */
 static dt_cc_detect_clean_decode_details verdict_from(int d, int cov, int iunits,
                                                       float detectability) {
   dt_cc_detect_clean_decode_details det;
@@ -292,11 +295,16 @@ static dt_cc_detect_clean_decode_details verdict_from(int d, int cov, int iunits
     det.c_lost = 1.0f - detectability * fillconf;
     det.c_absent = 1.0f;
   }
-  /* Present-axis-only damping from the invalid-symbol placement. Each unit costs a
-   * factor 2^-DET_INV_BITS; soft, since channel invalids are unmodeled but not
-   * impossible. c_absent is untouched - invalidity is not evidence FOR randomness. */
+  /* Two-sided evidence from the invalid-symbol placement, each unit a factor
+   * 2^-DET_INV_BITS (soft - channel invalids are unmodeled but not impossible): it
+   * contradicts a code (damps c_lost toward 0) and, being the signature of a non-coded
+   * source, validates no-code (lifts c_absent toward 1). The lift also undoes the
+   * spurious deficiency that dropped don't-know invalid rows can leave on a thinned
+   * random window - scattered invalids must never read as MORE code-like. */
   if (iunits > 0) {
-    det.c_lost *= pow2_neg(DET_INV_BITS * iunits);
+    const float f = pow2_neg(DET_INV_BITS * iunits);
+    det.c_lost *= f;
+    det.c_absent = 1.0f - (1.0f - det.c_absent) * f;
   }
   return det;
 }

@@ -32,13 +32,15 @@ These are two INDEPENDENT goodness-of-fit reads, not a probability split: each a
 "does the data fail to contradict this hypothesis?", so they need **not** sum to 1.
 `(high, low)` reads as a code, `(low, high)` as random; **`(1, 1)`** means *no
 discriminating evidence* — an all-non-bit run (e.g. all-erasure) or the warm-up /
-flush tail.
+flush tail — and `(low, low)` is unreachable from the single bias statistic (reserved
+for a future catalogue-mismatch signal).
 
-A **`DT_INVALID`** symbol is **present-axis evidence**: not a bit, so it never argues
-for or against random (`c_absent` is untouched), but a placement no single encoder
-could emit — a lone invalid, or runs of differing length — damps `c_erasure` toward 0;
-an invalid in an *encodable* shape (a single contiguous run) carries no penalty. This
-makes **`(low, low)`** reachable (code-like structure carrying un-encodable invalids).
+A **`DT_INVALID`** symbol is **two-sided evidence**. Encoders emit invalids only in
+*runs*, so a placement no single encoder could emit — a lone invalid, or runs of
+**differing length** — both contradicts a code (damps `c_erasure` toward 0) **and**, as
+the hallmark of a non-coded source, favors no-code (raises `c_absent` toward 1):
+scattered invalids read **`(low, high)`**. An invalid in an *encodable* shape (a single
+run, or several of equal length) — and a whole window of invalids — moves neither axis.
 Unlike [`detect_clean`](detect_clean.md), the bias method weighs invalids **only where a
 window actually scored** — on an all-non-bit run there is nothing to attach them to, so
 the verdict stays `(1, 1)`. Other non-bits (`DT_ERASURE`/`DT_ABSENT`/`DT_NONE`) are
@@ -96,13 +98,14 @@ to the verdict:
 A position no window scored (the tail, or all-non-bit rows such as an all-erasure
 run) reads `(1, 1)` — no discriminating evidence.
 
-Overlaid on this, where a window scored, is a **`DT_INVALID` placement** check
-(present-axis only): an invalid whose placement no single encoder could emit damps
-`c_erasure` by `4^{−1}` per un-encodable **unit** — a singleton, plus each extra
-distinct invalid run-length — while `c_absent` is left untouched; an encodable shape
-(one run, or equal-length runs) adds nothing. Because the damping rides on a *scored*
-window, an all-non-bit run carrying invalids stays `(1, 1)` (nothing scored), whereas a
-coded window spliced with lone invalids reads `(low, low)`.
+Overlaid on this, where a window scored, is a **`DT_INVALID` placement** check: an
+invalid whose placement no single encoder could emit is **two-sided** evidence — per
+un-encodable **unit** (a singleton, plus each extra distinct invalid run-length) it damps
+`c_erasure` by `4^{−1}` (contradicts a code) and lifts `c_absent` toward 1 by the same
+factor (favors no-code). An encodable shape (one run, several of equal length, or a whole
+window of invalids) adds nothing. Because the evidence rides on a *scored* window, an
+all-non-bit run carrying invalids stays `(1, 1)` (nothing scored), whereas a coded *or
+random* window spliced with lone invalids reads `(low, high)`.
 
 Geometry: `L_c = 14` (the check span / transform order — `2^{14}` histogram, ~64 KB),
 strides `2..6`, window `L = 1200` bits sliding by `300`, `K = 2`. Output trails

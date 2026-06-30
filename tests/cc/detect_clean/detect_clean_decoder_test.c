@@ -35,10 +35,10 @@
  * flush tail - not (0, 0). The tests confirm: a coded stream is consistent with a
  * code and contradicts random; a random stream the reverse (under a clean model);
  * the channel model lifts the CODE-PRESENT axis (not the no-code one) when flips are
- * expected; an all-erasure run reads (1, 1); un-encodable DT_INVALID placement damps
- * the CODE-PRESENT axis only (an encodable invalid run does not); indels are
- * tolerated; output count tracks input; only the two fields are populated; and the
- * lifecycle is sound.
+ * expected; an all-erasure run reads (1, 1); un-encodable DT_INVALID placement is
+ * two-sided evidence - it contradicts a code AND favors no-code (an encodable invalid
+ * run, or a whole window of invalids, moves neither); indels are tolerated; output
+ * count tracks input; only the two fields are populated; and the lifecycle is sound.
  */
 
 #include <drifty/cc/ccode.h>
@@ -51,6 +51,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int g_failures = 0;
 
@@ -294,50 +295,64 @@ static void test_no_evidence(void) {
   free(out);
 }
 
-/* DT_INVALID is present-axis evidence. A placement no single convolutional encoder
- * could emit - a lone invalid (a length-1 run), or runs of differing length - damps
- * the CODE-PRESENT read (c_erasure) toward 0, while leaving c_absent (the fit to
- * random) untouched: an invalid is off the random-boolean manifold too, so it never
- * argues FOR random. An ENCODABLE invalid shape (a single contiguous run, one trellis
- * offset) carries no penalty. The damping applies even with no other usable bits (an
- * all-erasure base), and on a coded stream it drives c_erasure down off its ceiling -
- * code-like structure that nonetheless carries un-encodable symbols. */
+/* DT_INVALID is TWO-SIDED evidence. Encoders emit invalids only in RUNS, so a lone
+ * invalid (a length-1 run) or runs of DIFFERING length are un-encodable: they
+ * contradict a code (damp c_erasure toward 0) AND, as the hallmark of a non-coded
+ * source, favor no-code (raise c_absent toward 1) - the one `invalid_units` signal
+ * drives both axes. A single contiguous run, or several equal-length runs, is an
+ * encodable shape and moves neither. An ENTIRE window of invalids is itself one run:
+ * it contradicts neither hypothesis and reads (1, 1). */
 static void test_invalid_evidence(void) {
-  printf("detect DT_INVALID present-axis evidence (damps code-present, not no-code):\n");
-  enum { RL = 4000, CAP = RL + 256 };
+  printf("detect DT_INVALID two-sided evidence (un-encodable: not a code, AND favors no-code):\n");
+  enum { NINFO = 1500, CAP = NINFO * 5 + 256 };
+  uint64_t rng = 0xC0DE99u;
   dt_cc_detect_clean_stream_params p = clean_params();
-  dt_bit *rx = malloc(CAP);
+  dt_bit *coded = malloc(CAP);
+  dt_bit *chan = malloc(CAP);
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
   double present, absent;
+  int clen = encode(DT_CC_CODE_K7_RATE_1_2, NINFO, coded, CAP, &rng);
 
-  /* Lone invalids (singletons) over an all-erasure base: un-encodable, so c_erasure
-   * is crushed while c_absent stays at the no-evidence ceiling (~1). Contrast
-   * test_no_evidence, where the same base with NO invalids reads (1, 1). */
-  for (int i = 0; i < RL; ++i) rx[i] = DT_ERASURE;
-  for (int i = 20; i < RL; i += 20) rx[i] = DT_INVALID;
-  int got = detect_all(&p, rx, RL, out, CAP);
+  /* baseline: a clean coded stream reads as a code, (high, low). */
+  int got = detect_all(&p, coded, clen, out, CAP);
   means(out, got, &present, &absent);
-  check_lt("invalid singletons: code-present consistency crushed", present, 0.1);
-  check_gt("invalid singletons: no-code consistency untouched", absent, 0.9);
+  check_gt("coded: consistent with a code", present, 0.9);
+  check_lt("coded: contradicts random", absent, 0.1);
 
-  /* A single contiguous invalid RUN is an encodable shape (one offset) and adds no
-   * penalty: it reads like an all-non-bit gap, (1, 1). */
-  for (int i = 0; i < RL; ++i) rx[i] = DT_ERASURE;
-  for (int i = 1000; i < 1100; ++i) rx[i] = DT_INVALID;
-  got = detect_all(&p, rx, RL, out, CAP);
+  /* lone invalids (un-encodable singletons) -> (low, high): not a code, favors no-code. */
+  memcpy(chan, coded, (size_t)clen);
+  for (int i = 100; i < clen; i += 100) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, clen, out, CAP);
   means(out, got, &present, &absent);
-  check_gt("single invalid run: encodable shape, no damping", present, 0.9);
+  check_lt("lone invalids: code-present crushed", present, 0.1);
+  check_gt("lone invalids: no-code RAISED (favors no-code)", absent, 0.9);
 
-  /* On a CODED stream the same singletons contradict a single code: c_erasure drops
-   * off its ~1 ceiling even though the underlying structure is still code-like. */
-  uint64_t rng = 0xC0DE99u;
-  int clen = encode(DT_CC_CODE_K7_RATE_1_2, 1500, rx, CAP, &rng);
-  for (int i = 50; i < clen; i += 50) rx[i] = DT_INVALID;
-  got = detect_all(&p, rx, clen, out, CAP);
+  /* one contiguous invalid run (encodable) -> moves neither axis: still (high, low). */
+  memcpy(chan, coded, (size_t)clen);
+  for (int i = 200; i < 260 && i < clen; ++i) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, clen, out, CAP);
   means(out, got, &present, &absent);
-  check_lt("coded + invalid singletons: code-present contradicted", present, 0.1);
+  check_gt("encodable run: code-present unmoved", present, 0.9);
+  check_lt("encodable run: no-code unmoved", absent, 0.1);
 
-  free(rx);
+  /* a RANDOM stream sprinkled with lone invalids must VALIDATE no-code (not dip): the
+   * dropped invalid rows must never leave the window reading as more code-like. */
+  for (int i = 0; i < clen; ++i) chan[i] = (rng_next(&rng) & 1) ? DT_TRUE : DT_FALSE;
+  for (int i = 100; i < clen; i += 100) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, clen, out, CAP);
+  means(out, got, &present, &absent);
+  check_gt("random + invalids: validates no-code (not the old dip)", absent, 0.9);
+  check_lt("random + invalids: still not a code", present, 0.1);
+
+  /* an ENTIRE window of invalids is one run -> contradicts neither -> (1, 1). */
+  for (int i = 0; i < clen; ++i) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, clen, out, CAP);
+  means(out, got, &present, &absent);
+  check_gt("all-invalid: code-present un-contradicted (~1)", present, 0.9);
+  check_gt("all-invalid: no-code un-contradicted (~1)", absent, 0.9);
+
+  free(coded);
+  free(chan);
   free(out);
 }
 

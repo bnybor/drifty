@@ -24,8 +24,8 @@
  *         exactly the coded region - it finds the code with no hint of where it is.
  * Part C: add bit FLIPS - which break clean's exact parity - and watch noisy hold on
  *         where clean collapses, including through a combined flip+indel channel.
- * Part D: DT_INVALID symbols as present-axis evidence - un-encodable invalid placement
- *         damps code-present (toward the (low, low) corner) while leaving no-code alone.
+ * Part D: DT_INVALID symbols as two-sided evidence - un-encodable invalid placement
+ *         argues against a code AND for no-code (the (low, high) reading).
  *
  * Run: ./11_detect
  */
@@ -198,11 +198,11 @@ int main(void) {
     bar(mf);
     putchar('\n');
   }
-  /* ---- Part D: DT_INVALID symbols as present-axis evidence (detect_clean) ---- */
-  printf("\nPart D - a DT_INVALID symbol is present-axis EVIDENCE: a value no code\n"
-         "could emit at that spot argues AGAINST a code. Lone invalids (un-encodable)\n"
-         "damp code-present while leaving no-code alone; an encodable invalid RUN does\n"
-         "not. The same coded stream, clean vs sprinkled with invalids:\n\n");
+  /* ---- Part D: DT_INVALID symbols as two-sided evidence (detect_clean) ---- */
+  printf("\nPart D - a DT_INVALID symbol is TWO-SIDED evidence. Encoders emit invalids\n"
+         "only in runs, so a lone invalid (or runs of differing length) is un-encodable:\n"
+         "it argues AGAINST a code AND FOR no-code. An encodable invalid RUN does neither.\n"
+         "The same coded stream, clean vs sprinkled with invalids:\n\n");
   ex_rand_bits(msg, NINFO, &rng);
   clen = ex_encode(code, msg, NINFO, coded, cap);
   struct { const char *label; int every; int run; } dcase[] = {
@@ -225,9 +225,9 @@ int main(void) {
     bar(mean_coded(out, 0, g));
     printf("   no-code %.2f\n", mean_absent(out, 0, g));
   }
-  printf("\nLone invalids crush code-present yet no-code stays low - the (low, low)\n"
-         "corner: code-like structure no single code could have emitted. A single\n"
-         "invalid RUN is an encodable shape, so it carries no such penalty.\n");
+  printf("\nLone invalids crush code-present AND raise no-code - (low, high): not a\n"
+         "code, and the scattered un-encodable symbols look like non-coded junk. A\n"
+         "single invalid RUN is an encodable shape, so it moves neither.\n");
 
   printf("\nclean stays the cheap pick for clean / very-low-noise streams; noisy earns\n"
          "its ~64 KB when the channel flips or drifts. See doc/cc/detect_clean.md and\n"

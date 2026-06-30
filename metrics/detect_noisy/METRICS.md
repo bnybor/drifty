@@ -32,12 +32,12 @@ pure-random **baseline**: detection works to the extent the coded curves stand c
 of it. Each axis (flip / insert / delete / erase / invalid) is swept independently.
 
 The **invalid** axis is different in kind. It marks coded bits `DT_INVALID` — a symbol
-no single code could emit at that spot — and detect reads invalid *placement* as
-present-axis evidence. Rising invalid rate **collapses `c_erasure`**, even faster than
-for detect_clean (the larger window catches more invalids per scored region), driving
-coded to the `(low, low)` corner — code-like bias that nonetheless carries un-encodable
-symbols — while `c_absent` stays low (the surviving rows still bias). The damping has no
-model knob, so **pegged and matched coincide** on this axis.
+no single code could emit at that spot — read as **two-sided evidence**: rising invalid
+rate both **collapses `c_erasure`** (un-encodable singletons contradict a code) and
+**lifts `c_absent`** (they favor no-code), driving coded from `(1, 0)` to `(0, 1)` — even
+faster than detect_clean (the larger window catches more invalids per scored region). On
+a random stream `c_absent` stays at its ceiling. The evidence has no model knob, so
+**pegged and matched coincide** on this axis.
 
 ## Variations (the decoder's channel model)
 
@@ -97,9 +97,10 @@ detection margin. The `c_erasure` plots show the *model calibration* instead (be
 detect_noisy degrades **gracefully**: on the `c_absent` plots the coded curves climb
 toward the ceiling only past ~5–8 % flips, ~2–3 % indels, ~16 % erasures.
 
-The **invalid** axis is the exception to "read it on `c_absent`": there the signal is
-the **`c_erasure` collapse** itself (invalids are present-axis evidence), read directly
-off the present plot, and pegged ≡ matched (no model knob).
+The **invalid** axis reads on **both** plots: invalids are two-sided evidence, so the
+coded point sweeps from `(1, 0)` to `(0, 1)` — `c_erasure` collapses (not a code) while
+`c_absent` rises to the ceiling (favors no-code). The random baseline stays pinned at the
+`c_absent` ceiling throughout. pegged ≡ matched (no model knob).
 
 ### Code-present consistency (`c_erasure`)
 
@@ -118,11 +119,11 @@ INSERT/DELETE barely move the baseline (indels don't feed detectability).
 | erase  | <img src="untuned/plots/present_vs_erase.png"  width="420"> | <img src="tuned/plots/present_vs_erase.png"  width="420"> |
 | invalid | <img src="untuned/plots/present_vs_invalid.png" width="420"> | <img src="tuned/plots/present_vs_invalid.png" width="420"> |
 
-On the **invalid** axis `c_erasure` *is* the detection read: the coded curve **collapses**
-to ~0 within a few tenths of a percent (the 1200-bit window catches many invalids, each
-lone one un-encodable), faster than detect_clean's, and the two columns are identical (no
-model knob). Coded then sits at `(low, low)` — the bias still says "not random" (next
-section) while the invalids say "not a single code".
+On the **invalid** axis the coded `c_erasure` curve **collapses** to ~0 within a few
+tenths of a percent (the 1200-bit window catches many invalids, each lone one
+un-encodable), faster than detect_clean's, and the two columns are identical (no model
+knob). The matching `c_absent` *rise* is in the next section — together the coded point
+sweeps from `(1, 0)` to `(0, 1)`: not a code, and the scattered invalids favor no-code.
 
 ### No-code consistency (`c_absent`)
 
@@ -131,9 +132,9 @@ model never touches this axis). The random baseline sits at/near the ceiling
 (~0.93–1.0); the coded curves rise from ~0 to meet it as flips/indels/erasures erode
 the bias. The knee (coded ≈ 0.5, half the bias gone) is ~7 % flips for K7-rate-½,
 later for the more-redundant codes; the coded-to-ceiling gap is the readable
-detection margin. On the **invalid** axis this read barely moves — coded `c_absent`
-stays low because the non-invalid rows still bias — so invalids register only on the
-present plot.
+detection margin. On the **invalid** axis coded `c_absent` **rises** from ~0 to the
+ceiling as invalids accumulate — they are two-sided evidence and favor no-code — meeting
+the random baseline, which stays at the ceiling throughout.
 
 | axis | pegged | matched |
 |---|---|---|

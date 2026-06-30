@@ -30,11 +30,12 @@ pure-random **baseline**: detection works to the extent the coded curves stand c
 of it. Each axis (flip / insert / delete / erase / invalid) is swept independently.
 
 The **invalid** axis is different in kind. It marks coded bits `DT_INVALID` — a symbol
-no single code could emit at that spot — and detect reads invalid *placement* as
-present-axis evidence. So rising invalid rate **collapses `c_erasure`** (random-placed
-invalids land as un-encodable singletons), while `c_absent` is left to register whatever
-structure survives. The damping has no model knob, so **pegged and matched coincide** on
-this axis.
+no single code could emit at that spot — read as **two-sided evidence**: rising invalid
+rate both **collapses `c_erasure`** (the random-placed singletons are un-encodable, so
+they contradict a code) and **lifts `c_absent`** (they favor no-code), so the coded point
+sweeps from `(1, 0)` to `(0, 1)`. On a random stream `c_absent` simply holds at its
+ceiling — scattered invalids only confirm no-code, never drag it down. The evidence has
+no model knob, so **pegged and matched coincide** on this axis.
 
 ## Variations (the decoder's channel model)
 
@@ -94,9 +95,10 @@ calibration* (below). detect_clean's structure shows clearly only at low rates (
 parity): on the `c_absent` plots the coded curves start climbing toward the ceiling
 past ~1 % flips/indels and ~2 % erasures.
 
-The **invalid** axis is the exception to "read it on `c_absent`": there the signal is
-the **`c_erasure` collapse** itself (invalids are present-axis evidence), read directly
-off the present plot, and pegged ≡ matched (no model knob).
+The **invalid** axis reads on **both** plots: invalids are two-sided evidence, so the
+coded point sweeps from `(1, 0)` to `(0, 1)` — `c_erasure` collapses (not a code) while
+`c_absent` rises to the ceiling (favors no-code). The random baseline stays pinned at the
+`c_absent` ceiling throughout. pegged ≡ matched (no model knob).
 
 ### Code-present consistency (`c_erasure`)
 
@@ -116,11 +118,11 @@ code-present consistency, and at high noise the coded curves and the baseline
 | erase  | <img src="untuned/plots/present_vs_erase.png"  width="420"> | <img src="tuned/plots/present_vs_erase.png"  width="420"> |
 | invalid | <img src="untuned/plots/present_vs_invalid.png" width="420"> | <img src="tuned/plots/present_vs_invalid.png" width="420"> |
 
-On the **invalid** axis `c_erasure` *is* the detection read (not the baseline story): the
-coded curve **collapses** from 1 toward 0 within a percent or so as random-placed
-invalids accumulate — each lone invalid is un-encodable, so a handful per window crushes
-the code-present consistency — and the two columns are identical (the invalid penalty has
-no model knob). The random baseline starts at the model floor and falls alongside it.
+On the **invalid** axis the coded `c_erasure` curve **collapses** from 1 toward 0 within a
+percent or so as random-placed invalids accumulate — each lone invalid is un-encodable, so
+a handful per window crushes the code-present consistency (the other half of the story,
+`c_absent` *rising*, is in the next section). The two columns are identical (no model
+knob); the random baseline starts at the model floor and falls alongside it.
 
 ### No-code consistency (`c_absent`)
 
@@ -129,9 +131,10 @@ model never touches this axis). The random baseline is pinned at the ceiling (1.
 the coded curves rise from ~0 to meet it as noise destroys the structure. The knee
 (coded ≈ 0.5, half the structure gone) is ~2 % flips for the rate-½ codes, later for
 the more-redundant ones; the coded-to-ceiling gap is the readable detection margin. On
-the **invalid** axis this read lags the present one: coded `c_absent` holds near 0 while
-the rank deficiency survives and only climbs once invalids grow dense enough (a few
-percent) to wreck it — so invalids are detected on the present plot, not here.
+the **invalid** axis coded `c_absent` **rises** from ~0 to the ceiling as invalids
+accumulate — they are two-sided evidence and favor no-code — meeting the random baseline,
+which stays pinned at the ceiling throughout (scattered invalids only confirm no-code; the
+spurious dip a thinned rank would otherwise cause is gone).
 
 | axis | pegged | matched |
 |---|---|---|

@@ -34,10 +34,10 @@
  * The no-discriminating-evidence state is (1, 1) - an all-non-bit run, or the warm-up
  * tail. Beyond the basics (coded is consistent with a code, random fits random, the
  * (1,1) no-evidence state, the channel model lifting the code-present axis, un-encodable
- * DT_INVALID placement damping the code-present axis where a window scored, field
- * hygiene, lifecycle), these confirm detect_noisy's reason for being over
- * detect_clean: code-present consistency survives FLIPS, indels, and light
- * COMBINATIONS of the two.
+ * DT_INVALID placement as two-sided evidence (contradicts a code AND favors no-code)
+ * where a window scored, field hygiene, lifecycle), these confirm detect_noisy's reason
+ * for being over detect_clean: code-present consistency survives FLIPS, indels, and
+ * light COMBINATIONS of the two.
  */
 
 #include <drifty/cc/ccode.h>
@@ -50,6 +50,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int g_failures = 0;
 
@@ -322,42 +323,65 @@ static void test_no_evidence(void) {
   free(out);
 }
 
-/* DT_INVALID is present-axis evidence here too - lone or odd-length invalids damp the
- * CODE-PRESENT read (c_erasure) while leaving c_absent untouched - but detect_noisy
- * weighs it only where a window actually SCORED. On a coded stream the singletons
- * crush c_erasure; on an all-non-bit run (all erasures) no window scores, so the
- * invalids are not weighed and the verdict stays at the (1, 1) no-evidence state - the
- * bias detector has nothing to attach the evidence to. (detect_clean, whose rank
- * method needs no scored window, DOES damp invalids on an all-erasure base; this is
- * the one place the two engines read the same input differently.) */
+/* DT_INVALID is TWO-SIDED evidence here too - un-encodable placement (lone invalids,
+ * or runs of differing length) contradicts a code (damps c_erasure) AND favors no-code
+ * (raises c_absent) - but detect_noisy weighs it only where a window actually SCORED.
+ * On a coded or random stream the singletons move both axes; on an all-non-bit run
+ * (all erasures) no window scores, so the invalids are not weighed and the verdict
+ * stays (1, 1). (detect_clean, whose rank method needs no scored window, DOES weigh
+ * invalids on an all-erasure base; this is the one place the two engines read the same
+ * input differently.) A whole window of invalids is itself one run -> (1, 1). */
 static void test_invalid_evidence(void) {
-  printf("detect DT_INVALID present-axis evidence (weighed only where a window scored):\n");
+  printf("detect DT_INVALID two-sided evidence (weighed where a window scored):\n");
   enum { NINFO = 3000, CAP = NINFO * 5 + 256 };
   uint64_t rng = 0xC0DE99u;
   dt_cc_detect_noisy_stream_params p = clean_params();
-  dt_bit *buf = malloc(CAP);
+  dt_bit *coded = malloc(CAP);
+  dt_bit *chan = malloc(CAP);
   dt_soft_bit *out = malloc((size_t)CAP * sizeof(*out));
   double present, absent;
+  int clen = encode(DT_CC_CODE_K7_RATE_1_2, NINFO, coded, CAP, &rng);
 
-  /* Coded stream, then lone invalids spliced in: the windows still score (most rows
-   * are bits), and the un-encodable singletons crush the code-present read. */
-  int clen = encode(DT_CC_CODE_K7_RATE_1_2, NINFO, buf, CAP, &rng);
-  for (int i = 50; i < clen; i += 50) buf[i] = DT_INVALID;
-  int got = detect_all(&p, buf, clen, out, CAP);
+  /* baseline coded -> (high, low). */
+  int got = detect_all(&p, coded, clen, out, CAP);
   means(out, got, &present, &absent);
-  check_lt("coded + invalid singletons: code-present crushed", present, 0.1);
+  check_gt("coded: consistent with a code", present, 0.9);
+  check_lt("coded: contradicts random", absent, 0.1);
 
-  /* All-erasure base + the same singletons: no window scores (every row is a non-bit),
-   * so the invalids are not weighed - the verdict stays (1, 1), NOT damped. */
+  /* coded + lone invalids -> (low, high): not a code, favors no-code. */
+  memcpy(chan, coded, (size_t)clen);
+  for (int i = 50; i < clen; i += 50) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, clen, out, CAP);
+  means(out, got, &present, &absent);
+  check_lt("coded + lone invalids: code-present crushed", present, 0.1);
+  check_gt("coded + lone invalids: no-code RAISED (favors no-code)", absent, 0.9);
+
+  /* random + lone invalids -> validates no-code (covered, so the invalids are weighed). */
+  for (int i = 0; i < clen; ++i) chan[i] = (rng_next(&rng) & 1) ? DT_TRUE : DT_FALSE;
+  for (int i = 50; i < clen; i += 50) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, clen, out, CAP);
+  means(out, got, &present, &absent);
+  check_gt("random + invalids: validates no-code", absent, 0.9);
+
+  /* a whole window of invalids is one run -> contradicts neither -> (1, 1). */
+  for (int i = 0; i < clen; ++i) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, clen, out, CAP);
+  means(out, got, &present, &absent);
+  check_gt("all-invalid: code-present un-contradicted (~1)", present, 0.9);
+  check_gt("all-invalid: no-code un-contradicted (~1)", absent, 0.9);
+
+  /* the asymmetry: an all-ERASURE base + invalids has no scored window, so detect_noisy
+   * does NOT weigh the invalids - stays (1, 1) (detect_clean would read (low, 1)). */
   enum { RL = 6000 };
-  for (int i = 0; i < RL; ++i) buf[i] = DT_ERASURE;
-  for (int i = 20; i < RL; i += 20) buf[i] = DT_INVALID;
-  got = detect_all(&p, buf, RL, out, CAP);
+  for (int i = 0; i < RL; ++i) chan[i] = DT_ERASURE;
+  for (int i = 20; i < RL; i += 20) chan[i] = DT_INVALID;
+  got = detect_all(&p, chan, RL, out, CAP);
   means(out, got, &present, &absent);
-  check_gt("all-erasure + invalids: unscored, stays (1,1) present", present, 0.9);
-  check_gt("all-erasure + invalids: unscored, stays (1,1) absent", absent, 0.9);
+  check_gt("all-erasure + invalids: unscored -> (1,1) present", present, 0.9);
+  check_gt("all-erasure + invalids: unscored -> (1,1) absent", absent, 0.9);
 
-  free(buf);
+  free(coded);
+  free(chan);
   free(out);
 }
 

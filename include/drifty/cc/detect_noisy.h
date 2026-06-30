@@ -63,18 +63,20 @@ extern "C" {
  * answers "does the data fail to contradict this hypothesis?", so they need not
  * sum to 1. Both near 1 means no discriminating evidence - an all-erasure (or
  * otherwise all-non-bit) run, or the warm-up/flush tail - since nothing observed
- * contradicts either hypothesis. (high, low) reads as a code, (low, high) as random.
+ * contradicts either hypothesis. (high, low) reads as a code, (low, high) as random;
+ * (low, low) is not reachable from the single bias statistic and is reserved for a
+ * future catalogue-mismatch signal.
  *
- * A DT_INVALID symbol is PRESENT-axis evidence. It is not a bit, so it never argues
- * for or against random (c_absent is untouched), but a placement no single encoder
- * could emit - a lone invalid, or runs of differing length - damps c_erasure toward 0
- * (a real code could not have produced it); an invalid in an encodable shape (a single
- * contiguous run) carries no penalty. This makes (low, low) reachable: code-like
- * structure (c_absent low) that nonetheless carries un-encodable invalids (c_erasure
- * low). Unlike detect_clean, the bias method weighs invalids only where a window
- * actually scored - on an all-non-bit run there is nothing to attach them to, so the
- * verdict stays (1, 1). Other non-bits (DT_ERASURE/DT_ABSENT/DT_NONE) are neutral
- * don't-knows and damp neither axis.
+ * A DT_INVALID symbol is TWO-SIDED evidence. Encoders emit invalids only in runs, so a
+ * placement no single encoder could emit - a lone invalid, or runs of DIFFERING length
+ * - both contradicts a code (damps c_erasure toward 0) and, as the hallmark of a
+ * non-coded source, favors no-code (raises c_absent toward 1): scattered invalids read
+ * (low, high). An invalid in an encodable shape (a single contiguous run, or several of
+ * equal length) - and a whole window of invalids, itself one run - moves neither axis,
+ * reading (1, 1). Unlike detect_clean, the bias method weighs invalids only where a
+ * window actually scored - on an all-non-bit run there is nothing to attach them to, so
+ * the verdict stays (1, 1) regardless. Other non-bits (DT_ERASURE/DT_ABSENT/DT_NONE)
+ * are neutral don't-knows and damp neither axis.
  *
  * All other dt_soft_bit fields are 0. (The coded-presence read rides in
  * c_erasure by the engine-c_lost -> soft-c_erasure convention; detect repurposes

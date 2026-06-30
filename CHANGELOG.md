@@ -17,11 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Each reports, per position, two INDEPENDENT consistency reads (they need not sum to
   1): `c_erasure` (carrying the internal `c_lost`) = consistency with a code present,
   `c_absent` = consistency with random; both near 1 is the no-discriminating-evidence
-  state. A `DT_INVALID` symbol is read as **present-axis evidence**: an un-encodable
-  placement (a lone invalid, or runs of differing length) damps `c_erasure` while
-  leaving `c_absent` untouched, making the `(low, low)` corner reachable (`detect_noisy`
-  weighs it only where a window scored). They share one API and output and differ only
-  in footprint vs noise tolerance:
+  state. A `DT_INVALID` symbol is read as **two-sided evidence**: encoders emit invalids
+  only in runs, so an un-encodable placement (a lone invalid, or runs of differing
+  length) both contradicts a code (damps `c_erasure`) and favors no-code (raises
+  `c_absent`) — scattered invalids read `(low, high)`; an encodable run, or a whole
+  window of invalids, moves neither (`detect_noisy` weighs invalids only where a window
+  scored). They share one API and output and differ only in footprint vs noise
+  tolerance:
   - **`detect_clean`** (`dt_cc_detect_clean_soft_decoder_create`) — exact GF(2)
     **sliding** strided-window rank deficiency. A few KB of state and no transform;
     **indel-tolerant** (the sliding windows only need a locally indel-free aligned

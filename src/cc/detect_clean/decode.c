@@ -89,21 +89,37 @@
 
 #define DET_LN2 0.69314718055994531f
 
-/* Sentinel stored in `in[]` for a non-bit (erasure / invalid / absent) position:
- * any value > 1, so it can never be mistaken for a 0/1 payload. A window row that
- * contains one is a don't-know and is dropped from the rank matrix rather than
- * silently coerced to 0 (which would fake the all-zeros maximally-deficient row). */
+/* Sentinels stored in `in[]` for the two kinds of non-bit position; both are > 1
+ * so neither is mistaken for a 0/1 payload, and a rank row containing either is
+ * dropped as a don't-know (rather than coerced to 0, which would fake the all-zeros
+ * maximally-deficient row). They are kept DISTINCT because they mean different
+ * things to the present axis:
+ *   DET_NOTBIT - an UNBOUND non-bit (DT_ERASURE / DT_ABSENT / DT_NONE): a value was
+ *                here but is not known. Neutral - consistent with a code or random.
+ *   DET_INVAL  - a BOUND non-boolean (DT_INVALID): a deliberate non-value. Off the
+ *                codeword manifold AND off the random-boolean manifold, so its
+ *                PLACEMENT is present-axis evidence (see invalid_units below). */
 #define DET_NOTBIT 2u
+#define DET_INVAL  3u
+
+/* Each unit of invalid-placement penalty damps c_lost by 2^-DET_INV_BITS = 1/4.
+ * Soft, not a hard kill: channel invalids are unmodeled but not impossible, so an
+ * invalid pattern is strong present-axis EVIDENCE, never proof. */
+#define DET_INV_BITS 2
+#define DET_INV_MAXRUNS 64 /* cap on runs tracked for the distinct-length test     */
+#define DET_INV_MAXUNITS 32 /* cap on penalty units (c_lost already ~0 past this)   */
 
 struct dt_cc_detect_clean_stream_decoder {
-  /* Input bit FIFO (0/1 values, or DET_NOTBIT for a non-bit position) and two
-   * parallel per-position pools: dmax = best structural deficiency so far, cmax =
-   * largest usable row count of any covering window (for the fill margin). Both
-   * signed char: -1 = position not yet covered by any window with a usable row.
-   * All share head/len/cap; in[head + k] is absolute position `base + k`. */
+  /* Input bit FIFO (0/1, or DET_NOTBIT / DET_INVAL for a non-bit position) and
+   * three parallel per-position pools: dmax = best structural deficiency so far,
+   * cmax = largest usable row count of any covering window (for the fill margin),
+   * imax = worst invalid-placement penalty units of any covering window (present
+   * axis). dmax/cmax: -1 = not yet covered by a usable-row window; imax: 0 = no
+   * invalid evidence. All share head/len/cap; in[head + k] is position base + k. */
   unsigned char *in;
   signed char *dmax;
   signed char *cmax;
+  signed char *imax;
   int head, len, cap;
   long long base;       /* absolute index of in[head]              */
   long long next_start; /* absolute index of next window start (multiple of STEP) */
@@ -139,6 +155,58 @@ static int msb64(uint64_t x) {
     ++b;
   }
   return b;
+}
+
+/* Penalty units from the PLACEMENT of DT_INVAL symbols over win[0..count): a
+ * present-axis measure of how badly the invalid pattern contradicts "one
+ * convolutional code produced this". Two generator-agnostic signatures, summed:
+ *   - singletons (length-1 invalid runs): a single invalid INPUT smears over the
+ *     encoder's K-step register into a generator-shaped cluster (or, once inputs
+ *     saturate, a solid run) - never a lone invalid with clean neighbours. So a
+ *     length-1 run is an un-encodable shape.
+ *   - spread of run lengths: each run advances the trellis state by its length, so
+ *     runs of DIFFERING length impose independent state offsets a single code must
+ *     satisfy jointly (overdetermined, can fail). distinct_lengths - 1 counts that.
+ * A single run (one offset, always satisfiable) and equal-length runs (one repeated
+ * offset) contradict nothing -> 0 units. Unbound non-bits (DET_NOTBIT, e.g.
+ * erasures) are NOT invalids and never count. Capped: the verdict saturates well
+ * before DET_INV_MAXUNITS. */
+static int invalid_units(const unsigned char *win, int count) {
+  int lengths[DET_INV_MAXRUNS];
+  int nruns = 0, singles = 0;
+  for (int i = 0; i < count;) {
+    if (win[i] != DET_INVAL) {
+      ++i;
+      continue;
+    }
+    int run = 0;
+    while (i < count && win[i] == DET_INVAL) {
+      ++run;
+      ++i;
+    }
+    if (run == 1) {
+      ++singles;
+    }
+    if (nruns < DET_INV_MAXRUNS) {
+      lengths[nruns++] = run;
+    }
+  }
+  if (nruns == 0) {
+    return 0;
+  }
+  int distinct = 0;
+  for (int a = 0; a < nruns; ++a) {
+    int seen = 0;
+    for (int b = 0; b < a; ++b) {
+      if (lengths[b] == lengths[a]) {
+        seen = 1;
+        break;
+      }
+    }
+    distinct += !seen;
+  }
+  int units = singles + (distinct > 1 ? distinct - 1 : 0);
+  return units > DET_INV_MAXUNITS ? DET_INV_MAXUNITS : units;
 }
 
 /* GF(2) rank of the matrix whose rows are the DET_W-bit windows of win[0..count)
@@ -191,38 +259,45 @@ static int gf2_rank(const unsigned char *win, int count, int stride, int *nrows)
  *   d   = pooled structural deficiency min(n_eff, W) - rank (>= 0), or -1 if the
  *         position was never covered by a window with a usable row.
  *   cov = largest usable row count of any covering window (sets the fill margin).
+ *   iunits = pooled invalid-placement penalty units (present-axis only).
  * A structural deficiency contradicts random (lowers c_absent) and is real whatever
  * the channel. A genuinely full rank contradicts a code (lowers c_lost) - but only
  * insofar as the fill is confirmed (margin) and the channel is clean enough that a
- * real code's parity could not have been flipped into full rank (detectability). */
-static dt_cc_detect_clean_decode_details verdict_from(int d, int cov,
+ * real code's parity could not have been flipped into full rank (detectability).
+ * Invalid placement only ever lowers c_lost (its pattern contradicts a code) and
+ * never raises c_absent (an invalid is off the random-boolean manifold too). */
+static dt_cc_detect_clean_decode_details verdict_from(int d, int cov, int iunits,
                                                       float detectability) {
   dt_cc_detect_clean_decode_details det;
   if (d < 0) {
     /* No usable window ever covered this position (leading/trailing tail, or an
-     * all-non-bit run such as a stream of erasures): nothing discriminates the two
-     * hypotheses, so both stay fully consistent. */
+     * all-non-bit run such as a stream of erasures - or of invalids, which form a
+     * single run and so add no penalty): nothing discriminates the two hypotheses. */
     det.c_lost = 1.0f;
     det.c_absent = 1.0f;
-    return det;
-  }
-  if (d >= 1) {
+  } else if (d >= 1) {
     /* Structure found: a code fits (c_lost = 1); random would need a fluke of
      * ~2^-d to produce this deficiency, and that is true regardless of expected
      * noise (noise erodes structure, it never manufactures it). */
     det.c_lost = 1.0f;
     det.c_absent = pow2_neg(d);
-    return det;
+  } else {
+    /* d == 0: no structure. The absence of structure never contradicts random, so
+     * c_absent stays 1. A code is ruled out only to the extent the space was surely
+     * filled (margin rows beyond W) AND a flip-noisy channel could not have filled
+     * it by breaking a real code's parity (detectability). A thinly covered window
+     * (margin < 0) confirms no fill, so it rules nothing out: c_lost stays 1. */
+    const int margin = cov - DET_W;
+    const float fillconf = (margin >= 0) ? (1.0f - pow2_neg(margin + 1)) : 0.0f;
+    det.c_lost = 1.0f - detectability * fillconf;
+    det.c_absent = 1.0f;
   }
-  /* d == 0: no structure. The absence of structure never contradicts random, so
-   * c_absent stays 1. A code is ruled out only to the extent the space was surely
-   * filled (margin rows beyond W) AND a flip-noisy channel could not have filled it
-   * by breaking a real code's parity (detectability). A thinly covered window
-   * (margin < 0) confirms no fill, so it rules nothing out: c_lost stays 1. */
-  const int margin = cov - DET_W;
-  const float fillconf = (margin >= 0) ? (1.0f - pow2_neg(margin + 1)) : 0.0f;
-  det.c_lost = 1.0f - detectability * fillconf;
-  det.c_absent = 1.0f;
+  /* Present-axis-only damping from the invalid-symbol placement. Each unit costs a
+   * factor 2^-DET_INV_BITS; soft, since channel invalids are unmodeled but not
+   * impossible. c_absent is untouched - invalidity is not evidence FOR randomness. */
+  if (iunits > 0) {
+    det.c_lost *= pow2_neg(DET_INV_BITS * iunits);
+  }
   return det;
 }
 
@@ -234,6 +309,7 @@ static int buf_reserve(dt_cc_detect_clean_stream_decoder *d, int extra) {
     dt_memmove(d->in, d->in + d->head, (size_t)(d->len - d->head));
     dt_memmove(d->dmax, d->dmax + d->head, (size_t)(d->len - d->head));
     dt_memmove(d->cmax, d->cmax + d->head, (size_t)(d->len - d->head));
+    dt_memmove(d->imax, d->imax + d->head, (size_t)(d->len - d->head));
     d->len -= d->head;
     d->head = 0;
   }
@@ -257,6 +333,11 @@ static int buf_reserve(dt_cc_detect_clean_stream_decoder *d, int extra) {
       return 0;
     }
     d->cmax = ncm;
+    signed char *nim = dt_realloc(d->imax, (size_t)nc);
+    if (!nim) {
+      return 0;
+    }
+    d->imax = nim;
     d->cap = nc;
   }
   return 1;
@@ -295,6 +376,22 @@ static int out_reserve(dt_cc_detect_clean_stream_decoder *d, int extra) {
 static void process_start(dt_cc_detect_clean_stream_decoder *d, long long start) {
   const long long bend = d->base + (d->len - d->head);
   const int lo = d->head + (int)(start - d->base);
+  /* Invalid-placement scan over the widest window that fits (most phase context for
+   * the run-length test); the pattern is stride-independent, so one pass suffices. */
+  int Lwide = 0;
+  for (int s = DET_SMAX; s >= 2; --s) {
+    const int L = DET_LWIN(s);
+    if (start + L <= bend) {
+      Lwide = L;
+      break;
+    }
+  }
+  const int iunits = Lwide > 0 ? invalid_units(d->in + lo, Lwide) : 0;
+  for (int j = 0; j < Lwide; ++j) {
+    if ((int)d->imax[lo + j] < iunits) {
+      d->imax[lo + j] = (signed char)iunits;
+    }
+  }
   for (int s = 2; s <= DET_SMAX; ++s) {
     const int L = DET_LWIN(s);
     if (start + L > bend) {
@@ -332,8 +429,9 @@ static int emit_upto(dt_cc_detect_clean_stream_decoder *d, long long upto) {
     return 0;
   }
   for (int i = 0; i < count; ++i) {
-    d->out[d->out_len++] = verdict_from((int)d->dmax[d->head],
-                                        (int)d->cmax[d->head], d->detectability);
+    d->out[d->out_len++] =
+        verdict_from((int)d->dmax[d->head], (int)d->cmax[d->head],
+                     (int)d->imax[d->head], d->detectability);
     ++d->head;
     ++d->base;
   }
@@ -404,6 +502,7 @@ dt_cc_detect_clean_stream_decoder *dt_cc_detect_clean_stream_decoder_create(
   d->in = NULL;
   d->dmax = NULL;
   d->cmax = NULL;
+  d->imax = NULL;
   d->head = d->len = d->cap = 0;
   d->base = 0;
   d->next_start = 0;
@@ -421,6 +520,7 @@ void dt_cc_detect_clean_stream_decoder_destroy(dt_cc_detect_clean_stream_decoder
   dt_free(d->in);
   dt_free(d->dmax);
   dt_free(d->cmax);
+  dt_free(d->imax);
   dt_free(d->out);
   dt_free(d);
 }
@@ -436,10 +536,12 @@ int dt_cc_detect_clean_stream_decode(dt_cc_detect_clean_stream_decoder *d, const
       return DT_ERR_ALLOC;
     }
     for (int i = 0; i < n_in; ++i) {
-      d->in[d->len] =
-          DT_IS_BIT(in[i]) ? (unsigned char)DT_BIT(in[i]) : DET_NOTBIT;
+      d->in[d->len] = DT_IS_BIT(in[i]) ? (unsigned char)DT_BIT(in[i])
+                      : DT_IS_BOUND(in[i]) ? DET_INVAL  /* DT_INVALID: bound non-bit */
+                                           : DET_NOTBIT; /* erasure/absent: unbound  */
       d->dmax[d->len] = -1; /* not yet covered */
       d->cmax[d->len] = -1;
+      d->imax[d->len] = 0;  /* no invalid evidence yet */
       ++d->len;
     }
   }

@@ -101,18 +101,89 @@
 #define DET_FLOOR_C (2.0f * (float)DET_LC * DET_LN2) /* numerator of f0^2 * N      */
 #define DET_UNCOVERED (-1.0e30f) /* per-position sentinel: no window scored it yet */
 
-/* Sentinel stored in `in[]` for a non-bit (erasure / invalid / absent) position:
- * any value > 1. A transform slice that contains one is a don't-know and is
- * skipped rather than coerced to 0 (which would fake the all-zeros delta whose
- * Walsh transform is flat and so reads as maximal bias on every check). */
+/* Sentinels stored in `in[]` for the two kinds of non-bit position; both are > 1,
+ * and a transform slice containing either is skipped as a don't-know rather than
+ * coerced to 0 (which would fake an all-zeros delta whose Walsh transform is flat
+ * and reads as maximal bias). They are kept DISTINCT for the present axis:
+ *   DET_NOTBIT - an UNBOUND non-bit (DT_ERASURE / DT_ABSENT / DT_NONE): neutral.
+ *   DET_INVAL  - a BOUND non-boolean (DT_INVALID): off both the codeword and the
+ *                random-boolean manifold, so its PLACEMENT is present-axis evidence
+ *                (see invalid_units). */
 #define DET_NOTBIT 2u
+#define DET_INVAL  3u
+
+/* Each unit of invalid-placement penalty damps c_lost by 2^-DET_INV_BITS = 1/4.
+ * Soft: channel invalids are unmodeled but not impossible, so this is strong
+ * present-axis EVIDENCE, never proof. */
+#define DET_INV_BITS 2
+#define DET_INV_MAXRUNS 64
+#define DET_INV_MAXUNITS 32
+
+/* 2^-x for x >= 0 (single-precision exp proxy), for the invalid-placement damping. */
+static float pow2_neg(int x) {
+  if (x <= 0) {
+    return 1.0f;
+  }
+  if (x >= 64) {
+    return 0.0f;
+  }
+  return dt_exp(-(float)x * DET_LN2);
+}
+
+/* Penalty units from the PLACEMENT of DT_INVAL symbols over win[0..count): present-
+ * axis evidence that the invalid pattern is not one convolutional code's output.
+ * Singletons (length-1 runs) are an un-encodable shape (a single invalid input
+ * smears into a generator cluster, never a lone symbol); runs of DIFFERING length
+ * impose independent trellis-state offsets a single code must satisfy jointly
+ * (distinct_lengths - 1). A single run, or equal-length runs, contradict nothing.
+ * Unbound non-bits (DET_NOTBIT, e.g. erasures) are NOT invalids and never count. */
+static int invalid_units(const unsigned char *win, int count) {
+  int lengths[DET_INV_MAXRUNS];
+  int nruns = 0, singles = 0;
+  for (int i = 0; i < count;) {
+    if (win[i] != DET_INVAL) {
+      ++i;
+      continue;
+    }
+    int run = 0;
+    while (i < count && win[i] == DET_INVAL) {
+      ++run;
+      ++i;
+    }
+    if (run == 1) {
+      ++singles;
+    }
+    if (nruns < DET_INV_MAXRUNS) {
+      lengths[nruns++] = run;
+    }
+  }
+  if (nruns == 0) {
+    return 0;
+  }
+  int distinct = 0;
+  for (int a = 0; a < nruns; ++a) {
+    int seen = 0;
+    for (int b = 0; b < a; ++b) {
+      if (lengths[b] == lengths[a]) {
+        seen = 1;
+        break;
+      }
+    }
+    distinct += !seen;
+  }
+  int units = singles + (distinct > 1 ? distinct - 1 : 0);
+  return units > DET_INV_MAXUNITS ? DET_INV_MAXUNITS : units;
+}
 
 struct dt_cc_detect_noisy_stream_decoder {
-  /* Input bit FIFO (0/1 values) and a parallel per-position best-excess-so-far
-   * (float; DET_UNCOVERED = not yet covered by any window). Both share head/len/cap;
+  /* Input bit FIFO (0/1, or DET_NOTBIT / DET_INVAL for a non-bit position) and two
+   * parallel per-position pools: emax = best bias excess so far (float; DET_UNCOVERED
+   * = not yet covered), imax = worst invalid-placement penalty units of any covering
+   * window (signed char; 0 = none, present-axis only). All share head/len/cap;
    * in[head + k] is absolute position `base + k`. */
   unsigned char *in;
   float *emax;
+  signed char *imax;
   int head, len, cap;
   long long base;       /* absolute index of in[head]              */
   long long next_start; /* absolute index of next window start (multiple of STEP) */
@@ -221,13 +292,13 @@ static float window_excess(dt_cc_detect_noisy_stream_decoder *d,
  * c_absent = consistency with "no code / random". Each is a goodness-of-fit, so
  * they need NOT sum to 1, and the no-evidence state is (1, 1): with nothing to
  * judge, both hypotheses remain un-contradicted. */
-static dt_cc_detect_noisy_decode_details verdict_from(float excess,
+static dt_cc_detect_noisy_decode_details verdict_from(float excess, int iunits,
                                                      float detectability) {
   dt_cc_detect_noisy_decode_details det;
   if (excess <= DET_UNCOVERED * 0.5f) {
     /* No window scored this position (leading/trailing tail, or every row was a
-     * don't-know such as a stream of erasures): nothing discriminates the two
-     * hypotheses, so both stay fully consistent. */
+     * don't-know such as a stream of erasures - or of invalids, which form a single
+     * run and so add no penalty): nothing discriminates the two hypotheses. */
     det.c_lost = 1.0f;
     det.c_absent = 1.0f;
     return det;
@@ -247,6 +318,12 @@ static dt_cc_detect_noisy_decode_details verdict_from(float excess,
   float ca = 1.0f - excess;
   ca = ca < 0.0f ? 0.0f : (ca > 1.0f ? 1.0f : ca);
   det.c_absent = ca;
+  /* Invalid placement is present-axis-only evidence: its pattern can contradict a
+   * code (damp c_lost) but an invalid is off the random-boolean manifold too, so it
+   * never raises c_absent. Soft (channel invalids are unmodeled, not impossible). */
+  if (iunits > 0) {
+    det.c_lost *= pow2_neg(DET_INV_BITS * iunits);
+  }
   return det;
 }
 
@@ -258,6 +335,7 @@ static int buf_reserve(dt_cc_detect_noisy_stream_decoder *d, int extra) {
     dt_memmove(d->in, d->in + d->head, (size_t)(d->len - d->head));
     dt_memmove(d->emax, d->emax + d->head,
                (size_t)(d->len - d->head) * sizeof(*d->emax));
+    dt_memmove(d->imax, d->imax + d->head, (size_t)(d->len - d->head));
     d->len -= d->head;
     d->head = 0;
   }
@@ -276,6 +354,11 @@ static int buf_reserve(dt_cc_detect_noisy_stream_decoder *d, int extra) {
       return 0;
     }
     d->emax = ne;
+    signed char *nim = dt_realloc(d->imax, (size_t)nc);
+    if (!nim) {
+      return 0;
+    }
+    d->imax = nim;
     d->cap = nc;
   }
   return 1;
@@ -314,9 +397,13 @@ static void process_start(dt_cc_detect_noisy_stream_decoder *d, long long start,
                           int span) {
   const int lo = d->head + (int)(start - d->base);
   const float ex = window_excess(d, d->in + lo, span);
+  const int iunits = invalid_units(d->in + lo, span);
   for (int j = 0; j < span; ++j) {
     if (ex > d->emax[lo + j]) {
       d->emax[lo + j] = ex;
+    }
+    if (iunits > (int)d->imax[lo + j]) {
+      d->imax[lo + j] = (signed char)iunits;
     }
   }
 }
@@ -332,7 +419,8 @@ static int emit_upto(dt_cc_detect_noisy_stream_decoder *d, long long upto) {
     return 0;
   }
   for (int i = 0; i < count; ++i) {
-    d->out[d->out_len++] = verdict_from(d->emax[d->head], d->detectability);
+    d->out[d->out_len++] =
+        verdict_from(d->emax[d->head], (int)d->imax[d->head], d->detectability);
     ++d->head;
     ++d->base;
   }
@@ -410,6 +498,7 @@ dt_cc_detect_noisy_stream_decoder *dt_cc_detect_noisy_stream_decoder_create(
   }
   d->in = NULL;
   d->emax = NULL;
+  d->imax = NULL;
   d->head = d->len = d->cap = 0;
   d->base = 0;
   d->next_start = 0;
@@ -426,6 +515,7 @@ void dt_cc_detect_noisy_stream_decoder_destroy(dt_cc_detect_noisy_stream_decoder
   }
   dt_free(d->in);
   dt_free(d->emax);
+  dt_free(d->imax);
   dt_free(d->out);
   dt_free(d->acc);
   dt_free(d);
@@ -442,9 +532,11 @@ int dt_cc_detect_noisy_stream_decode(dt_cc_detect_noisy_stream_decoder *d, const
       return DT_ERR_ALLOC;
     }
     for (int i = 0; i < n_in; ++i) {
-      d->in[d->len] =
-          DT_IS_BIT(in[i]) ? (unsigned char)DT_BIT(in[i]) : DET_NOTBIT;
+      d->in[d->len] = DT_IS_BIT(in[i]) ? (unsigned char)DT_BIT(in[i])
+                      : DT_IS_BOUND(in[i]) ? DET_INVAL  /* DT_INVALID: bound non-bit */
+                                           : DET_NOTBIT; /* erasure/absent: unbound  */
       d->emax[d->len] = DET_UNCOVERED; /* not yet covered */
+      d->imax[d->len] = 0;             /* no invalid evidence yet */
       ++d->len;
     }
   }

@@ -3,7 +3,7 @@
 drifty's core is **freestanding** in the C-standard sense: it does not depend on a
 hosted C standard library and can be built for bare-metal and embedded targets. This
 page covers what that guarantees, the `dt_*` proxy boundary through which the core
-reaches the few libc facilities it needs, the two archives the build produces, and
+reaches the few libc facilities it needs, the archives the build produces, and
 how to port the proxies to a platform without a libc.
 
 For the library overview see the [README](../README.md); for the symbol model see
@@ -57,19 +57,27 @@ are the only math functions, and only the soft / max-log-MAP decoders (`bcjr`,
 `hybrid`, `maxir`) call them — a build that uses only `viterbi` or `vindel` needs
 no `float` math at all (the linker drops the unused proxies).
 
-## Two archives
+## The archives
 
-The build (see [README → Build](../README.md#build)) produces two static
-libraries that differ only in whether the proxies are defined:
+The build (see [README → Build](../README.md#build)) produces three static
+libraries. Two leave the `dt_*` proxies **undefined** (your final link supplies
+them); the third bundles a default implementation:
 
-- **`libdrifty_bare.a`** — the freestanding core with the `dt_*` proxies left
-  **undefined**. Your final link must supply them. This is the archive for
-  bare-metal and embedded targets: the core asks for nine symbols and touches
-  nothing else.
-- **`libdrifty.a`** — the same core with a default proxy implementation
-  ([`stdlib/src/stdlib.c`](../stdlib/src/stdlib.c)) archived in, backed by the host
-  libc (`malloc`/`free`, `mem*`, `logf`/`expf`) and linked against `libm`. Use this
-  for ordinary hosted builds, where the defaults are exactly what you want.
+- **`libdrifty_bare.a`** — the freestanding core (the codecs, the block/frame
+  codecs, and the `dt_container` helper) with the `dt_*` proxies left **undefined**.
+  Your final link must supply them. This is the archive for bare-metal and embedded
+  targets: the core asks for its proxy symbols and touches nothing else.
+- **`libdrifty_pipe.a`** — the [`pipe/`](pipe/README.md) bit-stream toolkit on its
+  own, also freestanding and proxy-undefined. It wraps the codecs through their
+  vtables rather than calling them, so it has **no link dependency on the core** — it
+  references only **four** proxies (`dt_malloc`, `dt_realloc`, `dt_free`,
+  `dt_memmove`; no math, no `memcpy`/`memset`/`calloc`). Link it alongside
+  `libdrifty_bare.a` (or any other provider of the codec API it wraps) plus your
+  proxies; omit it entirely if you do not use the pipe API.
+- **`libdrifty.a`** — the core **and** the pipe toolkit with a default proxy
+  implementation ([`stdlib/src/stdlib.c`](../stdlib/src/stdlib.c)) archived in, backed
+  by the host libc (`malloc`/`free`, `mem*`, `logf`/`expf`) and linked against `libm`.
+  Use this for ordinary hosted builds, where the defaults are exactly what you want.
 
 The default implementation is deliberately trivial — each proxy is a one-line
 forward to its libc counterpart — so it doubles as a reference for your own port:
@@ -83,8 +91,10 @@ float dt_log(float x) { return logf(x); }
 
 ## Porting the proxies
 
-To run on a platform without a hosted libc, link `libdrifty_bare.a` and provide
-your own definitions of the nine symbols above. Two are worth a note:
+To run on a platform without a hosted libc, link `libdrifty_bare.a` (and
+`libdrifty_pipe.a` if you use the pipe API) and provide your own definitions of the
+nine symbols above — the pipe toolkit uses only the four allocation/`memmove`
+proxies, a subset the core already needs. Two are worth a note:
 
 - **Allocation.** Decoders allocate working state at `_create` and may **grow**
   internal buffers with `dt_realloc` as the stream lengthens (the running decoders

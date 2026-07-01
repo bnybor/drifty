@@ -41,9 +41,10 @@ target_include_directories(drifty_interface INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
-# The freestanding core, compiled once as an OBJECT library so the same objects
-# can be archived into both libraries below (the bare core, and the public core +
-# stdlib) without compiling twice.
+# The freestanding core (codecs + container, NOT the pipe/ toolkit), compiled once as
+# an OBJECT library so the same objects can be archived into libdrifty_bare.a and
+# libdrifty.a without compiling twice. The pipe toolkit is a separate object library
+# (drifty_pipe_obj, below) so it can be split into its own archive.
 add_library(drifty_bare_obj OBJECT
     src/container.c
     src/cc/ccode.c
@@ -66,11 +67,6 @@ add_library(drifty_bare_obj OBJECT
     src/bc/rs251.c
     src/fc/naive.c
     src/fc/marker.c
-    src/pipe/pipes.c
-    src/pipe/streams.c
-    src/pipe/frames.c
-    src/pipe/pipeline.c
-    src/pipe/multi.c
     contrib/rs251/src/rs251.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
@@ -94,6 +90,25 @@ target_link_libraries(drifty_bare_obj PUBLIC drifty_interface PRIVATE drifty_std
 target_include_directories(drifty_bare_obj PRIVATE contrib/rs251/include)
 set_source_files_properties(contrib/rs251/src/rs251.c PROPERTIES
     COMPILE_DEFINITIONS "RS251_VERSION=\"0.1.0\"")
+
+# The pipe/ toolkit, compiled once as its own OBJECT library so it can be archived
+# into libdrifty_pipe.a (on its own) and libdrifty.a (alongside the core) without
+# compiling twice. It is freestanding like the core - the pipes need only the dt_*
+# stdlib proxies (dt_malloc/dt_free/dt_memmove/...), which stay undefined in the bare
+# pipe archive for the consumer to supply. It does not reference the core codecs (it
+# wraps them through their vtables), so it has no link dependency on drifty_bare_obj.
+add_library(drifty_pipe_obj OBJECT
+    src/pipe/pipes.c
+    src/pipe/streams.c
+    src/pipe/frames.c
+    src/pipe/pipeline.c
+    src/pipe/multi.c)
+target_compile_features(drifty_pipe_obj PUBLIC c_std_11)
+target_compile_options(drifty_pipe_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
+if(DRIFTY_NATIVE)
+  target_compile_options(drifty_pipe_obj PRIVATE -march=native -ffp-contract=off)
+endif()
+target_link_libraries(drifty_pipe_obj PUBLIC drifty_interface PRIVATE drifty_stdlib_interface)
 
 # Only the public API - the symbols declared in the installed include/ headers -
 # should be exported from the archives. The decoder shares internal helpers across
@@ -205,15 +220,23 @@ function(dt_add_archive name)
     endif()
 endfunction()
 
-# The freestanding core on its own, as libdrifty_bare.a (no stdlib shims -
-# the consumer supplies those, so they stay undefined here).
+# The freestanding core on its own, as libdrifty_bare.a (no pipe toolkit, no stdlib
+# shims - the consumer supplies those, so they stay undefined here).
 dt_add_archive(drifty_bare drifty_bare_obj)
 target_link_libraries(drifty_bare PUBLIC drifty_interface)
 target_compile_features(drifty_bare PUBLIC c_std_11)
 
-# The public library: the core and the stdlib shims archived together into one
-# self-contained libdrifty.a. libm is carried through for the shims' math.
-dt_add_archive(drifty drifty_bare_obj drifty_stdlib)
+# The pipe/ toolkit on its own, as libdrifty_pipe.a - freestanding like the bare core
+# (its dt_* proxy references stay undefined for the consumer to supply). Pair it with
+# libdrifty_bare (or another provider of the codec API it wraps) plus the stdlib shims.
+dt_add_archive(drifty_pipe drifty_pipe_obj)
+target_link_libraries(drifty_pipe PUBLIC drifty_interface)
+target_compile_features(drifty_pipe PUBLIC c_std_11)
+
+# The public library: the core, the pipe toolkit, and the stdlib shims archived
+# together into one self-contained libdrifty.a. libm is carried through for the shims'
+# math.
+dt_add_archive(drifty drifty_bare_obj drifty_pipe_obj drifty_stdlib)
 target_link_libraries(drifty PUBLIC drifty_interface PRIVATE m)
 target_compile_features(drifty PUBLIC c_std_11)
 add_library(drifty::drifty ALIAS drifty)
@@ -237,7 +260,7 @@ endif()
 # Install the archives and the INTERFACE target that carries the include dirs.
 # drifty_interface must be in the export set because drifty/drifty_bare link it
 # PUBLIC - omitting it makes install(EXPORT) fail.
-install(TARGETS drifty drifty_bare drifty_interface
+install(TARGETS drifty drifty_bare drifty_pipe drifty_interface
     EXPORT drifty-targets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

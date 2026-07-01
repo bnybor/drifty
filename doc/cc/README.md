@@ -81,3 +81,17 @@ the same three-phase vtable — `begin` → `decode` (repeat) → `finalize` —
 warm-up delay and a buffering rule; the encoder is a `dt_stream_encoder` driven
 `begin` → `encode` → `finalize`. See the [streaming interface](../stream.md) for
 the full contract, and each codec's page for the specifics.
+
+## Reference specification
+
+- **[Clean-room reimplementation spec](../drifty_cc_spec.md)** — the complete
+  behavioral and algorithmic specification of this whole subsystem (the shared
+  [code object](ccode.md), the shared [encoder](encoder.md), all five decoders, and
+  both `detect_*` meta-codecs) in enough detail to rebuild it from the text alone:
+  the symbol-flag algebra, the shared (state × drift) super-trellis machinery, each
+  decoder's channel costs and hard/soft projection cascade, the detectors' GF(2)
+  rank and FWHT-bias statistics, and the streaming soft-field mapping. Load-bearing
+  details — tie-break and loop order, ring sizing, exact constants — are marked
+  **NORMATIVE**, and a conformance checklist closes it out. This is the reference
+  for porting, verifying, or reasoning about the internals behind the per-codec
+  pages above; the pages themselves remain the place to start for *using* a codec.

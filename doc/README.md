@@ -55,6 +55,14 @@ codecs that implement them.
   program stacking the layers: `rs251` outer over a `hybrid` soft inner across a
   drift channel (hard path alongside for contrast), showing the soft front end and
   the inner→outer erasure bridge end to end.
+- **[`cc` reimplementation spec](drifty_cc_spec.md)** — a clean-room specification
+  of the whole convolutional subsystem (the shared code object and encoder, the five
+  decoders, and the `detect_*` meta-codecs): its externally observable behavior plus
+  the internal algorithms — the shared (state × drift) super-trellis, each decoder's
+  channel costs and soft projection, the detectors' rank / FWHT statistics, and the
+  streaming soft-field mapping — in enough detail to rebuild it from the text.
+  Load-bearing details are flagged **NORMATIVE** and a conformance checklist closes
+  it; the implementer's-depth companion to the [`cc/`](cc/README.md) per-codec pages.
 
 Operations that can fail return the shared `dt_result` codes from
 [`result.h`](../include/drifty/result.h).

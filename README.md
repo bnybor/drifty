@@ -87,6 +87,11 @@ This README is the overview. The full reference lives in [`doc/`](doc/README.md)
   adapters, hard/soft converters, `dt_pipeline`, and the multi-way routing pipes.
 - [Object container (`container.h`)](include/drifty/container.h) — `dt_container`, a
   small ownership bag that frees a pile of `_create`d objects with one call.
+- [`cc` reimplementation spec (`doc/drifty_cc_spec.md`)](doc/drifty_cc_spec.md) — a
+  clean-room, implementer-depth specification of the whole convolutional subsystem
+  (shared code object and encoder, the five decoders, the `detect_*` meta-codecs):
+  observable behavior plus internal algorithms, with load-bearing details marked
+  **NORMATIVE** and a conformance checklist.
 
 ## Choosing a codec
 

@@ -211,6 +211,11 @@ Both hold several pipes, but they compose different things:
 
 - [Example 12 — pipe](../../examples/12_pipe) — a runnable tour: endpoints and
   `dt_pipe_pump`, one pipe's lifecycle, a pipeline round-trip, and a splitter tee.
+- [Example 14 — pipeline](../../examples/14_pipeline) — the capstone: a whole
+  detection-routed receiver built as one composed graph (pipelines, two diverters
+  steered by executor pipes, a combiner, the codec and frame adapters) held in a pipe
+  container, with `dt_container` for cleanup. The caller only pushes bits and reads the
+  final frame pipe. See its `layout.dot` for the graph.
 - [Streaming interface](../stream.md) — the `dt_stream_encoder` / `_decoder` /
   `_soft_decoder` vtables the codec pipes wrap.
 - [Symbols (`bit`)](../bit.md) and [Soft decoding](../soft_decoding.md) — the hard

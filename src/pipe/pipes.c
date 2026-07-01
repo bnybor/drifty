@@ -454,3 +454,98 @@ void dt_pipe_executor_destroy(dt_pipe *pipe) {
   dt_pipe_ends_free(&c->ends);
   dt_free(c);
 }
+
+/* -- container: hold pipes and drive their lifecycle ----------------------- */
+
+typedef struct {
+  dt_pipe *pipe;
+  void (*destroyer)(dt_pipe *); // NULL: the container does not own this pipe
+} container_entry;
+
+typedef struct {
+  dt_pipe_container base; // the vtable (first member; the returned interface)
+  container_entry *entries;
+  size_t n, cap;
+} container_impl;
+
+static void container_add(dt_pipe_container *c, dt_pipe *pipe, void (*destroyer)(dt_pipe *)) {
+  container_impl *self = (container_impl *)c->data;
+  if (self->n == self->cap) {
+    size_t ncap = self->cap ? self->cap * 2 : 4;
+    container_entry *ne = dt_realloc(self->entries, ncap * sizeof(*ne));
+    if (!ne) {
+      return; /* out of memory: cannot add (the vtable returns void) */
+    }
+    self->entries = ne;
+    self->cap = ncap;
+  }
+  self->entries[self->n].pipe = pipe;
+  self->entries[self->n].destroyer = destroyer;
+  self->n++;
+}
+
+static void container_remove(dt_pipe_container *c, dt_pipe *pipe) {
+  container_impl *self = (container_impl *)c->data;
+  for (size_t i = 0; i < self->n; ++i) {
+    if (self->entries[i].pipe == pipe) {
+      for (size_t j = i + 1; j < self->n; ++j) { /* shift down, keeping add order */
+        self->entries[j - 1] = self->entries[j];
+      }
+      self->n--;
+      return;
+    }
+  }
+}
+
+static void container_begin(dt_pipe_container *c) {
+  container_impl *self = (container_impl *)c->data;
+  for (size_t i = 0; i < self->n; ++i) {
+    dt_pipe *p = self->entries[i].pipe;
+    p->begin(p);
+  }
+}
+static void container_tick(dt_pipe_container *c) {
+  container_impl *self = (container_impl *)c->data;
+  for (size_t i = 0; i < self->n; ++i) {
+    dt_pipe *p = self->entries[i].pipe;
+    p->tick(p);
+  }
+}
+static void container_finalize(dt_pipe_container *c) {
+  container_impl *self = (container_impl *)c->data;
+  for (size_t i = 0; i < self->n; ++i) {
+    dt_pipe *p = self->entries[i].pipe;
+    p->finalize(p);
+  }
+}
+
+dt_pipe_container *dt_pipe_container_create(void) {
+  container_impl *self = dt_malloc(sizeof(*self));
+  if (!self) {
+    return NULL;
+  }
+  self->base.add = container_add;
+  self->base.remove = container_remove;
+  self->base.begin = container_begin;
+  self->base.tick = container_tick;
+  self->base.finalize = container_finalize;
+  self->base.data = self;
+  self->entries = NULL;
+  self->n = self->cap = 0;
+  return &self->base;
+}
+
+void dt_pipe_container_destroy(dt_pipe_container *c) {
+  if (!c) {
+    return;
+  }
+  container_impl *self = (container_impl *)c->data;
+  for (size_t i = self->n; i > 0; --i) { /* reverse of the order added */
+    container_entry *e = &self->entries[i - 1];
+    if (e->destroyer) {
+      e->destroyer(e->pipe);
+    }
+  }
+  dt_free(self->entries);
+  dt_free(self);
+}

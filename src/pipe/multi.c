@@ -26,7 +26,7 @@
 
 /*
  * dt_pipe_splitter: a tee (see multi.h). It embeds the two-ended buffered core
- * (bufcore.h) and an array of extra sinks. Each of begin / tick / finalize drains
+ * (bufcore.h) and an array of extra sinks. Each tick / finalize drains
  * the buffered input and copies every element both to the output buffer (which
  * the pipe's own source drains) and to each extra sink. The dt_pipe handle is the
  * first member, so the factory returns &self->base and destroy frees through it.
@@ -45,6 +45,14 @@
 #include "bufcore.h"
 
 #define MULTI_CHUNK 256
+
+/* Multi pipes route/merge only during tick and finalize; begin does nothing, so
+ * external sources and sinks are never touched before the first tick and the
+ * buffered input is preserved for it. */
+static int multi_begin_noop(dt_pipe *pipe) {
+  (void)pipe;
+  return 0;
+}
 
 typedef struct {
   dt_pipe base;
@@ -139,7 +147,6 @@ static int splitter_copy(splitter *s) {
   return total;
 }
 
-static int splitter_begin(dt_pipe *pipe) { return splitter_copy((splitter *)pipe->data); }
 static int splitter_tick(dt_pipe *pipe) { return splitter_copy((splitter *)pipe->data); }
 static int splitter_finalize(dt_pipe *pipe) { return splitter_copy((splitter *)pipe->data); }
 
@@ -178,7 +185,7 @@ dt_pipe *dt_pipe_splitter_create(dt_pipe_sink **sinks, size_t count) {
   s->n = count;
   s->base.source = splitter_get_source;
   s->base.sink = splitter_get_sink;
-  s->base.begin = splitter_begin;
+  s->base.begin = multi_begin_noop;
   s->base.tick = splitter_tick;
   s->base.finalize = splitter_finalize;
   s->base.data = s;
@@ -221,7 +228,6 @@ static int diverter_copy(diverter *d) {
   return dt_pipe_pump(&d->ends.in_src, target);
 }
 
-static int diverter_begin(dt_pipe *pipe) { return diverter_copy((diverter *)pipe->data); }
 static int diverter_tick(dt_pipe *pipe) { return diverter_copy((diverter *)pipe->data); }
 static int diverter_finalize(dt_pipe *pipe) { return diverter_copy((diverter *)pipe->data); }
 
@@ -261,7 +267,7 @@ dt_pipe *dt_pipe_diverter_create(dt_pipe_sink **sinks, size_t len) {
   d->selected = 0;
   d->base.source = diverter_get_source;
   d->base.sink = diverter_get_sink;
-  d->base.begin = diverter_begin;
+  d->base.begin = multi_begin_noop;
   d->base.tick = diverter_tick;
   d->base.finalize = diverter_finalize;
   d->base.data = d;
@@ -328,7 +334,6 @@ static int selector_run(selector *s) {
   return moved;
 }
 
-static int selector_begin(dt_pipe *pipe) { return selector_run((selector *)pipe->data); }
 static int selector_tick(dt_pipe *pipe) { return selector_run((selector *)pipe->data); }
 static int selector_finalize(dt_pipe *pipe) { return selector_run((selector *)pipe->data); }
 
@@ -368,7 +373,7 @@ dt_pipe *dt_pipe_selector_create(dt_pipe_source **sources, size_t len) {
   s->selected = 0;
   s->base.source = selector_get_source;
   s->base.sink = selector_get_sink;
-  s->base.begin = selector_begin;
+  s->base.begin = multi_begin_noop;
   s->base.tick = selector_tick;
   s->base.finalize = selector_finalize;
   s->base.data = s;
@@ -404,7 +409,6 @@ static int valve_run(valve *v) {
   return dt_pipe_pump(&v->ends.in_src, v->open ? &v->ends.out_snk : NULL);
 }
 
-static int valve_begin(dt_pipe *pipe) { return valve_run((valve *)pipe->data); }
 static int valve_tick(dt_pipe *pipe) { return valve_run((valve *)pipe->data); }
 static int valve_finalize(dt_pipe *pipe) { return valve_run((valve *)pipe->data); }
 
@@ -423,7 +427,7 @@ dt_pipe *dt_pipe_valve_create(void) {
   v->open = 1; // created open
   v->base.source = valve_get_source;
   v->base.sink = valve_get_sink;
-  v->base.begin = valve_begin;
+  v->base.begin = multi_begin_noop;
   v->base.tick = valve_tick;
   v->base.finalize = valve_finalize;
   v->base.data = v;
@@ -441,4 +445,238 @@ void dt_pipe_valve_destroy(dt_pipe *pipe) {
   valve *v = (valve *)pipe; // base is the first member
   dt_pipe_ends_free(&v->ends);
   dt_free(v);
+}
+
+/* -- combiner: merge the own input and all sources into the output ---------- */
+
+typedef struct {
+  dt_pipe base;
+  dt_pipe_ends ends;
+  dt_pipe_source **sources; // owned array copy; the sources are not owned
+  size_t n;
+} combiner;
+
+/* The operation: pump the own input buffer, then each source in order, into the
+ * output buffer - concatenating them. */
+static int combiner_run(combiner *c) {
+  int total = 0;
+  int r = dt_pipe_pump(&c->ends.in_src, &c->ends.out_snk);
+  if (r < 0) {
+    return r;
+  }
+  total += r;
+  for (size_t i = 0; i < c->n; ++i) {
+    r = dt_pipe_pump(c->sources[i], &c->ends.out_snk);
+    if (r < 0) {
+      return r;
+    }
+    total += r;
+  }
+  return total;
+}
+
+static int combiner_tick(dt_pipe *pipe) { return combiner_run((combiner *)pipe->data); }
+static int combiner_finalize(dt_pipe *pipe) { return combiner_run((combiner *)pipe->data); }
+
+static dt_pipe_source *combiner_get_source(dt_pipe *pipe) {
+  return &((combiner *)pipe->data)->ends.pub_source;
+}
+static dt_pipe_sink *combiner_get_sink(dt_pipe *pipe) {
+  return &((combiner *)pipe->data)->ends.pub_sink;
+}
+
+dt_pipe *dt_pipe_combiner_create(dt_pipe_source **sources, size_t len) {
+  if (len > 0 && !sources) {
+    return NULL;
+  }
+  for (size_t i = 0; i < len; ++i) {
+    if (!sources[i]) {
+      return NULL;
+    }
+  }
+  combiner *c = dt_malloc(sizeof(*c));
+  if (!c) {
+    return NULL;
+  }
+  if (len > 0) {
+    c->sources = dt_malloc(len * sizeof(*c->sources));
+    if (!c->sources) {
+      dt_free(c);
+      return NULL;
+    }
+    for (size_t i = 0; i < len; ++i) {
+      c->sources[i] = sources[i];
+    }
+  } else {
+    c->sources = NULL;
+  }
+  c->n = len;
+  c->base.source = combiner_get_source;
+  c->base.sink = combiner_get_sink;
+  c->base.begin = multi_begin_noop;
+  c->base.tick = combiner_tick;
+  c->base.finalize = combiner_finalize;
+  c->base.data = c;
+  dt_pipe_ends_init(&c->ends);
+  return &c->base;
+}
+
+void dt_pipe_combiner_destroy(dt_pipe *pipe) {
+  if (!pipe) {
+    return;
+  }
+  combiner *c = (combiner *)pipe; // base is the first member
+  dt_pipe_ends_free(&c->ends);
+  dt_free(c->sources);
+  dt_free(c);
+}
+
+/* -- drain: discard the input ---------------------------------------------- */
+
+typedef struct {
+  dt_pipe base;
+  dt_pipe_ends ends;
+} drain;
+
+/* The operation: pump the buffered input to NULL - draining and discarding it. */
+static int drain_run(drain *d) { return dt_pipe_pump(&d->ends.in_src, NULL); }
+
+static int drain_tick(dt_pipe *pipe) { return drain_run((drain *)pipe->data); }
+static int drain_finalize(dt_pipe *pipe) { return drain_run((drain *)pipe->data); }
+
+static dt_pipe_source *drain_get_source(dt_pipe *pipe) {
+  return &((drain *)pipe->data)->ends.pub_source;
+}
+static dt_pipe_sink *drain_get_sink(dt_pipe *pipe) {
+  return &((drain *)pipe->data)->ends.pub_sink;
+}
+
+dt_pipe *dt_pipe_drain_create(void) {
+  drain *d = dt_malloc(sizeof(*d));
+  if (!d) {
+    return NULL;
+  }
+  d->base.source = drain_get_source;
+  d->base.sink = drain_get_sink;
+  d->base.begin = multi_begin_noop;
+  d->base.tick = drain_tick;
+  d->base.finalize = drain_finalize;
+  d->base.data = d;
+  dt_pipe_ends_init(&d->ends);
+  return &d->base;
+}
+
+void dt_pipe_drain_destroy(dt_pipe *pipe) {
+  if (!pipe) {
+    return;
+  }
+  drain *d = (drain *)pipe; // base is the first member
+  dt_pipe_ends_free(&d->ends);
+  dt_free(d);
+}
+
+/* -- push_to: pump the input to a fixed external sink ---------------------- */
+
+typedef struct {
+  dt_pipe base;
+  dt_pipe_ends ends;
+  dt_pipe_sink *dst; // fixed destination; not owned
+} push_to;
+
+/* The operation: pump the buffered input to the fixed sink (its own output is
+ * never filled). */
+static int push_to_run(push_to *p) { return dt_pipe_pump(&p->ends.in_src, p->dst); }
+
+static int push_to_tick(dt_pipe *pipe) { return push_to_run((push_to *)pipe->data); }
+static int push_to_finalize(dt_pipe *pipe) { return push_to_run((push_to *)pipe->data); }
+
+static dt_pipe_source *push_to_get_source(dt_pipe *pipe) {
+  return &((push_to *)pipe->data)->ends.pub_source;
+}
+static dt_pipe_sink *push_to_get_sink(dt_pipe *pipe) {
+  return &((push_to *)pipe->data)->ends.pub_sink;
+}
+
+dt_pipe *dt_pipe_push_to_create(dt_pipe_sink *dst) {
+  if (!dst) {
+    return NULL;
+  }
+  push_to *p = dt_malloc(sizeof(*p));
+  if (!p) {
+    return NULL;
+  }
+  p->dst = dst;
+  p->base.source = push_to_get_source;
+  p->base.sink = push_to_get_sink;
+  p->base.begin = multi_begin_noop;
+  p->base.tick = push_to_tick;
+  p->base.finalize = push_to_finalize;
+  p->base.data = p;
+  dt_pipe_ends_init(&p->ends);
+  return &p->base;
+}
+
+void dt_pipe_push_to_destroy(dt_pipe *pipe) {
+  if (!pipe) {
+    return;
+  }
+  push_to *p = (push_to *)pipe; // base is the first member
+  dt_pipe_ends_free(&p->ends);
+  dt_free(p);
+}
+
+/* -- pull_from: fill the output from a fixed external source ---------------- */
+
+typedef struct {
+  dt_pipe base;
+  dt_pipe_ends ends;
+  dt_pipe_source *src; // fixed origin; not owned
+} pull_from;
+
+/* The operation: drop anything pushed to the own sink, then pump the fixed source
+ * into the output buffer. */
+static int pull_from_run(pull_from *p) {
+  int r = dt_pipe_pump(&p->ends.in_src, NULL); /* own input is unused: discard it */
+  if (r < 0) {
+    return r;
+  }
+  return dt_pipe_pump(p->src, &p->ends.out_snk);
+}
+
+static int pull_from_tick(dt_pipe *pipe) { return pull_from_run((pull_from *)pipe->data); }
+static int pull_from_finalize(dt_pipe *pipe) { return pull_from_run((pull_from *)pipe->data); }
+
+static dt_pipe_source *pull_from_get_source(dt_pipe *pipe) {
+  return &((pull_from *)pipe->data)->ends.pub_source;
+}
+static dt_pipe_sink *pull_from_get_sink(dt_pipe *pipe) {
+  return &((pull_from *)pipe->data)->ends.pub_sink;
+}
+
+dt_pipe *dt_pipe_pull_from_create(dt_pipe_source *src) {
+  if (!src) {
+    return NULL;
+  }
+  pull_from *p = dt_malloc(sizeof(*p));
+  if (!p) {
+    return NULL;
+  }
+  p->src = src;
+  p->base.source = pull_from_get_source;
+  p->base.sink = pull_from_get_sink;
+  p->base.begin = multi_begin_noop;
+  p->base.tick = pull_from_tick;
+  p->base.finalize = pull_from_finalize;
+  p->base.data = p;
+  dt_pipe_ends_init(&p->ends);
+  return &p->base;
+}
+
+void dt_pipe_pull_from_destroy(dt_pipe *pipe) {
+  if (!pipe) {
+    return;
+  }
+  pull_from *p = (pull_from *)pipe; // base is the first member
+  dt_pipe_ends_free(&p->ends);
+  dt_free(p);
 }

@@ -141,6 +141,54 @@ dt_pipe *dt_pipeline_create(dt_pipe **stages, size_t count);
  * copy of the stage array but not the stages themselves. */
 void dt_pipeline_destroy(dt_pipe *pipe);
 
+/* Append `stage` to `pipeline` (from dt_pipeline_create) as its new last stage.
+ * Like the create-time stages, `stage` is not owned - the caller destroys it. */
+void dt_pipeline_add(dt_pipe *pipeline, dt_pipe *stage);
+/* Remove `stage` from `pipeline`, preserving the order of the rest; a no-op if
+ * `stage` is not a member. Does not destroy the removed stage. */
+void dt_pipeline_remove(dt_pipe *pipeline, dt_pipe *stage);
+
+/*
+ * dt_pipe_container - a vtable interface that holds a set of pipes and drives
+ * their lifecycle together. Its begin / tick / finalize invoke the matching call
+ * on every contained pipe, in the order they were added; it does NOT move bits
+ * between them (unlike a pipeline) - each pipe is fed and drained independently.
+ * Build one with dt_pipe_container_create() and call through the vtable:
+ *
+ *   dt_pipe_container *c = dt_pipe_container_create();
+ *   c->add(c, dt_pipe_hardening_create(), dt_pipe_hardening_destroy);
+ *   c->add(c, borrowed_pipe, NULL);   // NULL destroyer: not owned by the container
+ *   c->begin(c);
+ *   c->tick(c);
+ *   c->finalize(c);
+ *   dt_pipe_container_destroy(c);      // destroys the owned pipes, last added first
+ *
+ *   add      - add `pipe`, recording `destroyer` to call on it when the container
+ *              is destroyed (NULL leaves the pipe's destruction to the caller).
+ *   remove   - remove `pipe` from the container WITHOUT destroying it (the caller
+ *              reclaims it); a no-op if it is not held.
+ *   begin / tick / finalize - invoke that call on every contained pipe.
+ *
+ * dt_pipe_container_destroy() destroys the still-contained pipes (via the
+ * destroyers given to add) in the REVERSE of the order they were added, then
+ * frees the container itself.
+ */
+typedef struct dt_pipe_container_t dt_pipe_container;
+struct dt_pipe_container_t {
+  void (*add)(dt_pipe_container *container, dt_pipe *pipe, void (*destroyer)(dt_pipe *));
+  void (*remove)(dt_pipe_container *container, dt_pipe *pipe);
+  void (*begin)(dt_pipe_container *container);
+  void (*tick)(dt_pipe_container *container);
+  void (*finalize)(dt_pipe_container *container);
+  // implementation-private state; do not access
+  void *data;
+};
+
+dt_pipe_container *dt_pipe_container_create(void);
+/* Destroy a container from dt_pipe_container_create(). NULL is fine. Destroys the
+ * still-contained pipes (reverse add order) before freeing the container. */
+void dt_pipe_container_destroy(dt_pipe_container *container);
+
 #ifdef __cplusplus
 }
 #endif

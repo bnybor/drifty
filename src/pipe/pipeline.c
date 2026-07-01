@@ -50,8 +50,8 @@
 typedef struct {
   dt_pipe base;      // the compound handle (first member)
   dt_pipe_ends ends; // input/output buffers and their faces
-  dt_pipe **stages;  // owned array copy; the stages are not owned
-  size_t n;
+  dt_pipe **stages;  // owned, growable array; the stages are not owned
+  size_t n, cap;
 } pipeline;
 
 /* -- pipe interface -------------------------------------------------------- */
@@ -135,7 +135,7 @@ dt_pipe *dt_pipeline_create(dt_pipe **stages, size_t count) {
   } else {
     pl->stages = NULL;
   }
-  pl->n = count;
+  pl->n = pl->cap = count;
   pl->base.source = pl_get_source;
   pl->base.sink = pl_get_sink;
   pl->base.begin = pl_begin;
@@ -154,4 +154,40 @@ void dt_pipeline_destroy(dt_pipe *pipe) {
   dt_pipe_ends_free(&pl->ends);
   dt_free(pl->stages);
   dt_free(pl);
+}
+
+/* Append `stage` as the new last stage. Not owned (like the create-time stages). */
+void dt_pipeline_add(dt_pipe *pipe, dt_pipe *stage) {
+  if (!pipe || !stage) {
+    return;
+  }
+  pipeline *pl = pipe->data;
+  if (pl->n == pl->cap) {
+    size_t ncap = pl->cap ? pl->cap * 2 : 4;
+    dt_pipe **ns = dt_realloc(pl->stages, ncap * sizeof(*ns));
+    if (!ns) {
+      return; /* out of memory: cannot add (the API returns void) */
+    }
+    pl->stages = ns;
+    pl->cap = ncap;
+  }
+  pl->stages[pl->n++] = stage;
+}
+
+/* Remove `stage`, keeping the order of the rest; a no-op if it is not present.
+ * Does not destroy the stage - the caller still owns it. */
+void dt_pipeline_remove(dt_pipe *pipe, dt_pipe *stage) {
+  if (!pipe) {
+    return;
+  }
+  pipeline *pl = pipe->data;
+  for (size_t i = 0; i < pl->n; ++i) {
+    if (pl->stages[i] == stage) {
+      for (size_t j = i + 1; j < pl->n; ++j) {
+        pl->stages[j - 1] = pl->stages[j];
+      }
+      pl->n--;
+      return;
+    }
+  }
 }

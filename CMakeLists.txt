@@ -68,6 +68,7 @@ add_library(drifty_bare_obj OBJECT
     src/pipe/pipes.c
     src/pipe/streams.c
     src/pipe/pipeline.c
+    src/pipe/multi.c
     contrib/rs251/src/rs251.c)
 target_compile_features(drifty_bare_obj PUBLIC c_std_11)
 target_compile_options(drifty_bare_obj PRIVATE -ffreestanding -fno-builtin -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration)
@@ -145,7 +146,11 @@ set(_dt_public_symbols
     dt_pipe_encoder_create dt_pipe_encoder_destroy
     dt_pipe_decoder_create dt_pipe_decoder_destroy
     dt_pipe_soft_decoder_create dt_pipe_soft_decoder_destroy
-    dt_pipeline_create dt_pipeline_destroy)
+    dt_pipeline_create dt_pipeline_destroy
+    dt_pipe_splitter_create dt_pipe_splitter_destroy
+    dt_pipe_diverter_create dt_pipe_diverter_select dt_pipe_diverter_destroy
+    dt_pipe_selector_create dt_pipe_selector_select dt_pipe_selector_destroy
+    dt_pipe_valve_create dt_pipe_valve_open dt_pipe_valve_close dt_pipe_valve_destroy)
 string(REPLACE ";" "\n" _dt_public_symbols_text "${_dt_public_symbols}")
 set(_dt_keep_file ${CMAKE_CURRENT_BINARY_DIR}/dt_public_symbols.txt)
 file(WRITE ${_dt_keep_file} "${_dt_public_symbols_text}\n")

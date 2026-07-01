@@ -56,6 +56,18 @@ bridge.
   the whole message from the frames that survive, so the receiver is built to lose a
   few and keep going.
 
+## Files
+
+Split so `main.c` reads as the routing story alone:
+
+- **`main.c`** — the funnel loop: prime the detectors, then per block run
+  `detect_clean`, escalate to `detect_noisy` only when it can't decide, route to
+  `bcjr` / `maxir` / drop, and print the live trace.
+- **`channel.c` / `channel.h`** — builds the one continuous, time-varying channel
+  (clean signal → dead air → noisy+drift signal → dead air → corrupt junk).
+- **`stack.c` / `stack.h`** — the outer stack: rs251 + marker framing on transmit,
+  marker reframing + rs251 soft decode on receive.
+
 ## Run
 
 ```sh

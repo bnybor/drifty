@@ -59,6 +59,24 @@ static void bar(double v) {
   printf("] %.2f", v);
 }
 
+/* Run a fresh detect_clean / detect_noisy over [in, len) and return its mean
+ * code-present (c_erasure) reading - the single number Part C compares as the
+ * channel worsens. (out[] is scratch for the recovered records.) */
+static double clean_present(const dt_cc_detect_clean_stream_params *p,
+                            const dt_bit *in, int len, dt_soft_bit *out, int cap) {
+  dt_stream_soft_decoder *sd = dt_cc_detect_clean_soft_decoder_create(p);
+  int got = ex_decode_soft(sd, in, len, out, cap);
+  dt_cc_detect_clean_soft_decoder_destroy(sd);
+  return mean_coded(out, 0, got);
+}
+static double noisy_present(const dt_cc_detect_noisy_stream_params *p,
+                            const dt_bit *in, int len, dt_soft_bit *out, int cap) {
+  dt_stream_soft_decoder *sd = dt_cc_detect_noisy_soft_decoder_create(p);
+  int got = ex_decode_soft(sd, in, len, out, cap);
+  dt_cc_detect_noisy_soft_decoder_destroy(sd);
+  return mean_coded(out, 0, got);
+}
+
 int main(void) {
   uint64_t rng = 0xDE7EC701u;
   dt_cc_code *code = dt_cc_code_create_standard(DT_CC_CODE_K7_RATE_1_2);
@@ -160,18 +178,10 @@ int main(void) {
         chan[i] = (chan[i] == DT_TRUE) ? DT_FALSE : DT_TRUE;
       }
     }
-    dt_stream_soft_decoder *sl = dt_cc_detect_clean_soft_decoder_create(&clean);
-    int gl = ex_decode_soft(sl, chan, clen, out, cap);
-    double ml = mean_coded(out, 0, gl);
-    dt_cc_detect_clean_soft_decoder_destroy(sl);
-    dt_stream_soft_decoder *sf = dt_cc_detect_noisy_soft_decoder_create(&noisy);
-    int gf = ex_decode_soft(sf, chan, clen, out, cap);
-    double mf = mean_coded(out, 0, gf);
-    dt_cc_detect_noisy_soft_decoder_destroy(sf);
     printf("  %.0f%% flips:  clean ", fr[k] * 100.0);
-    bar(ml);
+    bar(clean_present(&clean, chan, clen, out, cap));
     printf("   noisy ");
-    bar(mf);
+    bar(noisy_present(&noisy, chan, clen, out, cap));
     putchar('\n');
   }
 
@@ -184,18 +194,10 @@ int main(void) {
         chan[i] = (chan[i] == DT_TRUE) ? DT_FALSE : DT_TRUE;
       }
     }
-    dt_stream_soft_decoder *sl = dt_cc_detect_clean_soft_decoder_create(&clean);
-    int gl = ex_decode_soft(sl, chan, rl, out, cap);
-    double ml = mean_coded(out, 0, gl);
-    dt_cc_detect_clean_soft_decoder_destroy(sl);
-    dt_stream_soft_decoder *sf = dt_cc_detect_noisy_soft_decoder_create(&noisy);
-    int gf = ex_decode_soft(sf, chan, rl, out, cap);
-    double mf = mean_coded(out, 0, gf);
-    dt_cc_detect_noisy_soft_decoder_destroy(sf);
     printf("  %d bits:    clean ", rl);
-    bar(ml);
+    bar(clean_present(&clean, chan, rl, out, cap));
     printf("   noisy ");
-    bar(mf);
+    bar(noisy_present(&noisy, chan, rl, out, cap));
     putchar('\n');
   }
   /* ---- Part D: DT_INVALID symbols as two-sided evidence (detect_clean) ---- */

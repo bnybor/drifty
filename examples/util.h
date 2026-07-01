@@ -83,6 +83,27 @@ static inline void ex_rand_bits(dt_bit *bits, int n, uint64_t *rng) {
   }
 }
 
+/* Pack a byte into 8 dt_bit symbols, MSB first - the byte<->symbol boundary the block
+ * codes sit on (a GF(251) symbol is one byte). */
+static inline void ex_byte_to_bits(unsigned char v, dt_bit *out) {
+  for (int i = 0; i < 8; ++i) {
+    out[i] = (v & (0x80u >> i)) ? DT_TRUE : DT_FALSE;
+  }
+}
+/* Unpack 8 dt_bit symbols (MSB first) back into a byte. Returns 0 if any symbol is not
+ * a clean bit (erasure / absent / invalid), so the byte cannot be recovered. */
+static inline int ex_bits_to_byte(const dt_bit *in, unsigned char *out) {
+  unsigned v = 0;
+  for (int i = 0; i < 8; ++i) {
+    if (!DT_IS_BIT(in[i])) {
+      return 0;
+    }
+    v = (v << 1) | DT_BIT(in[i]);
+  }
+  *out = (unsigned char)v;
+  return 1;
+}
+
 /* -- one-line symbol name, for readable output ------------------------------ */
 
 static inline const char *ex_sym(dt_bit s) {

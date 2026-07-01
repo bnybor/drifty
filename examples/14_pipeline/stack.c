@@ -14,23 +14,7 @@
 #include <drifty/pipe/frames.h>
 #include <drifty/result.h>
 
-/* -- byte <-> bit packing (MSB-first) -------------------------------------- */
-static void byte_to_bits(unsigned char v, dt_bit *out) {
-  for (int i = 0; i < 8; ++i) {
-    out[i] = (v & (0x80u >> i)) ? DT_TRUE : DT_FALSE;
-  }
-}
-static int bits_to_byte(const dt_bit *in, unsigned char *out) {
-  unsigned v = 0;
-  for (int i = 0; i < 8; ++i) {
-    if (!DT_IS_BIT(in[i])) {
-      return 0;
-    }
-    v = (v << 1) | DT_BIT(in[i]);
-  }
-  *out = (unsigned char)v;
-  return 1;
-}
+/* byte <-> bit packing is ex_byte_to_bits / ex_bits_to_byte in util.h. */
 
 int stack_build_framed(unsigned char payload[][RS_MSG], int nframes, dt_bit *out,
                        int cap) {
@@ -42,7 +26,7 @@ int stack_build_framed(unsigned char payload[][RS_MSG], int nframes, dt_bit *out
   for (int f = 0; f < nframes; ++f) {
     dt_bit *rin = rse->decoded_buf(rse);
     for (int i = 0; i < RS_MSG; ++i) {
-      byte_to_bits(payload[f][i], rin + i * 8);
+      ex_byte_to_bits(payload[f][i], rin + i * 8);
     }
     rse->reset(rse);
     dt_result r;
@@ -95,7 +79,7 @@ void stack_recover(dt_pipe *fp, unsigned char payloads[][RS_MSG], int npay, int 
         unsigned char m[RS_MSG];
         int ok = 1;
         for (int b = 0; b < RS_MSG && ok; ++b) {
-          ok = bits_to_byte(rb + b * 8, &m[b]);
+          ok = ex_bits_to_byte(rb + b * 8, &m[b]);
         }
         int which = -1;
         for (int p = 0; p < npay && ok; ++p) {
@@ -108,7 +92,7 @@ void stack_recover(dt_pipe *fp, unsigned char payloads[][RS_MSG], int npay, int 
           ++*recovered;
           dt_bit *rin = rse->decoded_buf(rse);
           for (int b = 0; b < RS_MSG; ++b) {
-            byte_to_bits(payloads[which][b], rin + b * 8);
+            ex_byte_to_bits(payloads[which][b], rin + b * 8);
           }
           rse->reset(rse);
           dt_result er;

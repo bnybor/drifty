@@ -28,22 +28,8 @@
 #include <drifty/cc/hybrid.h>
 #include <drifty/result.h>
 
-static void byte_to_bits(unsigned char v, dt_bit *out) {
-  for (int i = 0; i < 8; i++) {
-    out[i] = (v & (0x80u >> i)) ? DT_TRUE : DT_FALSE;
-  }
-}
-static int bits_to_byte(const dt_bit *in, unsigned char *out) {
-  unsigned v = 0;
-  for (int i = 0; i < 8; i++) {
-    if (!DT_IS_BIT(in[i])) {
-      return 0; /* erasure / absent / invalid -> not a clean byte */
-    }
-    v = (v << 1) | DT_BIT(in[i]);
-  }
-  *out = (unsigned char)v;
-  return 1;
-}
+/* byte <-> bit packing is ex_byte_to_bits / ex_bits_to_byte in util.h. */
+
 /* Plain argmax projection of a soft record (this diagnostic gauges what the
  * ordinary hard rs251 decoder would see if fed the soft decoder's hard guesses;
  * the recovery itself uses the soft rs251 decoder on the soft codeword, below). */
@@ -81,7 +67,7 @@ static void residue(const dt_bit *rcw, const dt_bit *cw, int N, int *pe,
 static int msg_ok(const dt_bit *dec, const unsigned char *msg, int MSG) {
   for (int i = 0; i < MSG; i++) {
     unsigned char b;
-    if (!bits_to_byte(dec + i * 8, &b) || b != msg[i]) {
+    if (!ex_bits_to_byte(dec + i * 8, &b) || b != msg[i]) {
       return 0;
     }
   }
@@ -108,7 +94,7 @@ int main(void) {
   dt_block_encoder *rse = dt_bc_rs251_block_encoder_create(N, K);
   dt_bit *rse_in = rse->decoded_buf(rse);
   for (int i = 0; i < MSG; i++) {
-    byte_to_bits(msg[i], rse_in + i * 8);
+    ex_byte_to_bits(msg[i], rse_in + i * 8);
   }
   rse->encode(rse);
   dt_bit *cw = rse->encoded_buf(rse);
@@ -157,16 +143,7 @@ int main(void) {
   /* ===== SOFT path: hybrid SOFT decoder -> soft rs251 ===== */
   dt_stream_soft_decoder *sd = dt_cc_hybrid_soft_decoder_create(code, &hp);
   dt_soft_bit *sout = malloc((size_t)OCAP * sizeof *sout);
-  sd->begin(sd, NULL, 0);
-  int sn = sd->decode(sd, sout, OCAP, rx, rlen);
-  for (;;) {
-    int g = sd->decode(sd, sout + sn, OCAP - sn, NULL, 0);
-    if (g <= 0) {
-      break;
-    }
-    sn += g;
-  }
-  sn += sd->finalize(sd, sout + sn, OCAP - sn); /* drain + flush the tail */
+  ex_decode_soft(sd, rx, rlen, sout, OCAP); /* begin -> decode -> drain -> finalize */
   dt_cc_hybrid_soft_decoder_destroy(sd);
 
   dt_soft_bit *srcw = sout + WARM; /* skip the warm-up prefix */
@@ -190,16 +167,7 @@ int main(void) {
   /* ===== HARD path on the SAME channel, for contrast ===== */
   dt_stream_decoder *hd = dt_cc_hybrid_decoder_create(code, &hp);
   dt_bit *hout = malloc((size_t)OCAP);
-  hd->begin(hd, NULL, 0);
-  int hn = hd->decode(hd, hout, OCAP, rx, rlen);
-  for (;;) {
-    int g = hd->decode(hd, hout + hn, OCAP - hn, NULL, 0);
-    if (g <= 0) {
-      break;
-    }
-    hn += g;
-  }
-  hn += hd->finalize(hd, hout + hn, OCAP - hn);
+  ex_decode_hard(hd, rx, rlen, hout, OCAP);
   dt_cc_hybrid_decoder_destroy(hd);
 
   dt_bit *hrcw = hout + WARM;

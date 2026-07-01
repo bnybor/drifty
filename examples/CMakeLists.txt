@@ -17,10 +17,13 @@ set(DRIFTY_EXAMPLES
     10_concatenated
     11_detect
     12_pipe
-    13_funnel)
+    13_funnel
+    14_pipeline)
 
 foreach(ex ${DRIFTY_EXAMPLES})
-  add_executable(${ex} ${ex}/main.c)
+  # Most examples are a single main.c; some (e.g. 14_pipeline) split across files.
+  file(GLOB ex_src ${CMAKE_CURRENT_SOURCE_DIR}/${ex}/*.c)
+  add_executable(${ex} ${ex_src})
   target_link_libraries(${ex} PRIVATE drifty::drifty)
   target_include_directories(${ex} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   set_target_properties(${ex} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${ex})

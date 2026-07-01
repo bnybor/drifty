@@ -1,0 +1,20 @@
+digraph {
+channel -> splitter1
+splitter1 -> detect_clean -> executor1
+splitter1 -> diverter1
+executor1 -> diverter1
+executor1 -> drain1 [label=decision]
+diverter1 -> bcjr
+diverter1 -> drain2
+diverter1 -> splitter2
+splitter2 -> detect_noisy
+splitter2 -> diverter2
+diverter2 -> drain3
+diverter2 -> maxir
+detect_noisy -> executor2
+executor2 -> diverter2 [label=decision]
+executor2 -> drain
+bcjr -> combiner1
+maxir -> combiner1
+combiner1 -> frame_decoder
+}

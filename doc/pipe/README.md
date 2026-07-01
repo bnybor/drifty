@@ -134,6 +134,30 @@ after the pipe with its own `_destroy`).
 | `dt_pipe_decoder_create(dt_stream_decoder *)` | decoder | coded → recovered (hard → hard) |
 | `dt_pipe_soft_decoder_create(dt_stream_soft_decoder *)` | soft decoder | coded → soft records (hard → soft) |
 
+### Frame codec adapters — [`frames.h`](../../include/drifty/pipe/frames.h)
+
+Wrap a [frame codec](../frame.md) as a pipe — the frame-codec counterpart of the
+streaming adapters above. The codec is not owned. A frame codec has boundary
+operations the plain `begin`/`tick`/`finalize` lifecycle cannot carry, so they ride
+as extra, non-vtable calls on the pipe.
+
+| Builder | Wraps | Direction |
+|---------|-------|-----------|
+| `dt_pipe_frame_encoder_create(dt_frame_encoder *)` | frame encoder | payload → framed coded bits (hard → hard) |
+| `dt_pipe_frame_decoder_create(dt_frame_decoder *)` | frame decoder | framed → recovered (hard → hard) |
+| `dt_pipe_frame_soft_decoder_create(dt_frame_soft_decoder *)` | soft frame decoder | framed → recovered records (soft → soft) |
+
+- **Encoder**: open and close each frame with `dt_pipe_frame_encoder_begin_frame(p)`
+  / `dt_pipe_frame_encoder_end_frame(p)`, which emit the delimiters into the output
+  buffer around the push/tick that feeds the frame's payload.
+- **Decoders**: a `tick` copies bits only up to the next **frame-state change** and
+  then **stalls** — it copies nothing further until `dt_pipe_frame_decoder_advance(p)`
+  steps past the boundary. So a decoder is walked boundary by boundary: `tick` to copy
+  the next run, read `dt_pipe_frame_decoder_get_state(p)` (OUTSIDE / BEGIN / INSIDE /
+  END) and pull the output, then `advance`. Each tick's output is one run (a frame's
+  payload, or the verbatim bits between frames); `finalize` flushes through any stall.
+  The soft decoder has the matching `_get_state` / `_advance`.
+
 ### Compounds
 
 | Builder | Does |

@@ -38,8 +38,13 @@ codecs that implement them.
 - **[Bit-stream pipes (`pipe/`)](pipe/README.md)** — a composable toolkit for
   wiring bit streams: the `dt_pipe_source` / `dt_pipe_sink` / `dt_pipe` interfaces,
   the buffered `begin`/`tick`/`finalize` lifecycle, `dt_pipe_pump`, and a catalogue
-  of pipe builders (codec adapters, hard/soft converters, `dt_pipeline`, and the
-  splitter / diverter / selector / valve routing pipes).
+  of pipe builders (stream- and frame-codec adapters, hard/soft converters,
+  `dt_pipeline`, and the splitter / diverter / selector / valve routing pipes).
+- **[Object container (`container.h`)](../include/drifty/container.h)** —
+  `dt_container`, a small ownership bag that holds `(object, destroyer)` pairs and
+  frees them all in reverse order with one `dt_container_destroy()`, so a routine that
+  builds many `_create`d objects can register each as it goes instead of trailing a
+  long list of individual destroy calls down every exit path.
 - **[Freestanding & embedded](freestanding.md)** — running the core without a
   hosted C library: the `dt_*` proxy boundary, the bare vs full archives, and how
   to port the proxies (allocation, math) to a bare-metal target.
@@ -58,11 +63,11 @@ Operations that can fail return the shared `dt_result` codes from
 
 | Path | What |
 |------|------|
-| `include/drifty/` | top-level public headers: the `dt_bit` alphabet (`bit.h`) and soft bit (`soft_bit.h`), shared result codes (`result.h`), and the streaming / block / frame codec interfaces |
+| `include/drifty/` | top-level public headers: the `dt_bit` alphabet (`bit.h`) and soft bit (`soft_bit.h`), shared result codes (`result.h`), the `dt_container` ownership helper (`container.h`), and the streaming / block / frame codec interfaces |
 | `include/drifty/cc/` | convolutional codec API (`ccode.h`, `encoder.h`, `viterbi.h`, `vindel.h`, `hybrid.h`, `maxir.h`, `bcjr.h`, `detect_clean.h`, `detect_noisy.h`) |
 | `include/drifty/bc/` | block-code API (`rs251.h` — Reed–Solomon over GF(251)) |
 | `include/drifty/fc/` | frame-code API (`naive.h` — fixed-length frames; `marker.h` — escape-delimited frames) |
-| `include/drifty/pipe/` | bit-stream pipe API (`source.h`, `sink.h`, `pipe.h`, `buffers.h`, `streams.h`, `pipes.h`, `multi.h`) |
+| `include/drifty/pipe/` | bit-stream pipe API (`source.h`, `sink.h`, `pipe.h`, `buffers.h`, `streams.h`, `frames.h`, `pipes.h`, `multi.h`) |
 | `src/cc/` | convolutional implementations — the shared `encoder/`, the `ccode` descriptor, and each codec's decode engine |
 | `src/bc/` | the `rs251` block-codec adapter over the bundled `contrib/rs251` Reed–Solomon library |
 | `src/fc/` | frame-codec implementations (`naive`, `marker`) |

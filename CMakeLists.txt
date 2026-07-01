@@ -45,6 +45,7 @@ target_include_directories(drifty_interface INTERFACE
 # can be archived into both libraries below (the bare core, and the public core +
 # stdlib) without compiling twice.
 add_library(drifty_bare_obj OBJECT
+    src/container.c
     src/cc/ccode.c
     src/cc/hybrid/decode.c
     src/cc/hybrid.c
@@ -67,6 +68,7 @@ add_library(drifty_bare_obj OBJECT
     src/fc/marker.c
     src/pipe/pipes.c
     src/pipe/streams.c
+    src/pipe/frames.c
     src/pipe/pipeline.c
     src/pipe/multi.c
     contrib/rs251/src/rs251.c)
@@ -117,6 +119,7 @@ set_source_files_properties(contrib/rs251/src/rs251.c PROPERTIES
 # one-shot helpers (dt_cc_encoder_encode/_flush) are private - their headers live
 # under src/cc/ - so they are localized, not exported.
 set(_dt_public_symbols
+    dt_container_create dt_container_add dt_container_remove dt_container_destroy
     dt_cc_code_create dt_cc_code_create_standard dt_cc_code_destroy
     dt_cc_code_k dt_cc_code_n
     dt_cc_hybrid_decoder_create dt_cc_hybrid_decoder_destroy
@@ -146,6 +149,12 @@ set(_dt_public_symbols
     dt_pipe_encoder_create dt_pipe_encoder_destroy
     dt_pipe_decoder_create dt_pipe_decoder_destroy
     dt_pipe_soft_decoder_create dt_pipe_soft_decoder_destroy
+    dt_pipe_frame_encoder_create dt_pipe_frame_encoder_destroy
+    dt_pipe_frame_encoder_begin_frame dt_pipe_frame_encoder_end_frame
+    dt_pipe_frame_decoder_create dt_pipe_frame_decoder_destroy
+    dt_pipe_frame_decoder_get_state dt_pipe_frame_decoder_advance
+    dt_pipe_frame_soft_decoder_create dt_pipe_frame_soft_decoder_destroy
+    dt_pipe_frame_soft_decoder_get_state dt_pipe_frame_soft_decoder_advance
     dt_pipeline_create dt_pipeline_destroy dt_pipeline_add dt_pipeline_remove
     dt_pipe_container_create dt_pipe_container_destroy
     dt_pipe_splitter_create dt_pipe_splitter_destroy

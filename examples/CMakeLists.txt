@@ -16,7 +16,8 @@ set(DRIFTY_EXAMPLES
     09_frames_marker
     10_concatenated
     11_detect
-    12_pipe)
+    12_pipe
+    13_funnel)
 
 foreach(ex ${DRIFTY_EXAMPLES})
   add_executable(${ex} ${ex}/main.c)

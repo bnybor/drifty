@@ -34,6 +34,12 @@
 extern "C" {
 #endif
 
+/*
+ * The shared convolutional encoder: the single dt_stream_encoder that every cc codec
+ * encodes through, built over a dt_cc_code (<drifty/cc/ccode.h>) and driven through
+ * the streaming vtable (<drifty/stream_encoder.h>).
+ */
+
 /* Build an encoder over `code` - the convolutional encoder every codec
  * encodes through. Input bits are normally DT_FALSE / DT_TRUE; it also carries
  * non-boolean inputs - a DT_INVALID input emits DT_INVALID coded bits (structural

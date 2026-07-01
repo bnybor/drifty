@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`libdrifty_pipe.a`** — the `pipe/` toolkit split into its own freestanding static
+  archive. It references only four `dt_*` proxies (`dt_malloc` / `dt_realloc` /
+  `dt_free` / `dt_memmove`) and has no link dependency on the codec core, so the pipe
+  API can be linked on its own. `libdrifty_bare.a` is now the core alone; `libdrifty.a`
+  still bundles both. Exported as the `drifty::drifty_pipe` CMake target.
+- **`dt_container`** (`drifty/container.h`) — a small ownership bag that holds
+  `(object, destroyer)` pairs and frees them all in reverse order of registration with
+  a single `dt_container_destroy()`.
+- **Frame-codec pipe adapters** (`drifty/pipe/frames.h`) — `dt_pipe_frame_encoder` /
+  `dt_pipe_frame_decoder` / `dt_pipe_frame_soft_decoder`, wrapping the frame codecs as
+  `dt_pipe`s, with the extra `begin_frame` / `end_frame` (encoder) and `get_state` /
+  `advance` (decoder — its `tick` copies up to the next frame-state change and stalls
+  until `advance`) calls the plain lifecycle cannot carry.
+- The `14_pipeline` example (the detection-routed funnel rebuilt as one composed pipe
+  graph) and per-directory `README.md`s across `metrics/`.
+
+## [1.6.0] - 2026-07-01
+
+### Added
+
+- **`dt_pipe_container`** — a vtable that drives a set of pipes' `begin` / `tick` /
+  `finalize` together and owns their teardown (unlike `dt_pipeline`, it does not move
+  bits between them), with a composed pipeline example.
+
+## [1.5.0] - 2026-07-01
+
+### Added
+
+- The **`pipe/`** bit-stream toolkit: the `dt_pipe_source` / `dt_pipe_sink` / `dt_pipe`
+  interfaces, the buffered `begin` / `tick` / `finalize` lifecycle, the `dt_pipe_pump`
+  move primitive, the streaming-codec adapters (`streams.h`), hard/soft converter and
+  executor pipes, the linear `dt_pipeline`, and the multi-way routing pipes (`multi.h`:
+  splitter, combiner, diverter, selector, valve, drain, push-to, pull-from), plus the
+  buffer endpoints. With `doc/pipe/` and the `12_pipe` and `13_funnel` examples.
+
+## [1.4.0] - 2026-06-30
+
+### Fixed
+
+- Further `DT_INVALID` handling corrections.
+
+## [1.3.0] - 2026-06-30
+
+### Fixed
+
+- A cascade of `DT_INVALID` detection fixes — corrections to the two-sided-evidence
+  handling in the `detect_clean` / `detect_noisy` meta-codecs.
+
+## [1.2.0] - 2026-06-30
+
+### Changed
+
+- `detect` meta-codec fixes, with expanded detect metrics, documentation, and tests.
+
 ## [1.1.0] - 2026-06-29
 
 ### Added
@@ -102,6 +158,11 @@ aligned through inserted and dropped bits.
 - A complete set of runnable [example programs](examples/) and reference
   [documentation](doc/).
 
-[Unreleased]: https://github.com/bnybor/drifty/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/bnybor/drifty/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/bnybor/drifty/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/bnybor/drifty/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/bnybor/drifty/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/bnybor/drifty/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/bnybor/drifty/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/bnybor/drifty/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/bnybor/drifty/releases/tag/v1.0.0

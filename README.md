@@ -83,8 +83,10 @@ This README is the overview. The full reference lives in [`doc/`](doc/README.md)
 - [Frame coding (`doc/fc/`)](doc/fc/README.md) — the frame-delimiting codecs
   (`naive` fixed-length, `marker` escape-delimited), with a guide to choosing one.
 - [Bit-stream pipes (`doc/pipe/`)](doc/pipe/README.md) — the composable `dt_pipe`
-  toolkit: source / sink / pipe interfaces, `dt_pipe_pump`, codec adapters,
-  hard/soft converters, `dt_pipeline`, and the multi-way routing pipes.
+  toolkit: source / sink / pipe interfaces, `dt_pipe_pump`, stream- and frame-codec
+  adapters, hard/soft converters, `dt_pipeline`, and the multi-way routing pipes.
+- [Object container (`container.h`)](include/drifty/container.h) — `dt_container`, a
+  small ownership bag that frees a pile of `_create`d objects with one call.
 
 ## Choosing a codec
 
@@ -295,14 +297,20 @@ void *dt_memset(void *, int, size_t);
 float dt_log(float);  float dt_exp(float);
 ```
 
-This gives you two ways to link (see [Build](#build)):
+This gives you two ways to link the core (see [Build](#build)):
 
 - **`libdrifty_bare.a`** — the freestanding core with the `dt_*` proxies left
   **undefined**, for you to provide. Back `dt_malloc` with a static arena, route
   `dt_log` / `dt_exp` to your platform's math, and the core never touches a heap or
   a libc you didn't choose.
-- **`libdrifty.a`** — the same core with a small default proxy implementation
-  bundled in (backed by the host libc), for hosted builds where that is fine.
+- **`libdrifty.a`** — the core *and* the [`pipe/`](doc/pipe/README.md) toolkit with a
+  small default proxy implementation bundled in (backed by the host libc), for hosted
+  builds where that is fine.
+
+The pipe toolkit also ships as its own freestanding archive, **`libdrifty_pipe.a`** —
+proxy-undefined like the bare core, and needing only four of the proxies
+(`dt_malloc`/`dt_realloc`/`dt_free`/`dt_memmove`; no math). Omit it if you don't use the
+pipe API.
 
 To drop the unwind tables and compiler `.ident` string for a smaller archive,
 configure a size-optimized build with `-DCMAKE_BUILD_TYPE=MinSizeRel`.
@@ -318,9 +326,10 @@ cmake -S . -B build
 cmake --build build
 ```
 
-This produces `libdrifty.a` (self-contained) and `libdrifty_bare.a` (the
-freestanding core, with the few libc shims left for you to supply). Only the
-public API is exported — `dt_cc_code_*`, the shared encoder `dt_cc_encoder_*`, the
+This produces `libdrifty.a` (self-contained: the core, the `pipe/` toolkit, and the
+libc shims), `libdrifty_bare.a` (the freestanding core, with the few libc shims left
+for you to supply), and `libdrifty_pipe.a` (the `pipe/` toolkit on its own — also
+freestanding). Only the public API is exported — `dt_cc_code_*`, the shared encoder `dt_cc_encoder_*`, the
 per-codec decoder factories `dt_cc_viterbi_*` / `dt_cc_bcjr_*` / `dt_cc_vindel_*` /
 `dt_cc_hybrid_*` / `dt_cc_maxir_*`, and the `dt_bc_rs251_block_*` Reed–Solomon block
 codec — while the engine internals (including the bundled `rs251` library) are
@@ -379,18 +388,19 @@ decoder for indel recovery:
 cmake --install build --prefix /your/prefix
 ```
 
-Installs `libdrifty.a`, `libdrifty_bare.a`, the public headers under
-`include/drifty/`, and a CMake package config. Consumers then just:
+Installs `libdrifty.a`, `libdrifty_bare.a`, `libdrifty_pipe.a`, the public headers
+under `include/drifty/`, and a CMake package config. Consumers then just:
 
 ```cmake
 find_package(drifty REQUIRED)
 target_link_libraries(your_app PRIVATE drifty::drifty)
 ```
 
-`drifty::drifty` is the self-contained archive (core + stdlib shims + libm);
-`drifty::drifty_bare` is the freestanding core with the `dt_*` proxies left for you
-to supply (see [Freestanding & embedded](doc/freestanding.md)). Point CMake at the
-prefix with `-DCMAKE_PREFIX_PATH=/your/prefix` if it is not a default location.
+`drifty::drifty` is the self-contained archive (core + the `pipe/` toolkit + stdlib
+shims + libm); `drifty::drifty_bare` is the freestanding core and `drifty::drifty_pipe`
+the pipe toolkit alone, both with the `dt_*` proxies left for you to supply (see
+[Freestanding & embedded](doc/freestanding.md)). Point CMake at the prefix with
+`-DCMAKE_PREFIX_PATH=/your/prefix` if it is not a default location.
 
 ## License
 

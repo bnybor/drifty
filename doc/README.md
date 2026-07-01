@@ -46,7 +46,7 @@ codecs that implement them.
   builds many `_create`d objects can register each as it goes instead of trailing a
   long list of individual destroy calls down every exit path.
 - **[Freestanding & embedded](freestanding.md)** — running the core without a
-  hosted C library: the `dt_*` proxy boundary, the bare vs full archives, and how
+  hosted C library: the `dt_*` proxy boundary, the bare / pipe / full archives, and how
   to port the proxies (allocation, math) to a bare-metal target.
 - **[Soft decoding](soft_decoding.md)** — the soft front ends (`bcjr`, `hybrid`,
   `maxir`): what the per-bit consistencies mean, how `c_absent` differs across

@@ -36,6 +36,14 @@ extern "C" {
 #endif
 
 /*
+ * Concrete dt_pipe factories and pipe-composition utilities: the dt_pipe_pump move
+ * primitive, the hardening / softening / executor converter pipes, the linear
+ * dt_pipeline, and the dt_pipe_container that drives a set of pipes together. (The
+ * codec adapters live in <drifty/pipe/streams.h> and <drifty/pipe/frames.h>; the
+ * fan-out / fan-in routing pipes in <drifty/pipe/multi.h>.)
+ */
+
+/*
  * Copy elements from `src` to `dst` until the source yields no more: it pulls
  * both the hard and soft face and pushes what it gets, forwarding whichever face
  * carries data to the matching face of the sink. A face that either end leaves
@@ -184,6 +192,7 @@ struct dt_pipe_container_t {
   void *data;
 };
 
+/* Create an empty pipe container. Returns NULL out of memory. */
 dt_pipe_container *dt_pipe_container_create(void);
 /* Destroy a container from dt_pipe_container_create(). NULL is fine. Destroys the
  * still-contained pipes (reverse add order) before freeing the container. */

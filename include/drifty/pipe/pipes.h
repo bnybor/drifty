@@ -29,9 +29,23 @@
 
 #include <drifty/pipe/pipe.h>
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*
+ * Copy elements from `src` to `dst` until the source yields no more: it pulls
+ * both the hard and soft face and pushes what it gets, forwarding whichever face
+ * carries data to the matching face of the sink. A face that either end leaves
+ * NULL (as a single-domain buffer endpoint does) is skipped - nothing is pumped
+ * on a domain that has no path across. A NULL `dst` drains the source and DROPS
+ * the bits. Returns the number of elements moved (or dropped), or a negative value
+ * on error (a source or sink error, or a sink that will not accept the data). This
+ * is the primitive dt_pipeline uses to move bits between stages.
+ */
+int dt_pipe_pump(dt_pipe_source *src, dt_pipe_sink *dst);
 
 /*
  * Concrete pipe factories. Each returns a dt_pipe (<drifty/pipe/pipe.h>) - a
@@ -64,6 +78,68 @@ void dt_pipe_hardening_destroy(dt_pipe *pipe);
 dt_pipe *dt_pipe_softening_create(void);
 /* Free a softening pipe from dt_pipe_softening_create(). NULL is fine. */
 void dt_pipe_softening_destroy(dt_pipe *pipe);
+
+/*
+ * Executor pipe: a pipe whose phases are user-supplied functions. Each of the
+ * pipe's begin / tick / finalize runs the matching function, passing it a `src`
+ * that DRAWS from the executor's input buffer (what was pushed to the pipe's
+ * sink) and a `dst` that APPENDS to its output buffer (what the pipe's source
+ * pulls), plus the `data` pointer given here. A function returns the number of
+ * elements it wrote (0 if none) or a negative value on error - the same as the
+ * pipe phase it implements. A NULL function pointer is treated as a no-op.
+ *
+ * This is the general building block the other pipes specialize: e.g. a tick that
+ * pulls hard from `src` and pushes soft to `dst` is a softening pipe.
+ *
+ * Returns NULL out of memory. `data` is not owned.
+ */
+dt_pipe *dt_pipe_executor_create(
+    int (*begin)(dt_pipe_source *src, dt_pipe_sink *dst, void *data),
+    int (*tick)(dt_pipe_source *src, dt_pipe_sink *dst, void *data),
+    int (*finalize)(dt_pipe_source *src, dt_pipe_sink *dst, void *data),
+    void *data);
+/* Free an executor pipe from dt_pipe_executor_create(). NULL is fine. */
+void dt_pipe_executor_destroy(dt_pipe *pipe);
+
+/*
+ * dt_pipeline - a linear compound dt_pipe (<drifty/pipe/pipe.h>): a chain of
+ * component pipes (stages) that is itself a dt_pipe. You push into its sink, tick
+ * it, and pull from its source like any pipe; internally it moves the stream
+ * through the stages and drives their ticks.
+ *
+ * It has its own input and output buffers. Each of the compound's begin / tick /
+ * finalize is the same phase driver - only the stage method it runs differs - so
+ * begin and finalize move bits between the stages just as tick does. For a
+ * pipeline of stages A, B, C, a tick() runs:
+ *
+ *   pull from the input buffer, push to A;  A.tick();
+ *   pull from A, push to B;                 B.tick();
+ *   pull from B, push to C;                 C.tick();
+ *   pull from C, push to the output buffer.
+ *
+ * begin() runs the same movement around each stage's begin (a stage's begin may
+ * consume its buffered input - e.g. a preamble - and emit output that flows on to
+ * the next stage), and finalize() around each stage's finalize (a trailing flush
+ * cascades stage by stage to the output buffer). Whatever domain (hard / soft) a
+ * stage emits is forwarded to the matching face of the next stage, so adjacent
+ * stages must have compatible domains (insert a hardening or softening pipe where
+ * they differ).
+ *
+ * Because a pipeline is a dt_pipe, a pipeline can be a stage of another pipeline.
+ *
+ * The `stages` array is COPIED (it need not outlive the call), but the stage
+ * pipes themselves are NOT owned: the caller destroys each stage (with its own
+ * _destroy) after the pipeline. They must outlive the pipeline.
+ *
+ * Build from `count` stages (in flow order, index 0 first). `count` may be 0 (the
+ * pipeline is then a plain buffer: tick moves input to output). Returns NULL on a
+ * bad argument (NULL stages array with count > 0, or any NULL stage) or out of
+ * memory.
+ */
+dt_pipe *dt_pipeline_create(dt_pipe **stages, size_t count);
+/* Free a pipeline from dt_pipeline_create(). NULL is fine. Frees the pipeline's
+ * copy of the stage array but not the stages themselves. */
+void dt_pipeline_destroy(dt_pipe *pipe);
 
 #ifdef __cplusplus
 }

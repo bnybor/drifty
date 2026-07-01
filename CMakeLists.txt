@@ -140,6 +140,8 @@ set(_dt_public_symbols
     dt_fc_marker_frame_soft_decoder_create dt_fc_marker_frame_soft_decoder_destroy
     dt_pipe_hardening_create dt_pipe_hardening_destroy
     dt_pipe_softening_create dt_pipe_softening_destroy
+    dt_pipe_executor_create dt_pipe_executor_destroy
+    dt_pipe_pump
     dt_pipe_encoder_create dt_pipe_encoder_destroy
     dt_pipe_decoder_create dt_pipe_decoder_destroy
     dt_pipe_soft_decoder_create dt_pipe_soft_decoder_destroy

@@ -54,7 +54,69 @@
 #include <drifty/soft_bit.h>
 #include <drifty/stdlib.h>
 
+#include "bufcore.h"
 #include "fifo.h"
+
+/* -- pump: copy a source's whole output into a sink ------------------------ */
+
+#define PIPE_PUMP_CHUNK 256
+
+int dt_pipe_pump(dt_pipe_source *src, dt_pipe_sink *dst) {
+  int total = 0;
+  /* A NULL dst drains the source and drops the bits. Otherwise move the hard face
+   * only if both ends have one, and the soft face only if both do: a face absent
+   * on either end (a NULL function pointer, as on a single-domain buffer endpoint)
+   * means that domain has no matching path across, so nothing is pumped on it. */
+  if (src->pull && (!dst || dst->push)) {
+    for (;;) {
+      dt_bit b[PIPE_PUMP_CHUNK];
+      int g = src->pull(src, b, PIPE_PUMP_CHUNK);
+      if (g < 0) {
+        return g;
+      }
+      if (g == 0) {
+        break;
+      }
+      int off = 0;
+      while (dst && off < g) {
+        int w = dst->push(dst, b + off, (size_t)(g - off));
+        if (w < 0) {
+          return w;
+        }
+        if (w == 0) {
+          return -1; /* sink refuses data - would drop it */
+        }
+        off += w;
+      }
+      total += g; /* dst == NULL: pulled and dropped */
+    }
+  }
+  if (src->soft_pull && (!dst || dst->soft_push)) {
+    for (;;) {
+      dt_soft_bit s[PIPE_PUMP_CHUNK];
+      int g = src->soft_pull(src, s, PIPE_PUMP_CHUNK);
+      if (g < 0) {
+        return g;
+      }
+      if (g == 0) {
+        break;
+      }
+      int off = 0;
+      while (dst && off < g) {
+        int w = dst->soft_push(dst, s + off, (size_t)(g - off));
+        if (w < 0) {
+          return w;
+        }
+        if (w == 0) {
+          return -1;
+        }
+        off += w;
+      }
+      total += g;
+    }
+  }
+  return total;
+}
 
 /* -- hard <-> soft projections --------------------------------------------- */
 
@@ -323,5 +385,72 @@ void dt_pipe_softening_destroy(dt_pipe *pipe) {
   soften_pipe *c = (soften_pipe *)pipe; // base is the first member
   dt_free(c->in.buf);
   dt_free(c->out.buf);
+  dt_free(c);
+}
+
+/* -- executor pipe: user-supplied begin / tick / finalize ------------------ */
+
+typedef int (*exec_fn)(dt_pipe_source *src, dt_pipe_sink *dst, void *data);
+
+typedef struct {
+  dt_pipe base;      // handle (first member; the returned interface)
+  dt_pipe_ends ends; // input/output buffers and their faces
+  exec_fn begin;
+  exec_fn tick;
+  exec_fn finalize;
+  void *data;
+} exec_pipe;
+
+/* Run one phase: the user function draws input from ends.in_src and appends
+ * output to ends.out_snk. A NULL function is a no-op. */
+static int exec_run(exec_pipe *c, exec_fn fn) {
+  return fn ? fn(&c->ends.in_src, &c->ends.out_snk, c->data) : 0;
+}
+
+static int exec_begin(dt_pipe *pipe) {
+  exec_pipe *c = (exec_pipe *)pipe->data;
+  return exec_run(c, c->begin);
+}
+static int exec_tick(dt_pipe *pipe) {
+  exec_pipe *c = (exec_pipe *)pipe->data;
+  return exec_run(c, c->tick);
+}
+static int exec_finalize(dt_pipe *pipe) {
+  exec_pipe *c = (exec_pipe *)pipe->data;
+  return exec_run(c, c->finalize);
+}
+
+static dt_pipe_source *exec_get_source(dt_pipe *pipe) {
+  return &((exec_pipe *)pipe->data)->ends.pub_source;
+}
+static dt_pipe_sink *exec_get_sink(dt_pipe *pipe) {
+  return &((exec_pipe *)pipe->data)->ends.pub_sink;
+}
+
+dt_pipe *dt_pipe_executor_create(exec_fn begin, exec_fn tick, exec_fn finalize, void *data) {
+  exec_pipe *c = dt_malloc(sizeof(*c));
+  if (!c) {
+    return NULL;
+  }
+  c->base.source = exec_get_source;
+  c->base.sink = exec_get_sink;
+  c->base.begin = exec_begin;
+  c->base.tick = exec_tick;
+  c->base.finalize = exec_finalize;
+  c->base.data = c;
+  dt_pipe_ends_init(&c->ends);
+  c->begin = begin;
+  c->tick = tick;
+  c->finalize = finalize;
+  c->data = data;
+  return &c->base;
+}
+
+void dt_pipe_executor_destroy(dt_pipe *pipe) {
+  if (!pipe) {
+    return;
+  }
+  exec_pipe *c = (exec_pipe *)pipe; // base is the first member
+  dt_pipe_ends_free(&c->ends);
   dt_free(c);
 }

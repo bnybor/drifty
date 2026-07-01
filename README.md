@@ -82,6 +82,9 @@ This README is the overview. The full reference lives in [`doc/`](doc/README.md)
   codec, an RS(n, k) code over GF(251).
 - [Frame coding (`doc/fc/`)](doc/fc/README.md) — the frame-delimiting codecs
   (`naive` fixed-length, `marker` escape-delimited), with a guide to choosing one.
+- [Bit-stream pipes (`doc/pipe/`)](doc/pipe/README.md) — the composable `dt_pipe`
+  toolkit: source / sink / pipe interfaces, `dt_pipe_pump`, codec adapters,
+  hard/soft converters, `dt_pipeline`, and the multi-way routing pipes.
 
 ## Choosing a codec
 

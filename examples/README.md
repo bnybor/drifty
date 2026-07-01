@@ -50,6 +50,7 @@ Read them roughly in order — each builds on the vocabulary of the last.
 | 09 | **[frames_marker](09_frames_marker)** | Variable-length (`marker`) frames, escape-sequence transparency (any payload survives), hard and soft frame decoders. |
 | 10 | **[concatenated](10_concatenated)** | The full stack: an `rs251` outer code over a `hybrid` **soft** inner code across a drifting channel, with the hard path alongside for contrast. The worked example from [doc/concatenated.md](../doc/concatenated.md). |
 | 11 | **[detect](11_detect)** | The `detect_clean` / `detect_noisy` meta-codecs: blind detection of whether a convolutional code is present in an arbitrary stream (no code/alignment known) — lean localizes a coded segment hidden in random noise, full holds on through bit flips and combined flip+drift where lean collapses. |
+| 12 | **[pipe](12_pipe)** | The `pipe/` API — composable bit-stream plumbing: source / sink endpoints and `dt_pipe_pump`, a single pipe's buffered `begin`/`tick`/`finalize` lifecycle (softening), a `dt_pipeline` chaining encoder + decoder pipes to round-trip a message, and a splitter teeing a stream to a side sink. |
 
 ## Capability coverage
 

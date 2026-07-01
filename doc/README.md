@@ -35,6 +35,11 @@ codecs that implement them.
 - **[Frame coding (`fc/`)](fc/README.md)** — frame-delimiting codecs that carry no
   error correction of their own: `naive` (fixed-length frames) and `marker`
   (variable-length, escape-delimited), each with a hard and a soft decoder.
+- **[Bit-stream pipes (`pipe/`)](pipe/README.md)** — a composable toolkit for
+  wiring bit streams: the `dt_pipe_source` / `dt_pipe_sink` / `dt_pipe` interfaces,
+  the buffered `begin`/`tick`/`finalize` lifecycle, `dt_pipe_pump`, and a catalogue
+  of pipe builders (codec adapters, hard/soft converters, `dt_pipeline`, and the
+  splitter / diverter / selector / valve routing pipes).
 - **[Freestanding & embedded](freestanding.md)** — running the core without a
   hosted C library: the `dt_*` proxy boundary, the bare vs full archives, and how
   to port the proxies (allocation, math) to a bare-metal target.
@@ -57,6 +62,8 @@ Operations that can fail return the shared `dt_result` codes from
 | `include/drifty/cc/` | convolutional codec API (`ccode.h`, `encoder.h`, `viterbi.h`, `vindel.h`, `hybrid.h`, `maxir.h`, `bcjr.h`, `detect_clean.h`, `detect_noisy.h`) |
 | `include/drifty/bc/` | block-code API (`rs251.h` — Reed–Solomon over GF(251)) |
 | `include/drifty/fc/` | frame-code API (`naive.h` — fixed-length frames; `marker.h` — escape-delimited frames) |
+| `include/drifty/pipe/` | bit-stream pipe API (`source.h`, `sink.h`, `pipe.h`, `buffers.h`, `streams.h`, `pipes.h`, `multi.h`) |
 | `src/cc/` | convolutional implementations — the shared `encoder/`, the `ccode` descriptor, and each codec's decode engine |
 | `src/bc/` | the `rs251` block-codec adapter over the bundled `contrib/rs251` Reed–Solomon library |
 | `src/fc/` | frame-codec implementations (`naive`, `marker`) |
+| `src/pipe/` | pipe implementations — converters and the executor (`pipes.c`), codec adapters (`streams.c`), the pipeline (`pipeline.c`), and the multi-way routing pipes (`multi.c`) |

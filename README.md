@@ -349,7 +349,11 @@ drop / erase channels for each standard code — see
 [metrics/bcjr/METRICS.md](metrics/bcjr/METRICS.md). The no-drift decoders
 (`viterbi`, `bcjr`) sweep only the flip and erase channels; the drift-tolerant ones
 (`hybrid`, `vindel`, `maxir`) sweep insert and drop as well. Each METRICS.md embeds
-the full-resolution sweep (30 trials × 4000 info bits per point) with plots.
+the full-resolution sweep (30 trials × 4000 info bits per point) with plots. The two
+blind detectors are characterized the same way ([metrics/detect_clean](metrics/detect_clean/METRICS.md),
+[metrics/detect_noisy](metrics/detect_noisy/METRICS.md)), and
+[metrics/README.md](metrics/README.md) indexes every harness with the shared build /
+run / plot workflow.
 
 On the insert/drop (drift) channels the sweeps give a clear pick of code and
 decoder for indel recovery:

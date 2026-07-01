@@ -1,19 +1,34 @@
 # drifty
 
-A small C library for **forward error correction on a bit stream**. You add
-redundancy when you encode; on the other end you decode and recover your bits with
-errors corrected — including bits that were **flipped, inserted, dropped, or
-lost**. Inserted and dropped bits normally knock an error-correcting code out of
-sync; drifty's drift-tolerant codecs stay aligned through them.
+A small, freestanding C library for **forward error correction on a bit stream** —
+built for the errors most codes can't survive: **inserted and dropped bits**.
 
-It works on a continuous stream: feed received bits in, read corrected bits out at
-a fixed delay, with no message lengths or frame boundaries to manage.
+Nearly every error-correcting code assumes the receiver is bit-synchronized — that
+the *i*-th bit out lines up with the *i*-th bit in. Flip a bit and a Viterbi or
+Reed–Solomon decoder fixes it; **insert or drop** one and the alignment shifts, every
+following bit lands in the wrong place, and the decode collapses. Yet clock slips,
+dropped samples, resampling, and unframed radio produce exactly those insertions and
+deletions. drifty's **drift-tolerant** decoders track the shifting alignment and stay
+locked through it — the capability the library is named for.
 
-drifty is **freestanding** and built for **embedded targets**: the core depends on
-no C standard library, pulls in no headers beyond `<stdint.h>` / `<stddef.h>`, and
-reaches the few libc facilities it needs through `dt_*` proxies you supply — so you
-choose the allocator (a static pool is fine) and the math. See
-[Freestanding & embedded](#freestanding--embedded).
+What makes that useful is the shape of the answer. drifty absorbs the whole
+*alignment-axis* mess — flips, erasures, insertions, deletions — and returns clean
+*value-axis* facts: your recovered bits, plus **erasures** marking the positions it
+couldn't place, on a **stable grid where output bit *i* always means input bit *i***.
+Your application — and any outer code you stack on top, such as a Reed–Solomon block
+code — never has to reason about position again: a bit the channel dropped arrives as
+an ordinary erasure the outer code already knows how to fill. drifty carries that
+hand-off with per-bit **soft** confidences across the inner→outer boundary, so
+reliability survives end to end rather than being flattened to a hard guess too early.
+
+It runs as a continuous stream — feed received bits in, read corrected bits out at a
+fixed delay, with no message lengths or frame boundaries to manage, and it can lock
+onto a stream you join mid-flight.
+
+And it targets **embedded** hardware: the core depends on no C standard library, pulls
+in no headers beyond `<stdint.h>` / `<stddef.h>`, and reaches the few libc facilities
+it needs through `dt_*` proxies you supply — so you choose the allocator (a static
+pool is fine) and the math. See [Freestanding & embedded](#freestanding--embedded).
 
 ## Concepts
 
